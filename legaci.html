@@ -335,7 +335,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
   <div class="videopane" id="videopane">
     <div class="videowrap" id="videowrap">
-      <video id="video" controls preload="metadata" muted playsinline></video>
+      <video id="video" preload="metadata" muted playsinline></video>
       <div class="safearea" id="safearea"><span class="sa-pct sa-top">10%</span><span class="sa-pct sa-bottom">10%</span><span class="sa-pct sa-left">10%</span><span class="sa-pct sa-right">10%</span></div>
       <div class="modebadge" id="modebadge">MODE: WHAT'S LEFT</div>
       <div class="capoverlay pos-bottom" id="capoverlay" style="display:none"><span id="captext"></span></div>
@@ -347,11 +347,14 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
         <div class="tcbar-playhead" id="tcbarPlayhead"></div>
       </div>
       <div class="tcbar-controls">
+        <button class="pbtn small" id="video-playpause">▶ Play</button>
         <button class="pbtn small" id="skip-back10">⏪ 10s</button>
         <span class="plabel" id="tcbar-pos">00:00:00.000</span>
         <button class="pbtn small" id="skip-fwd10">10s ⏩</button>
         <input type="text" id="tc-jump" placeholder="HH:MM:SS.mmm">
         <button class="pbtn small" id="tc-jump-go">Jump</button>
+        <button class="pbtn small" id="video-mute">🔊</button>
+        <button class="pbtn small" id="video-fullscreen">⛶ Fullscreen</button>
         <span style="flex:1"></span>
         <button class="pbtn small" id="nav-prev">◀ Prev flagged</button>
         <span class="plabel" id="nav-pos">–/–</span>
@@ -686,10 +689,10 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   meta:null,kidvid:false,speakerFlags:{},voiceFeatures:{},speakerClusters:{},clusterNames:{},fixCounts:null,
   validated:new Set(),everSeen:new Set(),speakerPool:[],issueFilter:'all',currentVisible:[],selectedRows:new Set(),
   viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],playBoundEnd:null,
-  keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v'},
+  keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
   refTranscript:null,
   charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[]};
-const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row'};
+const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row',posTop:'Move current row to TOP',posBottom:'Move current row to BOTTOM'};
 
 /* =========================================================
    VTT PARSE / SERIALIZE
@@ -1448,7 +1451,9 @@ function analyzeFrame(el){
   }
   const bot=bandAnalysis(Math.floor(AH*0.72),Math.floor(AH*0.97));
   const top=bandAnalysis(Math.floor(AH*0.03),Math.floor(AH*0.26));
-  return {bottom:bot.textRows>=MINROWS, top:top.textRows>=MINROWS, bottomProfile:bot.colBusy, topProfile:top.colBusy};
+  const mid=bandAnalysis(Math.floor(AH*0.30),Math.floor(AH*0.68));
+  return {bottom:bot.textRows>=MINROWS, top:top.textRows>=MINROWS, middle:mid.textRows>=MINROWS,
+    bottomProfile:bot.colBusy, topProfile:top.colBusy, middleProfile:mid.colBusy};
 }
 function profileOverlap(a,b){
   let inter=0,union=0;
@@ -1571,14 +1576,19 @@ async function runCombinedVideoPass(){
       const c=S.src[i];
       setProg('Analyzing video/audio in the background — cue '+(i+1)+'/'+S.src.length+'… (your preview stays put — feel free to keep reviewing)','info');
       const dur=c.end-c.start;
-      const times=[c.start+dur*0.33+S.offset, c.start+dur*0.66+S.offset];
-      let bottomFlags=[],topFlags=[],bottomProfiles=[],topProfiles=[],energies=[],voiceSamples=[],patches=[],faceSeen=false;
+      // 4 points instead of 2 — a brief on-screen graphic (a text-message-style overlay,
+      // a quick score update) that only appears for part of the cue's duration was falling
+      // between the old two sample points entirely. Found from real timestamped feedback
+      // where OST wasn't flagged; the misses clustered in tight bursts, consistent with
+      // short-lived graphics rather than a full-duration lower-third.
+      const times=[c.start+dur*0.2+S.offset, c.start+dur*0.4+S.offset, c.start+dur*0.6+S.offset, c.start+dur*0.8+S.offset];
+      let bottomFlags=[],topFlags=[],middleFlags=[],bottomProfiles=[],topProfiles=[],middleProfiles=[],energies=[],voiceSamples=[],patches=[],faceSeen=false;
       for(const t of times){
         try{
           await seekAndWait(scanVideo,t);
           const band=analyzeFrame(scanVideo);
-          bottomFlags.push(band.bottom); topFlags.push(band.top);
-          bottomProfiles.push(band.bottomProfile); topProfiles.push(band.topProfile);
+          bottomFlags.push(band.bottom); topFlags.push(band.top); middleFlags.push(band.middle);
+          bottomProfiles.push(band.bottomProfile); topProfiles.push(band.topProfile); middleProfiles.push(band.middleProfile);
           if(faceOk){ try{ const p=await detectMouthPatch(scanVideo); if(p){faceSeen=true;patches.push(p);} }catch(e){} }
           const v=sampleAudioEnergyAndVoice();
           energies.push(v.energy);
@@ -1586,14 +1596,24 @@ async function runCombinedVideoPass(){
         }catch(err){ if(err.message==='FRAME_BLOCKED'){blocked=true;break;} }
       }
       if(blocked)break;
-      // Require BOTH samples to look text-like AND land on the same columns (a static
-      // graphic/lower-third) rather than just one busy frame — a person's face/body
-      // produces busy edges too, but those edges shift between samples; real on-screen
-      // text or a lower-third graphic stays put.
-      const bottomStatic=bottomFlags.length===2 && bottomFlags.every(Boolean) && profileOverlap(bottomProfiles[0],bottomProfiles[1])>=0.55;
-      const topStatic=topFlags.length===2 && topFlags.every(Boolean) && profileOverlap(topProfiles[0],topProfiles[1])>=0.55;
+      // A static graphic/lower-third stays in the same columns across samples; a person's
+      // face/body produces busy edges too, but those shift between samples. Originally this
+      // required ALL samples to agree, which missed anything that wasn't on-screen for the
+      // cue's entire duration. Now: at least 2 samples flagged AND at least one corroborating
+      // pair of those overlaps enough to look like the same static graphic, not coincidence.
+      function corroborated(flags,profiles){
+        const trueIdx=flags.map((f,i)=>f?i:-1).filter(i=>i>=0);
+        if(trueIdx.length<2)return false;
+        for(let a=0;a<trueIdx.length;a++)for(let b=a+1;b<trueIdx.length;b++)
+          if(profileOverlap(profiles[trueIdx[a]],profiles[trueIdx[b]])>=0.55)return true;
+        return false;
+      }
+      const bottomStatic=corroborated(bottomFlags,bottomProfiles);
+      const topStatic=corroborated(topFlags,topProfiles);
+      const middleStatic=corroborated(middleFlags,middleProfiles);
       if(bottomStatic)S.detected[i]={zone:'bottom'};
       else if(topStatic)S.detected[i]={zone:'top'};
+      else if(middleStatic)S.detected[i]={zone:'middle'};
 
       // sync check: is dialogue audible right before this cue starts, or right after it
       // ends, while the cue's own window was quiet? A consistent pattern across many
@@ -2200,7 +2220,8 @@ function buildChecklist(){
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
     if(cue.posTag)add(gk,ref,'OST','difficult',(cue.posTag.includes('UP')?'On-screen text at bottom — caption moved to top.':'On-screen text at top — caption moved to bottom.')+' (manual zone, already applied)');
-    if(cue.ostSuggested)add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
+    if(cue.ostSuggested==='middle')add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic in the MIDDLE of the frame — this caption may need repositioning to avoid it, but there\'s no single obvious "move to the opposite side" fix like there is for a top/bottom overlap. Draw a manual OST zone below (or reposition by hand) if this looks correct, or leave it if it\'s a false positive.');
+    else if(cue.ostSuggested)add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
       const cl=S.speakerClusters[cue.srcIdx];
       add(gk,ref,'SPKR_OFF','complex',S.speakerFlags[cue.srcIdx].reason+(cl?' Voice-fingerprint group: '+cl+'.':''));
@@ -2696,7 +2717,7 @@ function renderHotkeyPanel(){
   }));
 }
 document.getElementById('hotkey-reset').addEventListener('click',()=>{
-  S.keybinds={prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v'};
+  S.keybinds={prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'};
   renderHotkeyPanel();
   setProg('Hotkeys reset to defaults.');
 });
@@ -2719,6 +2740,19 @@ document.addEventListener('keydown',e=>{
     pushHistory();
     S.validated.add(v[S.activeReportIdx].key); buildChecklist(); render();
     setProg('Validated via hotkey — '+S.report.length+' item(s) still outstanding.');
+  }
+  else if((k===S.keybinds.posTop||k===S.keybinds.posBottom)&&S.activeReportIdx>=0&&v[S.activeReportIdx]){
+    e.preventDefault();
+    const r=v[S.activeReportIdx];
+    if(r.gap)return; // a gap row has no single cue to reposition
+    const idx=r.stackStartA!=null?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
+    const cue=S.cues[idx];
+    if(!cue)return;
+    pushHistory();
+    cue.settings = k===S.keybinds.posTop ? 'align:middle line:0%' : 'align:middle line:90%';
+    recordOverride(cue);
+    buildChecklist(); render(); refreshCaptionOverlay();
+    setProg('Position set to '+(k===S.keybinds.posTop?'TOP':'BOTTOM')+' via hotkey — check the video preview, it updates immediately.');
   }
   else if(k===S.keybinds.nextIssueType){ e.preventDefault(); cycleIssueFilter(1); }
   else if(k===S.keybinds.prevIssueType){ e.preventDefault(); cycleIssueFilter(-1); }
@@ -2837,12 +2871,13 @@ document.getElementById('bulk-top').addEventListener('click',()=>bulkMove('top')
 document.getElementById('bulk-bottom').addEventListener('click',()=>bulkMove('bottom'));
 document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   pushHistory();
-  let applied=0,skipped=0;
+  let applied=0,skipped=0,middleSkipped=0;
   S.report.forEach(r=>{
     if(!S.selectedRows.has(r.key))return;
     if(r.gap)return;
     const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
     const cue=S.cues[idx];
+    if(cue&&cue.ostSuggested==='middle'){middleSkipped++;return;}
     if(!cue||!cue.ostSuggested){skipped++;return;}
     cue.settings = cue.ostSuggested==='bottom' ? 'align:middle line:0%' : 'align:middle line:90%';
     cue.ostSuggested=null;
@@ -2851,10 +2886,25 @@ document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   });
   S.selectedRows.clear();
   buildChecklist(); render(); refreshCaptionOverlay();
-  setProg('Applied '+applied+' OST suggestion(s)'+(skipped?' · '+skipped+' selected row(s) had no OST suggestion, skipped':'')+'.');
+  setProg('Applied '+applied+' OST suggestion(s)'+(skipped?' · '+skipped+' selected row(s) had no OST suggestion, skipped':'')+(middleSkipped?' · '+middleSkipped+' middle-zone detection(s) skipped — no single correct direction, reposition those by hand':'')+'.');
 });
 document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.max(0,video.currentTime-10); });
 document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); });
+document.getElementById('video-playpause').addEventListener('click',()=>{
+  if(!S.videoURL)return;
+  if(video.paused)video.play().catch(()=>{}); else video.pause();
+});
+video.addEventListener('play',()=>{ document.getElementById('video-playpause').textContent='⏸ Pause'; });
+video.addEventListener('pause',()=>{ document.getElementById('video-playpause').textContent='▶ Play'; });
+document.getElementById('video-mute').addEventListener('click',()=>{
+  video.muted=!video.muted;
+  document.getElementById('video-mute').textContent=video.muted?'🔇':'🔊';
+});
+document.getElementById('video-fullscreen').addEventListener('click',()=>{
+  const wrap=document.getElementById('videowrap');
+  if(document.fullscreenElement)document.exitFullscreen();
+  else wrap.requestFullscreen().catch(()=>setProg('Fullscreen not available for this video/browser.',true));
+});
 
 function render(){
   document.getElementById('empty').style.display='none';
