@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci — Transcribe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --yellow:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(255,229,0,.05),transparent 55%)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--yellow)}
+a.back{font-family:var(--mono);font-size:11px;color:var(--gray);text-decoration:none;margin-left:auto}
+a.back:hover{color:var(--yellow)}
+.app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--yellow);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+.drop:hover{border-color:var(--yellow);background:rgba(255,229,0,.04)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--yellow);border-radius:2px;padding:2px 6px;font-weight:700}
+.drop.loaded .dk{background:var(--ok)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px}
+.modelcard{border:1px solid var(--line2);border-radius:8px;padding:12px 13px;margin-bottom:10px}
+.modelcard h4{font-size:13px;margin-bottom:4px}
+.modelcard p{font-size:11.5px;color:var(--gray);margin-bottom:10px;line-height:1.5}
+.modelcard .meta{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-bottom:10px}
+.btn{border:1px solid var(--yellow);background:var(--yellow);color:#fff;border-radius:6px;padding:10px 14px;font-size:12.5px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;width:100%}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--yellow)}
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--yellow);white-space:pre-wrap;line-height:1.6}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+.main{padding:24px 28px 60px}
+.empty{border:1px dashed var(--line2);border-radius:8px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px}
+.empty .big{font-size:26px;margin-bottom:12px}
+.results{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:1100px){.results{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:var(--panel);display:none}
+.panel.show{display:block}
+.panel h3{font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.panel .sub{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:12px}
+.seglist{max-height:520px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+.seg{padding:8px 10px;border-radius:4px;background:var(--panel2);margin-bottom:4px}
+.seg .tc{font-family:var(--mono);font-size:9.5px;color:var(--yellow)}
+.seg .txt{font-size:12.5px;color:var(--white);margin-top:3px}
+.panel .actions{display:flex;gap:8px;margin-top:12px}
+.panel .actions button{flex:1;font-family:var(--mono);font-size:10.5px;padding:8px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:5px}
+.panel .actions button:hover{border-color:var(--yellow);color:var(--yellow)}
+.hint{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:640px;margin-bottom:18px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <a class="back" href="index.html">← Back to hub</a>
+</header>
+<div class="app">
+<aside class="rail">
+  <div>
+    <h3>Source</h3>
+    <label class="drop" id="drop-media">
+      <span class="dk">FILE</span>
+      <span><span>Video or audio</span><span class="ds" id="media-name">.mp4 / .mov / .mp3 / .wav…</span></span>
+      <input type="file" id="file-media" accept="video/*,audio/*">
+    </label>
+  </div>
+  <div>
+    <h3>Models — try both, compare</h3>
+    <div class="modelcard">
+      <h4>⚡ Fast</h4>
+      <p>Whisper tiny — quick, rougher. Good for a first pass or a long file.</p>
+      <div class="meta">~40MB one-time download, cached after that</div>
+      <button class="btn ghost" id="run-fast" disabled>Transcribe — Fast</button>
+    </div>
+    <div class="modelcard">
+      <h4>🎯 Accurate</h4>
+      <p>Whisper base — slower, noticeably cleaner output.</p>
+      <div class="meta">~80MB one-time download, cached after that</div>
+      <button class="btn ghost" id="run-accurate" disabled>Transcribe — Accurate</button>
+    </div>
+  </div>
+  <div class="progress" id="progress"></div>
+</aside>
+<main class="main">
+  <div class="hint">Both models run entirely in your browser — nothing is uploaded except the one-time model download from Hugging Face's model hub. Output is a first draft: open the exported .vtt in Analyze to fix speaker IDs, formatting, and anything the model got wrong.</div>
+  <div class="empty" id="empty">
+    <div class="big">🎙 → 📝</div>
+    <p>Load a video or audio file, then try Fast, Accurate, or both — the results appear side by side so you can judge the trade-off yourself.</p>
+  </div>
+  <div class="results" id="results">
+    <div class="panel" id="panel-fast">
+      <h3>⚡ Fast (tiny)</h3>
+      <div class="sub" id="fast-meta"></div>
+      <div class="seglist" id="fast-segs"></div>
+      <div class="actions">
+        <button id="export-fast-vtt">Export .vtt</button>
+        <button id="export-fast-txt">Export .txt</button>
+      </div>
+    </div>
+    <div class="panel" id="panel-accurate">
+      <h3>🎯 Accurate (base)</h3>
+      <div class="sub" id="accurate-meta"></div>
+      <div class="seglist" id="accurate-segs"></div>
+      <div class="actions">
+        <button id="export-accurate-vtt">Export .vtt</button>
+        <button id="export-accurate-txt">Export .txt</button>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
+env.allowLocalModels = false;
+
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('transcribe', 'page_view', '');
+
+const S = { file:null, audioData:null, results:{} };
+
+const progEl = document.getElementById('progress');
+const setProg = (t, cls) => { progEl.textContent = t; progEl.className = 'progress' + (cls ? ' ' + cls : ''); };
+
+document.getElementById('file-media').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  S.file = f; S.audioData = null; S.results = {};
+  document.getElementById('drop-media').classList.add('loaded');
+  document.getElementById('media-name').textContent = f.name;
+  document.getElementById('run-fast').disabled = false;
+  document.getElementById('run-accurate').disabled = false;
+  setProg('File loaded. Click a model to start — decoding the audio track happens once and is reused if you try the other model after.');
+});
+
+function fmtTime(s){
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=Math.floor(s%60), ms=Math.round((s-Math.floor(s))*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+'.'+String(ms).padStart(3,'0');
+}
+
+async function ensureAudioData(){
+  if (S.audioData) return S.audioData;
+  setProg('Decoding audio track…', 'info');
+  const arrayBuffer = await S.file.arrayBuffer();
+  const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let audioBuffer;
+  try {
+    audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+  } catch (err) {
+    throw new Error('Could not decode audio from this file (' + err.message + ') — try a different format, or extract audio to .wav/.mp3 first.');
+  }
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * 16000), 16000);
+  const src = offlineCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(offlineCtx.destination);
+  src.start(0);
+  const rendered = await offlineCtx.startRendering();
+  S.audioData = rendered.getChannelData(0);
+  return S.audioData;
+}
+
+const modelIds = { fast: 'Xenova/whisper-tiny', accurate: 'Xenova/whisper-base' };
+const transcribers = {};
+
+async function runModel(key){
+  const btn = document.getElementById(key==='fast' ? 'run-fast' : 'run-accurate');
+  btn.disabled = true;
+  logEvent('transcribe', 'run_model', key);
+  try {
+    const audio = await ensureAudioData();
+    if (!transcribers[key]) {
+      setProg('Loading ' + (key==='fast'?'Fast':'Accurate') + ' model (one-time download, then cached)…', 'info');
+      transcribers[key] = await pipeline('automatic-speech-recognition', modelIds[key], {
+        progress_callback: p => {
+          if (p.status === 'progress') setProg('Downloading model: ' + (p.file||'') + ' ' + Math.round(p.progress||0) + '%', 'info');
+        }
+      });
+    }
+    setProg('Transcribing with ' + (key==='fast'?'Fast':'Accurate') + '… this can take a few minutes on a long file.', 'info');
+    const t0 = performance.now();
+    const output = await transcribers[key](audio, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true });
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+    const chunks = (output.chunks || []).map(c => ({
+      start: c.timestamp[0] ?? 0,
+      end: c.timestamp[1] ?? (c.timestamp[0] ?? 0) + 3,
+      text: (c.text || '').trim()
+    })).filter(c => c.text);
+    S.results[key] = { chunks, elapsed, fullText: output.text || '' };
+    renderResult(key);
+    setProg('Done — ' + (key==='fast'?'Fast':'Accurate') + ' finished in ' + elapsed + 's, ' + chunks.length + ' segment(s). Review it — this is a first draft, not a final transcript.');
+  } catch (err) {
+    setProg('Transcription failed: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('run-fast').addEventListener('click', () => runModel('fast'));
+document.getElementById('run-accurate').addEventListener('click', () => runModel('accurate'));
+
+function renderResult(key){
+  document.getElementById('empty').style.display = 'none';
+  const panel = document.getElementById(key==='fast'?'panel-fast':'panel-accurate');
+  panel.classList.add('show');
+  const r = S.results[key];
+  document.getElementById(key==='fast'?'fast-meta':'accurate-meta').textContent =
+    r.chunks.length + ' segment(s) · finished in ' + r.elapsed + 's · draft quality — verify before delivery';
+  const box = document.getElementById(key==='fast'?'fast-segs':'accurate-segs');
+  box.innerHTML = '';
+  r.chunks.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'seg';
+    el.innerHTML = '<div class="tc">' + fmtTime(c.start) + ' → ' + fmtTime(c.end) + '</div><div class="txt">' + esc(c.text) + '</div>';
+    box.appendChild(el);
+  });
+}
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toVTT(chunks){
+  let out = 'WEBVTT\nNOTE Draft transcript generated by Legaci Transcribe — review before use\n\n';
+  chunks.forEach(c=>{ out += fmtTime(c.start)+' --> '+fmtTime(c.end)+'\n'+c.text+'\n\n'; });
+  return out;
+}
+function download(content, name, mime){
+  const blob = new Blob([content], {type:mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+document.getElementById('export-fast-vtt').addEventListener('click', ()=>{ if(S.results.fast){ logEvent('transcribe','export','fast_vtt'); download(toVTT(S.results.fast.chunks), 'transcript_fast_draft.vtt', 'text/vtt'); } });
+document.getElementById('export-fast-txt').addEventListener('click', ()=>{ if(S.results.fast){ logEvent('transcribe','export','fast_txt'); download(S.results.fast.fullText, 'transcript_fast_draft.txt', 'text/plain'); } });
+document.getElementById('export-accurate-vtt').addEventListener('click', ()=>{ if(S.results.accurate){ logEvent('transcribe','export','accurate_vtt'); download(toVTT(S.results.accurate.chunks), 'transcript_accurate_draft.vtt', 'text/vtt'); } });
+document.getElementById('export-accurate-txt').addEventListener('click', ()=>{ if(S.results.accurate){ logEvent('transcribe','export','accurate_txt'); download(S.results.accurate.fullText, 'transcript_accurate_draft.txt', 'text/plain'); } });
+</script>
+</body>
+</html>

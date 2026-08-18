@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROSTER — Cast-Matched Speaker ID</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0d; --panel:#131318; --panel2:#1a1a22; --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.14);
+  --tx:#eef0f4; --dim:#8a8b96; --faint:#5a5b66;
+  --id:#c065ff;      /* identity accent — reserved for confirmed matches only */
+  --face:#57c7ff;    /* detected-but-unmatched face */
+  --ok:#39d98a; --warn:#ff5d6c; --info:#ffb454;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--tx);font:14px/1.5 Archivo,system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+::selection{background:var(--id);color:#000}
+
+/* ---------- toolbar ---------- */
+.toolbar{height:50px;flex-shrink:0;background:#0c0c10;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 16px}
+.brand{font-weight:800;font-size:15px;letter-spacing:.5px}
+.brand b{color:var(--id)}
+.brand small{display:block;font-size:9.5px;font-weight:600;letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.tsep{width:1px;height:24px;background:var(--line)}
+.netpill{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);border:1px solid var(--line);border-radius:20px;padding:4px 10px}
+.netpill .dot{width:6px;height:6px;border-radius:50%;background:var(--info)}
+.spacer{flex:1}
+
+/* ---------- workspace ---------- */
+.work{flex:1;display:flex;min-height:0}
+.left{width:400px;flex-shrink:0;border-right:1px solid var(--line);background:#0e0e12;overflow-y:auto}
+.right{flex:1;display:flex;flex-direction:column;min-width:0}
+
+.mod{border-bottom:1px solid var(--line)}
+.mod>h3{font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--dim);
+  padding:11px 14px;background:#0c0c10;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.mod>h3 .ix{width:16px;height:16px;border-radius:3px;background:var(--panel2);border:1px solid var(--line2);color:var(--dim);
+  font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center}
+.mod .body{padding:12px 14px}
+label.field{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+input[type=text],input[type=password],input[type=number],select{
+  width:100%;background:#08080a;border:1px solid var(--line);border-radius:5px;color:var(--tx);padding:8px 10px;font-size:12.5px}
+input:focus,select:focus{outline:none;border-color:var(--id)}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.small{width:64px !important;flex:none !important}
+.hint{font-size:11px;color:var(--faint);margin-top:7px;line-height:1.5}
+.hint a{color:var(--face)}
+button{background:var(--panel2);color:var(--tx);border:1px solid var(--line2);border-radius:5px;font-size:11.5px;font-weight:700;
+  letter-spacing:.3px;padding:8px 12px;cursor:pointer;font-family:inherit}
+button:hover:not(:disabled){border-color:var(--id)}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.pri{background:var(--id);color:#fff;border-color:var(--id)}
+button.pri:hover:not(:disabled){filter:brightness(1.1)}
+button.ghost{background:transparent}
+button.block{width:100%;margin-top:9px}
+.msg{font-size:11.5px;color:var(--dim);margin-top:9px;line-height:1.5;min-height:16px}
+.msg.warn{color:var(--warn)}
+.msg.ok{color:var(--ok)}
+label.tgl{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+input[type=range]{accent-color:var(--id)}
+
+/* drop zones */
+.drop{display:flex;align-items:center;gap:9px;background:#08080a;border:1px solid var(--line);border-radius:5px;
+  padding:9px 10px;cursor:pointer;margin-bottom:7px}
+.drop:hover{border-color:var(--id)}
+.drop.on{border-color:var(--id);background:#150c1c}
+.drop input{display:none}
+.drop .dk{font-size:9.5px;font-weight:800;letter-spacing:.6px;color:var(--faint);width:34px;flex-shrink:0}
+.drop.on .dk{color:var(--id)}
+.drop .dl{display:block;font-size:12px;color:var(--tx)}
+.drop .ds{display:block;font-size:10.5px;color:var(--faint)}
+
+/* ---------- cast lineup (signature element) ---------- */
+.lineup{display:flex;flex-direction:column;gap:8px}
+.card{display:flex;gap:9px;background:#0e0e13;border:1px solid var(--line);border-radius:6px;padding:8px;align-items:center}
+.card.matched{border-color:rgba(192,101,255,.4)}
+.thumb{width:38px;height:38px;border-radius:5px;object-fit:cover;background:var(--panel2);flex-shrink:0;border:1px solid var(--line2)}
+.thumb.empty{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--faint)}
+.cardbody{flex:1;min-width:0}
+.cardname{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cardmeta{font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cardn{font-size:10px;color:var(--dim)}
+.strip{display:flex;gap:3px;margin-top:5px;overflow-x:auto}
+.strip img{width:26px;height:18px;object-fit:cover;border-radius:2px;border:1px solid var(--line2);cursor:pointer;flex-shrink:0}
+.strip img:hover{border-color:var(--id)}
+.cardx{background:transparent;border:0;color:var(--faint);font-size:14px;padding:2px 5px;cursor:pointer;flex-shrink:0}
+.cardx:hover{color:var(--warn)}
+.tmdbresults{display:flex;flex-direction:column;gap:5px;margin-top:8px;max-height:220px;overflow-y:auto}
+.tr{display:flex;gap:8px;align-items:center;background:#0e0e13;border:1px solid var(--line);border-radius:5px;padding:6px 8px;cursor:pointer}
+.tr:hover{border-color:var(--id)}
+.tr img{width:28px;height:28px;border-radius:4px;object-fit:cover;background:var(--panel2)}
+.tr .n{flex:1;min-width:0}
+.tr .n b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr .n span{font-size:10.5px;color:var(--faint)}
+.addall{width:100%;margin-top:6px}
+
+/* ---------- video pane ---------- */
+.videopane{background:#000;border-bottom:1px solid var(--line);flex-shrink:0}
+.videowrap{position:relative;max-height:38vh}
+video{width:100%;max-height:38vh;display:block;object-fit:contain;background:#000}
+.band{position:absolute;left:0;right:0;height:24%;background:rgba(192,101,255,.12);border:1px solid rgba(192,101,255,.4);display:none;pointer-events:none}
+#bandtop{top:0}#bandbot{bottom:0}
+.facebox{position:absolute;border:2px solid var(--id);border-radius:3px;pointer-events:none;display:none}
+.facebox .lbl{position:absolute;top:-19px;left:-2px;background:var(--id);color:#fff;font-size:10px;font-weight:800;
+  padding:1px 6px;border-radius:2px;white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+.transport{display:flex;align-items:center;gap:12px;padding:7px 14px;background:#0c0c10}
+.transport .tc{font-size:12px;color:var(--id);font-weight:600}
+.transport .lbl{font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint)}
+
+/* ---------- results grid ---------- */
+.gridhead{background:#0c0c10;border-bottom:1px solid var(--line);padding:9px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tabs{display:flex;gap:3px}
+.tab{background:transparent;border:1px solid transparent;color:var(--faint);border-radius:4px;font-size:10.5px;font-weight:800;
+  letter-spacing:.5px;text-transform:uppercase;padding:6px 11px;cursor:pointer}
+.tab:hover{color:var(--tx)}
+.tab .n{margin-left:5px;background:var(--panel2);border-radius:8px;padding:1px 6px;font-size:9.5px;color:var(--tx)}
+.tab.on{background:var(--id);color:#fff;border-color:var(--id)}
+.tab.on .n{background:rgba(255,255,255,.25);color:#fff}
+#summary{display:flex;gap:14px;margin-left:auto;font-size:10.5px;color:var(--faint);flex-wrap:wrap}
+#summary b{color:var(--id)}
+#grid{flex:1;overflow-y:auto}
+.gr{display:grid;grid-template-columns:74px 52px 44px 1fr 190px;gap:10px;padding:8px 14px;
+  border-bottom:1px solid var(--line);cursor:pointer;align-items:center;border-left:3px solid transparent}
+.gr:hover{background:#111116}
+.gr.active{background:#180d20;border-left-color:var(--id)}
+.gr.head{position:sticky;top:0;z-index:5;background:#0c0c10;cursor:default;font-size:9.5px;font-weight:800;
+  letter-spacing:.7px;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line)}
+.gr.head:hover{background:#0c0c10}
+.g-tc{font:500 11px/1.4 'IBM Plex Mono',monospace;color:var(--faint)}
+.g-thumb{width:44px;height:44px;border-radius:4px;object-fit:cover;background:var(--panel2);border:1px solid var(--line2)}
+.g-thumb.empty{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--faint)}
+.g-ev{white-space:pre-wrap;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.g-fix{display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.evbadge{font-size:9px;font-weight:800;letter-spacing:.4px;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.evbadge.visual{background:var(--id);color:#fff}
+.evbadge.voice{background:#3d5a8a;color:#fff}
+.evbadge.unresolved{background:var(--panel2);color:var(--warn);border:1px solid var(--warn)}
+.evbadge.dim{background:var(--panel2);color:var(--faint);border:1px solid var(--line2)}
+.evbadge.manual{background:#2a4a3a;color:var(--ok)}
+.conf{font-size:9px;color:var(--faint);font-family:'IBM Plex Mono',monospace;letter-spacing:.3px}
+.g-fix select{font-size:11px;padding:4px 6px;width:150px}
+.empty{padding:40px 16px;text-align:center;color:var(--faint);font-size:12.5px;line-height:1.6}
+.gr.playing{box-shadow:inset 2px 0 0 var(--face)}
+button.stop{border-color:var(--warn);color:var(--warn)}
+.pbar{height:3px;background:var(--panel2);border-radius:2px;overflow:hidden;margin-top:8px;display:none}
+.pbar.on{display:block}
+.pbar i{display:block;height:100%;width:0;background:var(--id);transition:width .15s linear}
+.cardwarn{color:var(--info)}
+
+@media(max-width:900px){
+  body{overflow:auto;height:auto}
+  .work{flex-direction:column}
+  .left{width:100%;overflow:visible}
+  .gr{grid-template-columns:60px 44px 1fr;grid-template-areas:"tc th ev" "ost fix fix";gap:6px}
+  .gr>.g-tc{grid-area:tc}.gr>.g-thumb{grid-area:th}.gr>.g-ost{grid-area:ost}
+  .gr>.g-ev{grid-area:ev}.gr>.g-fix{grid-area:fix;align-items:flex-start}
+  .g-fix select{width:100%}
+  .videowrap,video{max-height:32vh}
+  .gr.head{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="brand"><b>ROSTER</b> · cast-matched speaker ID<small>standalone companion for LEGACI · v1.3</small></div>
+  <div class="tsep"></div>
+  <div class="netpill"><span class="dot"></span>Uses network — TVMaze/Wikidata lookup + face-model CDN · media never leaves this machine</div>
+  <div class="spacer"></div>
+  <button id="btn-export-vtt" disabled>Export captions</button>
+  <button id="btn-export-csv" disabled>Export CSV for LEGACI</button>
+  <button id="btn-export-ooona" disabled>Export OOONA project</button>
+  <div class="tsep"></div>
+  <button id="btn-session-save" class="ghost" title="Save pool, reference faces and every resolved cue to a file">Save session</button>
+  <label class="ghost" id="btn-session-load" title="Restore a saved session" style="border:1px solid var(--line2);border-radius:5px;font-size:11.5px;font-weight:700;padding:8px 12px;cursor:pointer;background:transparent">Load session<input type="file" id="file-session" accept=".json" style="display:none"></label>
+</div>
+
+<div class="work">
+<aside class="left">
+
+  <div class="mod">
+    <h3><span class="ix">1</span>Ingest</h3>
+    <div class="body">
+      <label class="drop" id="drop-vtt">
+        <span class="dk">VTT</span>
+        <span><span class="dl">Caption file</span><span class="ds">.vtt / .srt — optional but needed for per-line export</span></span>
+        <input type="file" id="file-vtt" accept=".vtt,.srt">
+      </label>
+      <label class="drop" id="drop-video">
+        <span class="dk">VID</span>
+        <span><span class="dl">Video proxy</span><span class="ds">required — this is where faces and voices come from</span></span>
+        <input type="file" id="file-video" accept="video/*">
+      </label>
+    </div>
+  </div>
+
+  <div class="mod">
+    <h3><span class="ix">2</span>Cast search <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— free, no account</span></h3>
+    <div class="body">
+      <div class="row">
+        <select id="tmdb-type" class="small" style="flex:none;width:78px">
+          <option value="tv">TV</option>
+          <option value="movie">Movie</option>
+        </select>
+        <input type="text" id="tmdb-title" placeholder="Title…">
+      </div>
+      <div class="row" style="margin-top:7px" id="tmdb-eprow">
+        <input type="number" id="tmdb-season" class="small" placeholder="S#" min="1">
+        <input type="number" id="tmdb-ep" class="small" placeholder="E#" min="1">
+        <button id="btn-tmdb-search" style="flex:1">Search</button>
+      </div>
+      <div class="msg" id="tmdb-msg">TV shows search TVMaze (full cast + real per-episode guest stars, with photos). Movies search Wikidata (cast + character + actor photo via Wikimedia Commons). Neither needs a key or sign-up.</div>
+      <div class="tmdbresults" id="tmdb-results"></div>
+    </div>
+  </div>
+
+  <div class="mod">
+    <h3><span class="ix">3</span>Speaker pool <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— cast lineup</span></h3>
+    <div class="body">
+      <div class="lineup" id="pool"></div>
+      <div class="row" style="margin-top:9px">
+        <input type="text" id="pool-add" placeholder="Add a name manually…">
+        <button id="btn-pool-add" style="flex:none">Add</button>
+      </div>
+      <div class="hint">Each card is a reference face from TVMaze or Wikidata — or a photo you attach yourself. On-screen matches populate the filmstrip underneath and feed the voice map automatically.</div>
+    </div>
+  </div>
+
+  <div class="mod">
+    <h3><span class="ix">4</span>Analyzers <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— independent, run any combination</span></h3>
+    <div class="body">
+      <label class="tgl"><input type="checkbox" id="mod-cast" checked> Face → cast match (needs a pool with reference photos)</label>
+      <label class="tgl" style="margin-top:7px"><input type="checkbox" id="mod-voice" checked> Voice fingerprint + off-screen anchoring</label>
+      <label class="tgl" style="margin-top:7px"><input type="checkbox" id="mod-ost"> On-screen text (shares the same frame pass)</label>
+      <label class="tgl" style="margin-top:7px"><input type="checkbox" id="mod-mouth" checked> Require mouth motion before crediting a face</label>
+      <div class="row" style="margin-top:10px">
+        <label class="field" style="margin:0;flex:none;align-self:center;width:104px">Face strictness</label>
+        <input type="range" id="face-thr" min="1" max="9" value="5" style="flex:1">
+        <span class="mono" id="face-thr-v" style="flex:none;width:34px;text-align:right;font-size:10.5px;color:var(--faint)">0.60</span>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label class="field" style="margin:0;flex:none;align-self:center;width:104px">Voice grouping</label>
+        <input type="range" id="voice-thr" min="1" max="9" value="5" style="flex:1">
+        <span class="mono" id="voice-thr-v" style="flex:none;width:34px;text-align:right;font-size:10.5px;color:var(--faint)">0.32</span>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label class="field" style="margin:0;flex:none;align-self:center;width:104px">Sample step</label>
+        <select id="scan-step" style="flex:1">
+          <option value="1">Every cue / window</option>
+          <option value="2">Every 2nd (2× faster)</option>
+          <option value="3">Every 3rd (3× faster)</option>
+        </select>
+      </div>
+      <button class="pri block" id="btn-run" disabled>Run selected analyzers</button>
+      <div class="row" style="margin-top:8px">
+        <button id="run-cast" style="flex:1">Cast only</button>
+        <button id="run-voice" style="flex:1">Voice only</button>
+        <button id="run-ost" style="flex:1">OST only</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="stop" id="btn-stop" style="flex:1" disabled>Stop</button>
+        <button class="ghost" id="btn-clear" style="flex:1">Clear results</button>
+      </div>
+      <div class="pbar" id="pbar"><i></i></div>
+      <div class="msg" id="prog"></div>
+    </div>
+  </div>
+
+  <div class="mod">
+    <h3><span class="ix">5</span>Caption ID rules <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— what gets written into the file</span></h3>
+    <div class="body">
+      <label class="field">Apply speaker IDs to</label>
+      <select id="id-scope">
+        <option value="offscreen" selected>Off-screen speakers only</option>
+        <option value="all">Every resolved cue</option>
+      </select>
+      <label class="tgl" style="margin-top:9px"><input type="checkbox" id="id-lastname" checked> Include last name — <span class="mono" id="id-name-eg" style="color:var(--faint)"></span></label>
+      <label class="tgl" style="margin-top:7px"><input type="checkbox" id="id-audio" checked> Only where speech was detected in the cue</label>
+      <div class="hint" id="id-preview">Off-screen mode writes an ID only when the speaker's face was <i>not</i> found in that cue's frame — the standard rule, since a visible speaker needs no label. Run the cast analyzer first, or nothing can be judged off-screen.</div>
+    </div>
+  </div>
+
+</aside>
+
+<section class="right">
+  <div class="videopane">
+    <div class="videowrap" id="videowrap">
+      <video id="video" controls playsinline preload="auto"></video>
+      <div class="band" id="bandtop"></div><div class="band" id="bandbot"></div>
+      <div class="facebox" id="facebox"><span class="lbl" id="facelbl"></span></div>
+    </div>
+    <div class="transport"><span class="lbl">TC</span><span class="tc mono" id="tc">00:00:00.000</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="lbl" id="model-status">Face model not loaded</span></div>
+  </div>
+
+  <div class="gridhead">
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-t="all">All<span class="n"></span></button>
+      <button class="tab" data-t="visual">Visual match<span class="n"></span></button>
+      <button class="tab" data-t="voice">Voice-anchored<span class="n"></span></button>
+      <button class="tab" data-t="unresolved">Unresolved<span class="n"></span></button>
+    </div>
+    <input type="text" id="grid-find" placeholder="Filter caption text or speaker…" style="width:220px;font-size:11.5px;padding:5px 8px">
+    <div id="summary"></div>
+  </div>
+  <div id="grid"><div class="empty">Load a video proxy, build the cast pool from TVMaze/Wikidata (or add photos yourself), then run the analyzers.<br>Every resolved cue is editable and exports straight into LEGACI's CSV re-import.</div></div>
+</section>
+</div>
+
+<script>
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('roster', 'page_view', '');
+
+/* =========================================================
+   STATE
+========================================================= */
+const $=id=>document.getElementById(id);
+const video=$('video');
+const scanVideo=document.createElement('video'); scanVideo.muted=true; scanVideo.playsInline=true;
+/* OST detector geometry was tuned at 320px wide, so that canvas stays 320.
+   Face recognition at 320 is too coarse — descriptors from ~40px faces are
+   near-useless — so faces get their own larger canvas and their own scale. */
+const scanCanvas=document.createElement('canvas'); const sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
+const faceCanvas=document.createElement('canvas'); const fctx=faceCanvas.getContext('2d',{willReadFrequently:true});
+const AW=320; let AH=180;
+let FW=640, FH=360;
+
+const S={
+  cues:[], fmt:'vtt',
+  videoURL:null, videoFile:null,
+  pool:[],                    // {name, img, refDescriptor|null, source:'tmdb'|'manual', instances:[{t,thumb}]}
+  clusters:[],                // voice clusters: {c:[pitch,zcr,ratio], n, anchoredBy:null|name, first}
+  cueClu:[], audio:null, sr:0,
+  results:{},                 // key -> {t, end, txt, name, evidence:'visual'|'voice'|'unresolved', dist, faceBox, thumb, manual:false}
+  tab:'all', faceApiReady:false,
+  running:false, abort:false
+};
+function setProg(t,cls){ const e=$('prog'); e.textContent=t; e.className='msg'+(cls?' '+cls:''); }
+function setTmdb(t,cls){ const e=$('tmdb-msg'); e.textContent=t; e.className='msg'+(cls?' '+cls:''); }
+function setBar(frac){ const b=$('pbar'); if(frac==null){ b.classList.remove('on'); return; }
+  b.classList.add('on'); b.firstElementChild.style.width=Math.round(frac*100)+'%'; }
+/* Quotes matter: these strings land inside HTML attributes (option values,
+   title=…), and a character name like  O'Neil "Doc"  broke the markup before. */
+const escT=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+/* =========================================================
+   CAPTION PARSE / SERIALIZE  (VTT / SRT)
+========================================================= */
+function tc2s(t){const m=t.trim().replace(',','.').match(/(?:(\d+):)?(\d+):(\d+)\.(\d+)/);if(!m)return 0;
+  return (+(m[1]||0))*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;}
+function s2vtt(s){const h=String(Math.floor(s/3600)).padStart(2,'0'),m=String(Math.floor(s%3600/60)).padStart(2,'0'),
+  x=(s%60).toFixed(3).padStart(6,'0');return `${h}:${m}:${x}`;}
+function s2srt(s){return s2vtt(s).replace('.',',');}
+function parseCaptions(txt){
+  S.fmt=/^\uFEFF?WEBVTT/.test(txt)?'vtt':'srt';
+  const cues=[];
+  for(const b of txt.replace(/\r/g,'').split(/\n\n+/)){
+    const lines=b.split('\n').filter(l=>l.trim()!=='');if(!lines.length)continue;
+    const ti=lines.findIndex(l=>l.includes('-->'));if(ti<0)continue;
+    const[a,rest]=lines[ti].split('-->');const sp=rest.trim().split(/\s+/);const end=sp.shift();
+    cues.push({start:tc2s(a),end:tc2s(end),settings:sp.join(' '),text:lines.slice(ti+1).join('\n')});}
+  return cues.sort((x,y)=>x.start-y.start);}
+function serialize(cues){
+  if(S.fmt==='vtt'){let o='WEBVTT\n\n';
+    for(const c of cues)o+=`${s2vtt(c.start)} --> ${s2vtt(c.end)}${c.settings?' '+c.settings:''}\n${c.text}\n\n`;return o;}
+  let o='';cues.forEach((c,i)=>{o+=`${i+1}\n${s2srt(c.start)} --> ${s2srt(c.end)}\n${c.text}\n\n`;});return o;}
+const hasSpeakerId=t=>{const l=t.split('\n')[0];
+  return /^\s*\(.+?\)\s*:/.test(l)||/^\s*>>/.test(l)||/^\s*[A-Z][A-Z .'\-]{1,25}:/.test(l);};
+
+/* =========================================================
+   CAST SEARCH — keyless, public sources only.
+   TV shows: TVMaze — full cast + real per-episode guest stars, with photos
+   built into the same response (character.image.medium), no key required.
+   Movies: TVMaze has no film catalog, so movies go through Wikidata instead —
+   cast member (P161) with character-role qualifier (P453), then the actor's
+   own photo (P18) resolved to a real file via Wikimedia Commons' FilePath
+   redirect, which serves the image directly with no key and no rate limit
+   worth worrying about at this scale.
+========================================================= */
+const dedupe=a=>{ const seen=new Set(); return a.filter(x=>{ const k=x.name.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true; }); };
+
+const pickImg=o=>o&&o.image&&(o.image.original||o.image.medium)||null;
+/* Character art is the first choice, but TVMaze leaves it blank for a lot of
+   roles — especially guest stars, which is exactly who a speaker-ID pass needs.
+   The actor headshot is a fine substitute (often a cleaner reference face than
+   stylized character art), so fall through to it instead of dropping the role. */
+const castRow=c=>({ name:c.character.name, actor:c.person&&c.person.name,
+                    img:pickImg(c.character)||pickImg(c.person) });
+
+async function tvmazeCast(title,season,ep){
+  const r=await fetch('https://api.tvmaze.com/singlesearch/shows?q='+encodeURIComponent(title));
+  if(!r.ok) return null;
+  const show=await r.json();
+  const label=show.name+(show.premiered?' ('+show.premiered.slice(0,4)+')':'')+' · TVMaze';
+  let cast=[];
+  const cr=await fetch('https://api.tvmaze.com/shows/'+show.id+'/cast');
+  if(cr.ok){ (await cr.json()).forEach(c=>{ if(c.character&&c.character.name) cast.push(castRow(c)); }); }
+  if(season&&ep){
+    const er=await fetch('https://api.tvmaze.com/shows/'+show.id+'/episodebynumber?season='+encodeURIComponent(season)+'&number='+encodeURIComponent(ep));
+    if(er.ok){
+      const e2=await er.json();
+      const gr=await fetch('https://api.tvmaze.com/episodes/'+e2.id+'/guestcast');
+      if(gr.ok){ (await gr.json()).forEach(c=>{ if(c.character&&c.character.name) cast.push(castRow(c)); }); }
+    }
+  }
+  cast=dedupe(cast);
+  return cast.length ? {label,cast} : null;
+}
+
+const COMMONS_FILEPATH='https://commons.wikimedia.org/wiki/Special:FilePath/';
+async function wikidataCast(title){
+  const sr=await fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&limit=7&origin=*&search='+encodeURIComponent(title));
+  const sj=await sr.json();
+  const hit=(sj.search||[]).find(x=>/film|movie/i.test(x.description||''))||(sj.search||[])[0];
+  if(!hit) return null;
+  const label=hit.label+(hit.description?' — '+hit.description:'')+' · Wikidata';
+  const cl=await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&origin=*&entity='+hit.id+'&property=P161');
+  const cj=await cl.json();
+  const claims=(cj.claims&&cj.claims.P161)||[];
+  const actorIds=[], charIds=[], actorForChar=new Map();
+  claims.forEach(c=>{
+    const actorId=c.mainsnak&&c.mainsnak.datavalue&&c.mainsnak.datavalue.value&&c.mainsnak.datavalue.value.id;
+    if(!actorId) return;
+    actorIds.push(actorId);
+    const q=c.qualifiers&&c.qualifiers.P453;
+    if(q) q.forEach(x=>{ const cid=x.datavalue&&x.datavalue.value&&x.datavalue.value.id; if(cid){ charIds.push(cid); actorForChar.set(cid,actorId); } });
+  });
+  if(!charIds.length) return null;
+  // batch-fetch character labels
+  const charLabel={};
+  for(let i=0;i<charIds.length;i+=50){
+    const lr=await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=labels&languages=en&ids='+charIds.slice(i,i+50).join('|'));
+    const lj=await lr.json();
+    for(const id in (lj.entities||{})){ const l=lj.entities[id].labels&&lj.entities[id].labels.en; if(l) charLabel[id]=l.value; }
+  }
+  // batch-fetch actor labels + photo (P18)
+  const uniqueActors=[...new Set(actorIds)];
+  const actorInfo={};
+  for(let i=0;i<uniqueActors.length;i+=50){
+    const ar=await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=labels|claims&languages=en&ids='+uniqueActors.slice(i,i+50).join('|'));
+    const aj=await ar.json();
+    for(const id in (aj.entities||{})){
+      const ent=aj.entities[id];
+      const name=ent.labels&&ent.labels.en&&ent.labels.en.value;
+      const p18=ent.claims&&ent.claims.P18&&ent.claims.P18[0]&&ent.claims.P18[0].mainsnak&&ent.claims.P18[0].mainsnak.datavalue&&ent.claims.P18[0].mainsnak.datavalue.value;
+      actorInfo[id]={ name, img: p18 ? COMMONS_FILEPATH+encodeURIComponent(p18.replace(/ /g,'_'))+'?width=200' : null };
+    }
+  }
+  let cast=[];
+  for(const cid of charIds){
+    const aid=actorForChar.get(cid);
+    const a=actorInfo[aid]||{};
+    if(charLabel[cid]) cast.push({ name:charLabel[cid], actor:a.name, img:a.img||null });
+  }
+  cast=dedupe(cast);
+  return cast.length ? {label,cast} : null;
+}
+
+$('tmdb-type').addEventListener('change',()=>{
+  $('tmdb-eprow').style.display = $('tmdb-type').value==='tv' ? 'flex' : 'none';
+});
+$('btn-tmdb-search').addEventListener('click',searchCast);
+$('tmdb-title').addEventListener('keydown',e=>{ if(e.key==='Enter') searchCast(); });
+
+async function searchCast(){
+  const title=$('tmdb-title').value.trim();
+  if(!title){ setTmdb('Enter a title first.','warn'); return; }
+  const type=$('tmdb-type').value;
+  $('btn-tmdb-search').disabled=true; $('tmdb-results').innerHTML='';
+  try{
+    setTmdb('Searching '+(type==='tv'?'TVMaze':'Wikidata')+'…');
+    let found=null;
+    if(type==='tv'){
+      found=await tvmazeCast(title,$('tmdb-season').value,$('tmdb-ep').value);
+      if(!found){ setTmdb('Not on TVMaze — trying Wikidata…'); found=await wikidataCast(title); }
+    } else {
+      found=await wikidataCast(title);
+    }
+    if(!found){ setTmdb('No cast data found for "'+title+'". Try adding the year, or add speakers manually below.','warn'); return; }
+    renderCastResults(found.label, found.cast);
+    const withPhoto=found.cast.filter(c=>c.img).length;
+    setTmdb('Found '+found.cast.length+' character(s) for '+found.label+' — '+withPhoto+' with a photo. Tap to add, or Add all.');
+  }catch(err){
+    console.error(err);
+    setTmdb('Lookup failed: '+err.message+' — if this page is open from a file:// path or offline, the cast APIs are unreachable. Add speakers manually below.','warn');
+  }
+  $('btn-tmdb-search').disabled=false;
+}
+function renderCastResults(label,cast){
+  const el=$('tmdb-results'); el.innerHTML='';
+  const h=document.createElement('div'); h.className='hint'; h.textContent='Results — '+label; el.appendChild(h);
+  const all=document.createElement('button'); all.className='addall'; all.textContent='Add all to pool';
+  all.onclick=()=>{ cast.forEach(c=>addPoolMember(c.name,c.img,'auto')); setTmdb(cast.length+' added — computing reference faces…'); computeAllReferenceDescriptors(); };
+  el.appendChild(all);
+  cast.forEach(c=>{
+    const row=document.createElement('div'); row.className='tr';
+    row.innerHTML=`<img src="${c.img||''}" onerror="this.style.visibility='hidden'">
+      <div class="n"><b>${escT(c.name)}</b><span>${escT(c.actor||'')}</span></div>`;
+    row.onclick=()=>{ addPoolMember(c.name,c.img,'auto'); computeAllReferenceDescriptors(); };
+    el.appendChild(row);
+  });
+}
+
+/* =========================================================
+   SPEAKER POOL — cast lineup
+========================================================= */
+function addPoolMember(name,img,source){
+  name=(name||'').trim(); if(!name) return;
+  if(S.pool.some(p=>p.name.toLowerCase()===name.toLowerCase())) return;
+  S.pool.push({name,img:img||null,refDescriptor:null,source:source||'manual',instances:[]});
+  renderPool();
+}
+/* Coverage backstop: TVMaze/Wikidata won't have a photo for every character
+   (especially smaller or newer titles), so any pool card without one can take
+   a manually supplied photo instead — a paste-in URL or a local file. */
+function attachPhoto(i,src){
+  const p=S.pool[i]; if(!p) return;
+  p.img=src; p.refDescriptor=null; p.source= p.source==='auto' ? 'auto+manual photo' : 'manual';
+  renderPool();
+  computeAllReferenceDescriptors();
+}
+$('btn-pool-add').addEventListener('click',()=>{ addPoolMember($('pool-add').value,null,'manual'); $('pool-add').value=''; });
+$('pool-add').addEventListener('keydown',e=>{ if(e.key==='Enter') $('btn-pool-add').click(); });
+
+function renderPool(){
+  const el=$('pool'); el.innerHTML='';
+  if(!S.pool.length){ el.innerHTML='<div class="hint">Empty — search above or add a name manually.</div>'; return; }
+  S.pool.forEach((p,i)=>{
+    const card=document.createElement('div'); card.className='card'+(p.refDescriptor?' matched':'');
+    const stripHtml=p.instances.slice(0,8).map(ins=>`<img src="${ins.thumb}" data-t="${ins.t}" title="${s2vtt(ins.t).slice(0,11)}">`).join('');
+    const srcLabel = p.source==='auto' ? 'auto photo' : p.source==='auto+manual photo' ? 'photo added' : 'manual';
+    const status = p.refDescriptor ? '· face ready'
+                 : p.pending       ? '· reading photo…'
+                 : p.img           ? '<span class="cardwarn">· no face found in photo</span>'
+                                   : '· no photo yet';
+    /* A card whose photo produced no descriptor is dead weight for the cast pass,
+       and the old markup only offered the photo controls when there was no photo
+       at all — so an unusable auto photo could not be replaced. Show the controls
+       whenever there is no usable reference face. */
+    const needsPhoto = !p.refDescriptor && !p.pending;
+    card.innerHTML=`
+      ${p.img?`<img class="thumb" src="${escT(p.img)}" alt="" referrerpolicy="no-referrer">`:`<div class="thumb empty" title="Add a reference photo">＋</div>`}
+      <div class="cardbody">
+        <div class="cardname">${escT(p.name)}</div>
+        <div class="cardmeta">${srcLabel} ${status} ${p.instances.length?'· '+p.instances.length+' on-screen':''}</div>
+        ${p.instances.length?`<div class="strip">${stripHtml}</div>`:''}
+        ${needsPhoto?`<div class="row" style="margin-top:6px;gap:5px">
+          <input type="text" placeholder="${p.img?'replace with an image URL…':'paste an image URL…'}" class="photourl" style="font-size:11px;padding:5px 7px">
+          <button class="ghost photobtn" style="flex:none;font-size:10.5px;padding:5px 8px">Use URL</button>
+          <label class="ghost" style="flex:none;font-size:10.5px;padding:5px 8px;cursor:pointer;text-align:center;border:1px solid var(--line2);border-radius:5px">Upload<input type="file" accept="image/*" class="photofile" style="display:none"></label>
+        </div>`:''}
+      </div>
+      <button class="cardx" title="Remove">✕</button>`;
+    card.querySelector('.cardx').onclick=e=>{ e.stopPropagation(); S.pool.splice(i,1); renderPool(); };
+    card.querySelectorAll('.strip img').forEach(im=>im.onclick=e=>{ e.stopPropagation(); video.currentTime=+im.dataset.t; });
+    const purl=card.querySelector('.photourl'), pbtn=card.querySelector('.photobtn'), pfile=card.querySelector('.photofile');
+    if(pbtn) pbtn.onclick=e=>{ e.stopPropagation(); const v=purl.value.trim(); if(v) attachPhoto(i,v); };
+    if(purl) purl.onclick=e=>e.stopPropagation();
+    if(pfile) pfile.onchange=e=>{
+      const f=e.target.files[0]; if(!f) return;
+      const r=new FileReader(); r.onload=()=>attachPhoto(i,r.result); r.readAsDataURL(f);
+    };
+    el.appendChild(card);
+  });
+}
+
+/* =========================================================
+   FACE MODEL — face-api.js, loaded from CDN on demand
+========================================================= */
+const FACEAPI_JS=[
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js'
+];
+const FACEAPI_MODELS=[
+  'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights',
+  'https://justadudewhohacks.github.io/face-api.js/models'
+];
+let faceapiLoading=null;
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=src; s.crossOrigin='anonymous';
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('script blocked: '+src));
+    document.head.appendChild(s);
+  });
+}
+/* One CDN going down (or being blocked on a facility network) used to kill the
+   whole cast pass with a bare "check your network". Try each mirror in turn. */
+function ensureFaceApiScript(){
+  if(window.faceapi) return Promise.resolve();
+  if(faceapiLoading) return faceapiLoading;
+  faceapiLoading=(async()=>{
+    let last=null;
+    for(const url of FACEAPI_JS){
+      try{ await loadScript(url); if(window.faceapi) return; }catch(e){ last=e; }
+    }
+    faceapiLoading=null;
+    throw new Error('Could not load the face-recognition library from any CDN'+(last?' ('+last.message+')':'')+'. The cast pass needs network access; voice and OST still work offline.');
+  })();
+  return faceapiLoading;
+}
+let modelsReady=false, modelsLoading=null;
+async function ensureModels(){
+  if(modelsReady) return;
+  if(modelsLoading) return modelsLoading;
+  modelsLoading=(async()=>{
+    $('model-status').textContent='Loading face model…';
+    await ensureFaceApiScript();
+    let last=null;
+    for(const base of FACEAPI_MODELS){
+      try{
+        await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+        modelsReady=true; S.faceApiReady=true;
+        $('model-status').textContent='Face model ready';
+        return;
+      }catch(e){ last=e; }
+    }
+    $('model-status').textContent='Face model unavailable';
+    modelsLoading=null;
+    throw new Error('Face model weights could not be fetched from any mirror'+(last?' ('+last.message+')':'')+'.');
+  })();
+  return modelsLoading;
+}
+
+/* Reference photos have to be readable *as pixels*, which means the response
+   needs CORS headers. Wikimedia sends them; several poster/headshot hosts do
+   not, and every one of those photos silently produced no descriptor — which
+   is what made the cast pass look broken with a full-looking pool. Fall back
+   to a CORS-enabled image proxy when the direct read is refused. */
+const IMG_PROXY=u=>'https://images.weserv.nl/?url='+encodeURIComponent(u.replace(/^https?:\/\//,''))+'&w=400';
+function loadImgEl(src,useCrossOrigin){
+  return new Promise((res,rej)=>{
+    const im=new Image();
+    if(useCrossOrigin) im.crossOrigin='anonymous';
+    im.referrerPolicy='no-referrer';
+    im.onload=()=>res(im);
+    im.onerror=()=>rej(new Error('image load failed'));
+    im.src=src;
+  });
+}
+async function loadRefImage(url){
+  if(/^data:/.test(url)) return loadImgEl(url,false);
+  try{ return await loadImgEl(url,true); }
+  catch(e){ return await loadImgEl(IMG_PROXY(url),true); }
+}
+const REF_OPTS=()=>new faceapi.TinyFaceDetectorOptions({inputSize:512,scoreThreshold:0.35});
+
+let refQueue=Promise.resolve();
+function computeAllReferenceDescriptors(){
+  // Serialised: "Add all" fired one of these per card, and the concurrent runs
+  // fought over the same model load and re-read the same photos.
+  refQueue=refQueue.then(()=>computeRefsNow()).catch(e=>console.error(e));
+  return refQueue;
+}
+async function computeRefsNow(){
+  const todo=S.pool.filter(p=>!p.refDescriptor && p.img);
+  if(!todo.length){ renderPool(); return; }
+  try{ await ensureModels(); }catch(err){ setTmdb(err.message,'warn'); return; }
+  todo.forEach(p=>p.pending=true); renderPool();
+  let done=0;
+  for(const p of todo){
+    try{
+      const img=await loadRefImage(p.img);
+      const det=await faceapi.detectSingleFace(img,REF_OPTS()).withFaceLandmarks().withFaceDescriptor();
+      if(det) p.refDescriptor=det.descriptor;
+    }catch(e){ /* unreachable photo or no face — card stays usable for manual assignment */ }
+    p.pending=false; done++;
+    if(done%4===0) renderPool();
+  }
+  renderPool();
+  const ok=S.pool.filter(p=>p.refDescriptor).length;
+  setTmdb('Reference faces ready for '+ok+' of '+S.pool.length+' pool member(s)'
+    + (ok<S.pool.length?' — cards marked "no face found" need a clearer head-and-shoulders photo.':'.'),
+    ok?'ok':'warn');
+}
+
+/* =========================================================
+   FRAME SAMPLER — shared by the cast, OST, and mouth-motion passes
+========================================================= */
+function sizeCanvases(){
+  const vw=Math.max(1,scanVideo.videoWidth||1280), vh=Math.max(1,scanVideo.videoHeight||720);
+  AH=Math.max(60,Math.round(AW*vh/vw));
+  scanCanvas.width=AW; scanCanvas.height=AH;
+  FW=Math.min(960,Math.max(480,vw));            // never upscale past the source
+  FH=Math.max(120,Math.round(FW*vh/vw));
+  faceCanvas.width=FW; faceCanvas.height=FH;
+}
+function waitForScanVideoReady(){
+  return new Promise((res,rej)=>{
+    if(scanVideo.readyState>=2 && scanVideo.videoWidth){ sizeCanvases(); res(); return; }
+    let settled=false;
+    const done=()=>{ if(settled)return; settled=true; cleanup(); sizeCanvases(); res(); };
+    const fail=m=>{ if(settled)return; settled=true; cleanup(); rej(new Error(m)); };
+    const cleanup=()=>{ clearTimeout(timer);
+      scanVideo.removeEventListener('loadeddata',done);
+      scanVideo.removeEventListener('loadedmetadata',done);
+      scanVideo.removeEventListener('error',onerr); };
+    const onerr=()=>fail('Could not open the video proxy for scanning — the browser may not be able to decode this container/codec. Try an H.264 MP4 proxy.');
+    const timer=setTimeout(()=>fail('Timed out opening the video proxy for scanning.'),30000);
+    scanVideo.addEventListener('loadeddata',done);
+    scanVideo.addEventListener('loadedmetadata',done);
+    scanVideo.addEventListener('error',onerr);
+    scanVideo.preload='auto';
+    if(scanVideo.src!==S.videoURL){ scanVideo.src=S.videoURL; }
+    scanVideo.load();
+  });
+}
+/* A 'seeked' event that never arrives — which happens on a keyframe-sparse
+   proxy or a tab that gets backgrounded mid-scan — used to hang the entire
+   run with no way out. Always resolve, worst case on the timer. */
+function seekAndWait(v,t){
+  return new Promise(res=>{
+    const target=Math.max(0,Math.min(t,(v.duration||t+1)-0.05));
+    if(Math.abs(v.currentTime-target)<0.005 && v.readyState>=2){ res(); return; }
+    let settled=false;
+    const finish=()=>{ if(settled)return; settled=true; clearTimeout(timer); v.removeEventListener('seeked',finish); res(); };
+    const timer=setTimeout(finish,4000);
+    v.addEventListener('seeked',finish);
+    try{ v.currentTime=target; }catch(e){ finish(); }
+  });
+}
+function grabFrame(){
+  sctx.drawImage(scanVideo,0,0,AW,AH);
+  return scanCanvas;
+}
+function grabFaceFrame(){
+  fctx.drawImage(scanVideo,0,0,FW,FH);
+  return faceCanvas;
+}
+
+/* =========================================================
+   OST — glyph-structure detector (shared visualizer)
+   Ported from the validated LEGACI/Pluto detector: finds small, similarly
+   sized, near-neutral blobs sharing a baseline (rendered type), rather than
+   scoring general busy-ness, which is what let clutter and credits alike
+   through or blocked earlier density-based versions.
+========================================================= */
+let OSTP={Lmin:170,Ldark:95,sat:58,need:4};
+function setOstSensitivity(v){ OSTP={Lmin:200-v*5,Ldark:95-(v-5)*4,sat:44+v*2,need:Math.max(3,6-Math.floor(v*0.35))}; }
+setOstSensitivity(7);
+function analyzeOST(){
+  let d; try{ d=sctx.getImageData(0,0,AW,AH).data; }catch(e){ return {top:false,bottom:false}; }
+  const gray=new Float32Array(AW*AH), sat=new Float32Array(AW*AH);
+  for(let i=0;i<AW*AH;i++){ const p=i*4,r=d[p],g=d[p+1],b=d[p+2];
+    gray[i]=0.299*r+0.587*g+0.114*b; sat[i]=Math.max(r,g,b)-Math.min(r,g,b); }
+  function band(y0,y1){
+    const H=y1-y0,N=AW*H; const mask=new Uint8Array(N);
+    for(let y=y0;y<y1;y++)for(let x=0;x<AW;x++){ const i=y*AW+x,j=(y-y0)*AW+x;
+      if(gray[i]>OSTP.Lmin&&sat[i]<OSTP.sat)mask[j]=1;
+      else if(gray[i]<OSTP.Ldark&&sat[i]<OSTP.sat)mask[j]=2; }
+    let bestLines=0;
+    for(const want of [1,2]){
+      /* Dark glyphs are only plausible on a light plate, so this gate measures
+         the band's mean brightness — but it indexed `(y0*AW)+i%AW`, which walks
+         the same single row of pixels N times instead of the whole band, so the
+         gate was reading one scanline's average and letting/blocking the dark
+         pass on that alone. */
+      if(want===2){ let sum=0; for(let i=0;i<N;i++)sum+=gray[y0*AW+i]; if(sum/N<140)continue; }
+      const seen=new Uint8Array(N),stack=new Int32Array(N),boxes=[];
+      for(let p=0;p<N;p++){
+        if(seen[p]||mask[p]!==want)continue;
+        let sp=0; stack[sp++]=p; seen[p]=1;
+        let x0=p%AW,x1=x0,yy0=(p/AW)|0,yy1=yy0,area=0;
+        while(sp){ const q=stack[--sp],qx=q%AW,qy=(q/AW)|0; area++;
+          if(qx<x0)x0=qx; if(qx>x1)x1=qx; if(qy<yy0)yy0=qy; if(qy>yy1)yy1=qy;
+          for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const nx=qx+dx,ny=qy+dy;
+            if(nx<0||ny<0||nx>=AW||ny>=H)continue; const n=ny*AW+nx;
+            if(!seen[n]&&mask[n]===want){seen[n]=1;stack[sp++]=n;} } }
+        const bh=yy1-yy0+1,bw=x1-x0+1;
+        if(bh<2||bh>14||bw<1||bw>16)continue;
+        const fill=area/(bh*bw); if(fill<0.12||fill>0.95)continue;
+        if(bw>bh*3.2)continue;
+        boxes.push({y0:yy0,y1:yy1,h:bh});
+      }
+      boxes.sort((a,b)=>a.y0-b.y0); const used=new Array(boxes.length).fill(false); let lines=0;
+      for(let i=0;i<boxes.length;i++){
+        if(used[i])continue; const g0=boxes[i]; let n=1; used[i]=true;
+        for(let j=i+1;j<boxes.length;j++){ if(used[j])continue; const g1=boxes[j];
+          const ov=Math.min(g0.y1,g1.y1)-Math.max(g0.y0,g1.y0);
+          if(ov>0.55*Math.min(g0.h,g1.h)&&Math.abs(g0.h-g1.h)<=Math.max(2,0.5*g0.h)){ n++; used[j]=true; } }
+        if(n>=OSTP.need) lines++;
+      }
+      bestLines=Math.max(bestLines,lines);
+    }
+    return bestLines>=1;
+  }
+  return { top:band(0,Math.floor(AH*0.30)), bottom:band(Math.floor(AH*0.70),AH) };
+}
+
+/* =========================================================
+   AUDIO — decode + per-window voice fingerprint + clustering
+   (validated math, ported unchanged from the earlier speaker/dash tool)
+========================================================= */
+async function decodeAudio(file){
+  const Ctx=window.AudioContext||window.webkitAudioContext;
+  if(!Ctx) throw new Error('This browser has no Web Audio support, so the voice pass cannot run.');
+  let buf;
+  try{ buf=await file.arrayBuffer(); }
+  catch(e){ throw new Error('Could not read the video file for audio decoding.'); }
+  const ac=new Ctx();
+  let ab;
+  try{ ab=await ac.decodeAudioData(buf); }
+  catch(e){
+    ac.close();
+    throw new Error('The browser could not decode this file\'s audio (common with MKV, AC-3 or HEVC proxies). An H.264/AAC MP4 proxy will decode; face and OST passes work regardless.');
+  }
+  ac.close();
+  const ch=ab.getChannelData(0), k=Math.max(1,Math.floor(ab.sampleRate/16000));
+  const out=new Float32Array(Math.floor(ch.length/k));
+  for(let i=0;i<out.length;i++){ let s=0; for(let j=0;j<k;j++)s+=ch[i*k+j]; out[i]=s/k; }
+  S.audio=out; S.sr=ab.sampleRate/k;
+  buf=null; ab=null;   // the decoded buffer can be hundreds of MB; only the 16k mono copy is kept
+}
+function feat(a,i0,n){
+  let e=0,z=0,hd=0,prev=a[i0];
+  for(let i=i0;i<i0+n;i++){ const v=a[i]; e+=v*v; if((v>=0)!==(prev>=0))z++; const d=v-prev; hd+=d*d; prev=v; }
+  let bl=0,bv=0; const lo=Math.floor(S.sr/400),hi=Math.min(n-1,Math.floor(S.sr/60));
+  for(let lag=lo;lag<=hi;lag++){ let s=0; for(let i=i0;i<i0+n-lag;i+=2)s+=a[i]*a[i+lag]; if(s>bv){bv=s;bl=lag;} }
+  const voiced=e>0&&bv/(e*0.5)>0.25;
+  return {rms:Math.sqrt(e/n),zcr:z/n,ratio:e>0?hd/e:0,pitch:voiced?S.sr/bl:0};
+}
+function printAt(t0,t1){
+  const a=S.audio; if(!a)return null;
+  const i0=Math.max(0,Math.floor(t0*S.sr)),i1=Math.min(a.length,Math.floor(t1*S.sr));
+  const fl=Math.floor(0.06*S.sr); if(i1-i0<fl*2)return null;
+  const c=[]; for(let i=i0+fl;i+fl<i1;i+=fl){ let e=0; for(let j=i;j<i+fl;j++)e+=a[j]*a[j]; c.push({i,e}); }
+  c.sort((x,y)=>y.e-x.e);
+  const fs=[]; for(const q of c.slice(0,6)){ const f=feat(a,q.i,fl); if(f.pitch>0&&f.rms>0.004)fs.push(f); if(fs.length===3)break; }
+  if(!fs.length)return null;
+  const avg=k=>fs.reduce((s,f)=>s+f[k],0)/fs.length;
+  return [avg('pitch')/280, avg('zcr')*8, Math.min(2,avg('ratio')*3)];
+}
+const fdist=(a,b)=>{ let s=0; for(let i=0;i<3;i++){ const d=a[i]-b[i]; s+=d*d; } return Math.sqrt(s); };
+
+/* =========================================================
+   FACE ⇄ POOL MATCH + MOUTH MOTION
+========================================================= */
+function faceThreshold(){
+  /* face-api.js recognition-net distances: same person is typically well under 0.6.
+     Span the slider 0.75 (loose, v=1) down to 0.45 (strict, v=9) around that anchor. */
+  const v=+$('face-thr').value; return 0.75-(v-1)*0.0375;
+}
+function voiceThreshold(){ const v=+$('voice-thr').value; return 0.14+(9-v)*0.045; }
+function syncSliders(){
+  $('face-thr-v').textContent=faceThreshold().toFixed(2);
+  $('voice-thr-v').textContent=voiceThreshold().toFixed(2);
+}
+$('face-thr').addEventListener('input',syncSliders);
+$('voice-thr').addEventListener('input',syncSliders);
+syncSliders();
+function mouthRegionFromLandmarks(lm,scale){
+  const pts=lm.getMouth(); let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+  pts.forEach(p=>{ x0=Math.min(x0,p.x); x1=Math.max(x1,p.x); y0=Math.min(y0,p.y); y1=Math.max(y1,p.y); });
+  const pad=(x1-x0)*0.25;
+  return { x:Math.max(0,Math.round((x0-pad)*scale)), y:Math.max(0,Math.round((y0-pad)*scale)),
+           w:Math.max(4,Math.round((x1-x0+pad*2)*scale)), h:Math.max(4,Math.round((y1-y0+pad*2)*scale)) };
+}
+async function detectFacesAt(t){
+  await seekAndWait(scanVideo,t);
+  if(!S.faceApiReady) return [];
+  const canvas=grabFaceFrame();
+  const dets=await faceapi.detectAllFaces(canvas,new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.4}))
+    .withFaceLandmarks().withFaceDescriptors();
+  return dets.map(d=>{
+    let best=null,bd=1e9,second=1e9;
+    for(const p of S.pool){ if(!p.refDescriptor)continue;
+      const dist=faceapi.euclideanDistance(d.descriptor,p.refDescriptor);
+      if(dist<bd){ second=bd; bd=dist; best=p; } else if(dist<second){ second=dist; } }
+    // margin over the runner-up: a 0.52 that beat the next face by 0.01 is a coin flip,
+    // a 0.52 that beat it by 0.15 is a real identification. Surfaced in the grid.
+    return { box:d.detection.box, landmarks:d.landmarks, match:best, dist:bd, margin:(second<1e9? second-bd : null) };
+  });
+}
+async function mouthMotion(box,landmarks,t0,t1){
+  /* A single before/after pair can land on two frames where the mouth happens to be
+     in the same position mid-syllable, reading as "still" for someone who is in fact
+     talking. Sample three points across the window and take the peak frame-to-frame
+     change instead of one comparison, the same robustness rule used in the validated
+     mouth-motion check elsewhere in this tool family. */
+  const region=mouthRegionFromLandmarks(landmarks,1);
+  // Landmarks are in face-canvas space; clamp so getImageData can't read past the edge
+  // (an off-canvas read returns transparent pixels and silently scores as "not speaking").
+  region.x=Math.min(Math.max(0,region.x),FW-1); region.y=Math.min(Math.max(0,region.y),FH-1);
+  region.w=Math.max(2,Math.min(region.w,FW-region.x)); region.h=Math.max(2,Math.min(region.h,FH-region.y));
+  const ts=[t0, t0+(t1-t0)*0.5, t1];
+  const frames=[];
+  for(const t of ts){
+    await seekAndWait(scanVideo,t); fctx.drawImage(scanVideo,0,0,FW,FH);
+    try{ frames.push(fctx.getImageData(region.x,region.y,region.w,region.h).data); }
+    catch(e){ frames.push(null); }
+  }
+  let peak=null;
+  for(let i=1;i<frames.length;i++){
+    const a=frames[i-1], b=frames[i]; if(!a||!b) continue;
+    let s=0,n=0;
+    for(let p=0;p<a.length;p+=4){ const la=(a[p]+a[p+1]+a[p+2])/3, lb=(b[p]+b[p+1]+b[p+2])/3; s+=Math.abs(la-lb); n++; }
+    const d=n?s/n:0; if(peak===null||d>peak) peak=d;
+  }
+  return peak;
+}
+
+/* =========================================================
+   ANALYZERS — independent, gated by their own checkboxes
+========================================================= */
+function MOD(){ return { cast:$('mod-cast').checked, voice:$('mod-voice').checked, ost:$('mod-ost').checked }; }
+function setRunning(on){
+  S.running=on;
+  $('btn-run').disabled = on || !S.videoURL;
+  ['run-cast','run-voice','run-ost','btn-clear'].forEach(id=>$(id).disabled=on);
+  $('btn-stop').disabled=!on;
+}
+
+async function runAnalysis(only){
+  if(S.running) return;
+  if(!S.videoURL){ setProg('Load a video proxy first.','warn'); return; }
+  const M = only ? {cast:only==='cast',voice:only==='voice',ost:only==='ost'} : MOD();
+  if(!M.cast&&!M.voice&&!M.ost){ setProg('Select at least one analyzer.','warn'); return; }
+  logEvent('roster', 'run_analysis', only||'all');
+  S.abort=false; setRunning(true); setBar(0);
+  const notes=[];
+  try{
+    setProg('Opening the video proxy…');
+    await waitForScanVideoReady();
+    if(M.cast){
+      try{ await ensureModels(); }
+      catch(e){ notes.push('cast pass skipped ('+e.message+')'); M.cast=false; }
+      if(M.cast && !S.pool.some(p=>p.refDescriptor)){
+        notes.push('cast pass skipped — no pool member has a usable reference face yet');
+        M.cast=false;
+      }
+    }
+    if(M.voice && !S.audio){
+      setProg('Decoding audio…');
+      /* A codec the browser can't decode used to throw out of the whole run,
+         binning the face and OST work with it. Drop the voice pass instead. */
+      try{ await decodeAudio(S.videoFile); }
+      catch(e){ notes.push('voice pass skipped ('+e.message+')'); M.voice=false; }
+    }
+    if(!M.cast&&!M.voice&&!M.ost){
+      setProg('Nothing left to run — '+notes.join('; '),'warn'); setRunning(false); setBar(null); return;
+    }
+
+    const th=voiceThreshold();
+    const step=Math.max(1,+$('scan-step').value||1);
+    const useCueGrid = S.cues.length>0;
+    const all = useCueGrid ? S.cues.map((c,i)=>({idx:i,start:c.start,end:c.end,txt:c.text}))
+                           : buildUniformGrid(2.0);
+    const times = step>1 ? all.filter((_,i)=>i%step===0) : all;
+    if(!times.length){ setProg('No cues or video duration to sample.','warn'); setRunning(false); setBar(null); return; }
+
+    /* Seed a row for every sampled window up front. Previously a window that
+       resolved to nobody never entered S.results at all, so the Unresolved tab
+       was empty and there was no row to hand-assign a speaker on — the exact
+       cues that most need a human were the ones the grid hid. */
+    for(const w of times){
+      const prev=S.results[w.idx];
+      if(prev && prev.manual){ prev.t=w.start; prev.end=w.end; prev.txt=w.txt||''; continue; }
+      S.results[w.idx]={ t:w.start, end:w.end, txt:w.txt||'', name:null, evidence:'unresolved',
+                         dist:null, margin:null, faceBox:null, thumb:null, manual:false,
+                         onScreen:null, faceScanned:false, voiced:null,
+                         ost:prev?prev.ost:null };
+    }
+
+    const mouthGate=$('mod-mouth').checked;
+    const thr=faceThreshold();
+    const t0run=performance.now();
+
+    // pass 1: sample each window — audio print, OST, and (if enabled) face match
+    const prints=new Array(times.length).fill(null);
+    for(let k=0;k<times.length;k++){
+      if(S.abort) break;
+      const win=times[k], R=S.results[win.idx];
+      const pct=(k+1)/times.length;
+      setBar(pct);
+      const eta=k>4 ? ' · ~'+Math.round((performance.now()-t0run)/k*(times.length-k)/1000)+'s left' : '';
+      setProg('Sampling '+(k+1)+'/'+times.length+' · '+s2vtt(win.start).slice(0,8)+eta);
+
+      if(M.voice){ prints[k]=printAt(win.start,win.end); R.voiced=!!prints[k]; }
+
+      if(M.ost){
+        await seekAndWait(scanVideo,(win.start+win.end)/2); grabFrame();
+        R.ost=analyzeOST();
+      }
+
+      if(M.cast){
+        const mid=(win.start+win.end)/2;
+        const faces=await detectFacesAt(mid);
+        /* Crop now: the mouth-motion check seeks away and redraws the canvas, so
+           cropping afterwards pulled the thumbnail from a different frame than
+           the one the box was measured on. */
+        faces.forEach(f=>{ if(f.match && f.dist<thr) f.thumb=cropThumb(f.box); });
+        /* Presence is recorded separately from credit. A cast member standing
+           silently in shot is still on screen, and the off-screen ID rule turns
+           on presence, not on who was judged to be speaking. Sampled at the cue
+           midpoint, so someone who walks in halfway through a long cue can still
+           read as off-screen. */
+        R.faceScanned=true;
+        R.onScreen=faces.filter(f=>f.match && f.dist<thr).map(f=>f.match.name);
+        if(!R.manual){
+          let chosen=null;
+          for(const f of faces){
+            if(!f.match || f.dist>=thr) continue;
+            let speaking=true, motion=null;
+            if(mouthGate){
+              const speakDur=Math.min(0.5,Math.max(0.12,(win.end-win.start)/2));
+              motion=await mouthMotion(f.box,f.landmarks,mid,Math.min(win.end,mid+speakDur));
+              speaking = motion!=null && motion>3.0;
+            }
+            if(speaking){ chosen={name:f.match.name,dist:f.dist,margin:f.margin,box:f.box,thumb:f.thumb}; break; }
+          }
+          if(chosen){
+            R.name=chosen.name; R.evidence='visual'; R.dist=chosen.dist; R.margin=chosen.margin;
+            const b=chosen.box;
+            R.faceBox={ x:b.x/FW, y:b.y/FH, w:b.width/FW, h:b.height/FH };   // normalized: survives player resize
+            const thumb=chosen.thumb || cropThumb(b);
+            R.thumb=thumb;                                                   // the grid's Face column was always empty before
+            const p=S.pool.find(x=>x.name===chosen.name);
+            if(p && p.instances.length<24 && thumb) p.instances.push({t:win.start, thumb});
+          }
+        }
+      }
+      if(k%4===0) await new Promise(r=>setTimeout(r,0));
+    }
+    renderPool();
+
+    // pass 2: cluster voices and anchor clusters using visually-confirmed cues
+    if(M.voice && !S.abort){
+      setProg('Clustering voices…');
+      S.clusters=[]; S.cueClu=[];
+      for(let k=0;k<prints.length;k++){
+        const p=prints[k];
+        if(!p){
+          /* Carrying the previous cluster across a silent window is right for a
+             pause inside one person's line and wrong across a scene change, so
+             only carry it when the windows actually abut. */
+          const contiguous = k>0 && times[k].start - times[k-1].end < 1.5;
+          S.cueClu.push(contiguous ? (S.cueClu[k-1]??null) : null);
+          continue;
+        }
+        let bi=-1,bd=1e9;
+        S.clusters.forEach((cl,j)=>{ const d=fdist(p,cl.c); if(d<bd){bd=d;bi=j;} });
+        if(bi>=0&&bd<th){ const cl=S.clusters[bi]; cl.c=cl.c.map((v,idx)=>(v*cl.n+p[idx])/(cl.n+1)); cl.n++; S.cueClu.push(bi); }
+        else{ S.clusters.push({c:p.slice(),n:1,anchoredBy:null,first:k}); S.cueClu.push(S.clusters.length-1); }
+      }
+      // anchor: a visual match (or a human's manual assignment) names its cluster
+      for(let k=0;k<times.length;k++){
+        const r=S.results[times[k].idx], cl=S.cueClu[k];
+        if(!r || cl==null || S.clusters[cl].anchoredBy) continue;
+        if(r.name && (r.evidence==='visual' || r.manual)) S.clusters[cl].anchoredBy=r.name;
+      }
+      // resolve everything else from anchored clusters
+      for(let k=0;k<times.length;k++){
+        const r=S.results[times[k].idx], cl=S.cueClu[k];
+        if(!r || r.manual || r.evidence==='visual') continue;
+        if(cl!=null && S.clusters[cl].anchoredBy){ r.name=S.clusters[cl].anchoredBy; r.evidence='voice'; }
+      }
+    }
+
+    buildGrid(); render(); updateExportButtons();
+    const n=ROWS.filter(r=>r.name).length;
+    const msg=(S.abort?'Stopped':'Analysis complete')+' — '+n+' of '+times.length+' window(s) resolved to a speaker'
+      + (step>1?' (sampled every '+step+')':'') + '.'
+      + (notes.length?' Note: '+notes.join('; ')+'.':'');
+    setProg(msg, S.abort?'':(n?'ok':'warn'));
+  }catch(err){ console.error(err); setProg('Error: '+err.message,'warn'); }
+  setRunning(false); setBar(null); S.abort=false;
+}
+function cropThumb(b){
+  const cv=document.createElement('canvas'); cv.width=44; cv.height=44;
+  const cx=cv.getContext('2d');
+  const x=Math.max(0,Math.floor(b.x)), y=Math.max(0,Math.floor(b.y));
+  const w=Math.max(1,Math.min(Math.round(b.width),FW-x)), h=Math.max(1,Math.min(Math.round(b.height),FH-y));
+  try{ cx.drawImage(faceCanvas,x,y,w,h,0,0,44,44); return cv.toDataURL('image/jpeg',0.7); }
+  catch(e){ return null; }
+}
+function buildUniformGrid(step){
+  const out=[]; const dur=scanVideo.duration||0; let i=0;
+  if(!isFinite(dur)||dur<=0) return out;
+  for(let t=0;t<dur;t+=step){ out.push({idx:'u'+(i++),start:t,end:Math.min(dur,t+step),txt:''}); }
+  return out;
+}
+$('btn-run').addEventListener('click',()=>runAnalysis(null));
+$('run-cast').addEventListener('click',()=>runAnalysis('cast'));
+$('run-voice').addEventListener('click',()=>runAnalysis('voice'));
+$('run-ost').addEventListener('click',()=>runAnalysis('ost'));
+$('btn-stop').addEventListener('click',()=>{ S.abort=true; setProg('Stopping after the current window…'); });
+$('btn-clear').addEventListener('click',()=>{
+  S.results={}; S.clusters=[]; S.cueClu=[]; ROWS=[];
+  S.pool.forEach(p=>p.instances=[]);
+  hideFaceBox(); renderPool(); render(); updateExportButtons(); setProg('Results cleared. Pool and cast photos kept.');
+});
+
+/* =========================================================
+   GRID — results, filterable, click-to-seek
+========================================================= */
+let ROWS=[];
+function buildGrid(){
+  /* Times now live on the result itself. The old version rebuilt them from
+     S.cues[+key], which is NaN for uniform-grid keys ('u7') — so with no caption
+     file loaded every row collapsed to 00:00:00 and every click seeked to zero. */
+  ROWS=Object.keys(S.results).map(k=>{
+    const r=S.results[k];
+    let t=r.t, txt=r.txt;
+    if(t==null && S.cues[+k]){ t=S.cues[+k].start; txt=S.cues[+k].text; }
+    return {key:k, ...r, t:t||0, txt:txt||''};
+  }).sort((a,b)=>a.t-b.t);
+}
+/* Every sampled window is a row now, and a feature-length caption file is
+   thousands of them — each carrying a <select> of the whole cast. Rendering
+   that in one go locks the tab for seconds, so rows come in pages. */
+const PAGE=200;
+let renderLimit=PAGE;
+let findTimer=0;
+$('grid-find').addEventListener('input',()=>{
+  clearTimeout(findTimer);
+  findTimer=setTimeout(()=>{ renderLimit=PAGE; render(); },180);
+});
+document.querySelectorAll('#tabs .tab').forEach(b=>b.onclick=()=>{
+  S.tab=b.dataset.t; renderLimit=PAGE;
+  document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b)); render();
+});
+function render(){
+  const el=$('grid'); el.innerHTML='';
+  const cnt={ all:ROWS.length,
+              visual:ROWS.filter(r=>r.evidence==='visual').length,
+              voice:ROWS.filter(r=>r.evidence==='voice').length,
+              unresolved:ROWS.filter(r=>!r.name).length };
+  document.querySelectorAll('#tabs .tab').forEach(b=>b.querySelector('.n').textContent=cnt[b.dataset.t]);
+  const manual=ROWS.filter(r=>r.manual&&r.name).length;
+  $('summary').innerHTML = ROWS.length
+    ? `<span><b>${cnt.visual}</b> visual match</span><span><b>${cnt.voice}</b> voice-anchored</span>`
+      +(manual?`<span><b>${manual}</b> manual</span>`:'')
+      +`<span><b>${cnt.unresolved}</b> unresolved</span>`
+    : '';
+  if(!ROWS.length){
+    el.innerHTML = S.videoURL
+      ? '<div class="empty">No results yet — pick your analyzers and hit <b>Run</b>.<br>Every sampled window lands here, resolved or not, so unresolved ones can be assigned by hand.</div>'
+      : '<div class="empty">Load a video proxy, build the cast pool from TVMaze/Wikidata (or add photos yourself), then run the analyzers.<br>Every resolved cue is editable and exports straight into LEGACI\'s CSV re-import.</div>';
+    hideFaceBox(); return;
+  }
+  const q=($('grid-find').value||'').trim().toLowerCase();
+  let shown=ROWS.filter(r=>S.tab==='all'?true:S.tab==='unresolved'?!r.name:r.evidence===S.tab);
+  if(q) shown=shown.filter(r=>(r.txt||'').toLowerCase().includes(q)||(r.name||'').toLowerCase().includes(q));
+  if(!shown.length){ el.innerHTML='<div class="empty">Nothing in this view'+(q?' matching “'+escT(q)+'”':'')+'.</div>'; return; }
+  const head=document.createElement('div'); head.className='gr head';
+  head.innerHTML='<div>TC</div><div>Face</div><div>OST</div><div>Caption</div><div>Speaker</div>';
+  el.appendChild(head);
+  const poolOpts=S.pool.map(p=>`<option value="${escT(p.name)}">${escT(p.name)}</option>`).join('');
+  const POL=idPolicy();
+  const page=shown.slice(0,renderLimit);
+  for(const r of page){
+    const row=document.createElement('div'); row.className='gr'; row.dataset.key=r.key;
+    const thumbHtml = r.thumb ? `<img class="g-thumb" src="${r.thumb}">` : `<div class="g-thumb empty">—</div>`;
+    const ostHtml = r.ost ? (r.ost.top||r.ost.bottom ? `<span class="evbadge dim">${r.ost.top?'TOP':''}${r.ost.top&&r.ost.bottom?'/':''}${r.ost.bottom?'BOT':''}</span>` : `<span class="evbadge dim">clear</span>`) : '';
+    let evBadge='';
+    if(r.manual) evBadge=`<span class="evbadge manual">MANUAL</span>`;
+    else if(r.evidence==='visual') evBadge=`<span class="evbadge visual">VISUAL MATCH</span>`;
+    else if(r.evidence==='voice') evBadge=`<span class="evbadge voice">VOICE-ANCHORED</span>`;
+    else evBadge=`<span class="evbadge unresolved">UNRESOLVED</span>`;
+    // distance + margin over the runner-up, so a weak match is visibly weak
+    const conf = (r.evidence==='visual' && r.dist!=null)
+      ? `<span class="conf">d ${r.dist.toFixed(2)}${r.margin!=null?' · +'+r.margin.toFixed(2):''}</span>` : '';
+    /* Say up front what the export will do with this cue — the on-screen /
+       off-screen call is the whole point of the pass, and finding out only
+       after export meant re-running it to see why an ID was missing. */
+    const d=r.name?tagDecision(r,POL):null;
+    const idTag = !d ? ''
+      : d.tag ? `<span class="conf" style="color:var(--id)">→ (${escT(displayName(r.name,POL).toUpperCase())}):${d.why==='unverified'?' ?':''}</span>`
+      : d.why==='onscreen' ? `<span class="conf">on screen · no ID</span>`
+      : d.why==='noaudio'  ? `<span class="conf">no speech · no ID</span>` : '';
+    const opts='<option value="">— unresolved —</option>'+poolOpts;
+    row.innerHTML=`<div class="g-tc mono">${s2vtt(r.t).slice(0,11)}</div>
+      ${thumbHtml}<div class="g-ost">${ostHtml}</div>
+      <div class="g-ev">${escT(r.txt||'(no caption loaded)')}</div>
+      <div class="g-fix">${evBadge}${conf}${idTag}<select>${opts}</select></div>`;
+    const sel=row.querySelector('select');
+    /* Set the value on the node rather than baking selected="" into the markup:
+       a name the pool no longer contains just leaves the select on "unresolved"
+       instead of producing a phantom option. */
+    sel.value = r.name && S.pool.some(p=>p.name===r.name) ? r.name : '';
+    sel.onclick=e=>e.stopPropagation();
+    sel.onchange=e=>{
+      const v=e.target.value, tgt=S.results[r.key];
+      tgt.name=v||null; tgt.evidence=v?'manual':'unresolved'; tgt.manual=!!v;
+      buildGrid(); render(); updateExportButtons();
+    };
+    row.onclick=()=>{ video.currentTime=r.t+0.05; markActive(r.key); showFaceBox(r); };
+    el.appendChild(row);
+  }
+  if(shown.length>page.length){
+    const more=document.createElement('div'); more.className='empty';
+    more.innerHTML=`<button class="ghost" id="btn-more">Show ${Math.min(PAGE,shown.length-page.length)} more — ${page.length} of ${shown.length} shown</button>`;
+    el.appendChild(more);
+    more.querySelector('button').onclick=()=>{ renderLimit+=PAGE; render(); };
+  }
+  markActive(activeKey);
+  if(typeof updateIdPreview==='function' && ROWS.length) updateIdPreview();
+}
+let activeKey=null;
+function markActive(key){
+  activeKey=key;
+  document.querySelectorAll('.gr.active').forEach(e=>e.classList.remove('active'));
+  if(key==null) return;
+  const row=document.querySelector('.gr[data-key="'+CSS.escape(String(key))+'"]');
+  if(row){ row.classList.add('active'); }
+}
+/* The overlay boxes existed in the markup but nothing ever showed them.
+   A stored box is normalized, so it maps onto the player at any size. */
+function hideFaceBox(){ $('facebox').style.display='none'; $('bandtop').style.display='none'; $('bandbot').style.display='none'; }
+function pictureRect(){
+  if(!video.videoWidth) return null;
+  const wrap=$('videowrap').getBoundingClientRect(), vr=video.getBoundingClientRect();
+  // letterboxing: the picture rarely fills the element, so map onto the picture
+  const scale=Math.min(vr.width/video.videoWidth, vr.height/video.videoHeight);
+  const pw=video.videoWidth*scale, ph=video.videoHeight*scale;
+  return { x:(vr.left-wrap.left)+(vr.width-pw)/2, y:(vr.top-wrap.top)+(vr.height-ph)/2, w:pw, h:ph };
+}
+function showFaceBox(r){
+  const fb=$('facebox'), bt=$('bandtop'), bb=$('bandbot');
+  const P=pictureRect();
+  if(!r || !P){ hideFaceBox(); return; }
+  if(r.faceBox){
+    fb.style.display='block';
+    fb.style.left=(P.x+r.faceBox.x*P.w)+'px'; fb.style.top=(P.y+r.faceBox.y*P.h)+'px';
+    fb.style.width=(r.faceBox.w*P.w)+'px';    fb.style.height=(r.faceBox.h*P.h)+'px';
+    $('facelbl').textContent=(r.name||'').toUpperCase();
+  } else fb.style.display='none';
+  // OST bands: show which third of frame the glyph detector flagged
+  [[bt,r.ost&&r.ost.top,0],[bb,r.ost&&r.ost.bottom,1]].forEach(([el,on,bottom])=>{
+    if(!on){ el.style.display='none'; return; }
+    el.style.display='block';
+    el.style.left=P.x+'px'; el.style.width=P.w+'px'; el.style.height=(P.h*0.30)+'px';
+    el.style.top = bottom ? (P.y+P.h*0.70)+'px' : P.y+'px';
+    el.style.bottom='auto';
+  });
+}
+let followTimer=0;
+video.addEventListener('timeupdate',()=>{
+  $('tc').textContent=s2vtt(video.currentTime||0).slice(0,11);
+  // follow the playhead in the grid, throttled — timeupdate fires ~4×/s
+  if(performance.now()-followTimer<250) return; followTimer=performance.now();
+  if(!ROWS.length) return;
+  const t=video.currentTime||0;
+  let cur=null;
+  for(const r of ROWS){ if(r.t<=t+0.05 && (r.end==null || t<=r.end+0.05)) cur=r; else if(r.t>t) break; }
+  document.querySelectorAll('.gr.playing').forEach(e=>e.classList.remove('playing'));
+  if(cur){
+    const row=document.querySelector('.gr[data-key="'+CSS.escape(String(cur.key))+'"]');
+    if(row) row.classList.add('playing');
+    showFaceBox(cur);
+  } else hideFaceBox();
+});
+window.addEventListener('resize',()=>{ const r=ROWS.find(x=>x.key===activeKey); if(r) showFaceBox(r); });
+
+/* =========================================================
+   CAPTION ID POLICY — which cues get a label, and in what form
+========================================================= */
+/* Dropping the surname is right for most dialogue, but the leading token is not
+   always a first name: "Mr. Burns" and "Det. Riley" carry no given name at all,
+   and trimming to "Mr." would be nonsense. Keep the honorific with the word that
+   follows it; otherwise take the first token. */
+const HONORIFIC=/^(mr|mrs|ms|miss|mx|dr|det|capt|sgt|lt|cpl|col|gen|maj|adm|prof|rev|fr|sr|sister|brother|father|mother|officer|judge|agent|chief|deputy|coach|principal|mayor|senator|gov|pres|king|queen|prince|princess|lord|lady|aunt|uncle|grandma|grandpa|nurse|prof)\.?$/i;
+function shortName(n){
+  const s=String(n||'').replace(/\s*\([^)]*\)\s*/g,' ').replace(/\s+/g,' ').trim();
+  const parts=s.split(' ');
+  if(parts.length<2) return s;
+  if(HONORIFIC.test(parts[0])) return parts.slice(0,2).join(' ');
+  return parts[0];
+}
+function idPolicy(){
+  return { offscreenOnly: $('id-scope').value==='offscreen',
+           lastName: $('id-lastname').checked,
+           requireAudio: $('id-audio').checked };
+}
+function displayName(n,P){ return (P||idPolicy()).lastName ? String(n||'') : shortName(n); }
+/* The off-screen rule: a caption names the speaker when the audience cannot see
+   who is talking. So a cue is labelled only when the resolved speaker's face was
+   not detected in that cue's frame, and — optionally — only when the audio pass
+   actually found speech there. A cue the cast pass never sampled cannot be
+   judged either way; those are labelled and counted as unverified rather than
+   silently dropped, since a missing ID is the more expensive error. */
+function tagDecision(r,P){
+  P=P||idPolicy();
+  if(!r || !r.name) return {tag:false, why:'unresolved'};
+  if(P.requireAudio && r.voiced===false) return {tag:false, why:'noaudio'};
+  if(!P.offscreenOnly) return {tag:true, why:'all'};
+  if(r.evidence==='visual') return {tag:false, why:'onscreen'};
+  if(r.onScreen && r.onScreen.includes(r.name)) return {tag:false, why:'onscreen'};
+  if(!r.faceScanned) return {tag:true, why:'unverified'};
+  return {tag:true, why:'offscreen'};
+}
+function tagStats(){
+  const P=idPolicy(), c={tag:0,onscreen:0,noaudio:0,unverified:0,resolved:0};
+  ROWS.forEach(r=>{
+    if(!r.name) return; c.resolved++;
+    const d=tagDecision(r,P);
+    if(d.tag){ c.tag++; if(d.why==='unverified') c.unverified++; }
+    else if(d.why==='onscreen') c.onscreen++;
+    else if(d.why==='noaudio') c.noaudio++;
+  });
+  return c;
+}
+function updateIdPreview(){
+  const P=idPolicy();
+  const sample=(ROWS.find(r=>r.name)||{}).name || (S.pool[0]&&S.pool[0].name) || 'Dana Scully';
+  $('id-name-eg').textContent='('+displayName(sample,P).toUpperCase()+'):';
+  if(!ROWS.length){ return; }
+  const c=tagStats();
+  $('id-preview').innerHTML=`<b>${c.tag}</b> of ${c.resolved} resolved cue(s) would be labelled`
+    + (c.onscreen?` · ${c.onscreen} skipped as on-screen`:'')
+    + (c.noaudio?` · ${c.noaudio} skipped with no speech detected`:'')
+    + (c.unverified?` · <span class="cardwarn">${c.unverified} never sampled by the cast pass, labelled unverified</span>`:'')
+    + '.';
+}
+['id-scope','id-lastname','id-audio'].forEach(id=>$(id).addEventListener('change',()=>{ updateIdPreview(); render(); }));
+updateIdPreview();
+/* =========================================================
+   EXPORT — captions (ID applied), CSV (LEGACI-compatible), OOONA project
+========================================================= */
+function updateExportButtons(){
+  const has=ROWS.some(r=>r.name);
+  $('btn-export-csv').disabled=!has;
+  $('btn-export-ooona').disabled=!(S.cues.length>0);
+  $('btn-export-vtt').disabled=!(S.cues.length>0 && has);
+}
+function applySpeakerIds(maxLen,maxLines){
+  maxLines=maxLines||3;
+  const P=idPolicy();
+  let tagged=0, overflow=0, onscreen=0, noaudio=0, unverified=0;
+  const cues=S.cues.map((c,i)=>{
+    const r=S.results[i];
+    if(hasSpeakerId(c.text)) return {...c};
+    const d=tagDecision(r,P);
+    if(!d.tag){
+      if(d.why==='onscreen') onscreen++;
+      else if(d.why==='noaudio') noaudio++;
+      return {...c};
+    }
+    tagged++; if(d.why==='unverified') unverified++;
+    const id='('+displayName(r.name,P).toUpperCase()+'): ';
+    let text=id+c.text;
+    const lines=text.split('\n');
+    /* Prefixing a name pushes the whole cue right, so re-wrap the entire block
+       rather than only line 1 — the old fix pushed the overflow onto line 2 and
+       left it there, which regularly produced a line 2 longer than the CPL it
+       was trying to protect. Existing line breaks are kept when everything fits. */
+    if(lines.some(l=>l.length>maxLen)){
+      const words=text.split(/\s+/).filter(Boolean);
+      const out=[]; let cur='';
+      for(const w of words){
+        if(!cur) cur=w;
+        else if((cur+' '+w).length<=maxLen) cur+=' '+w;
+        else { out.push(cur); cur=w; }   // once a line is full every later word moves down,
+      }                                   // so word order can never scramble
+      if(cur) out.push(cur);
+      /* Both export targets cap a subtitle at three lines. Four short lines is a
+         hard validation failure downstream, an overlong line three is a flagged
+         warning a human can fix — so fold, then report the count. */
+      if(out.length>maxLines){ overflow++; out.splice(maxLines-1, out.length, out.slice(maxLines-1).join(' ')); }
+      text=out.join('\n');
+    }
+    return {...c, text};
+  });
+  return {cues, tagged, overflow, onscreen, noaudio, unverified};
+}
+$('btn-export-vtt').addEventListener('click',()=>{
+  logEvent('roster', 'export', S.fmt||'vtt');
+  const maxLen=32;
+  const R=applySpeakerIds(maxLen,3);
+  const blob=new Blob([serialize(R.cues)],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='roster_corrected.'+S.fmt; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setProg(exportReport(R,maxLen), R.overflow||R.unverified?'warn':'ok');
+});
+function exportReport(R,maxLen){
+  return 'Exported '+S.cues.length+' cues · '+R.tagged+' speaker ID(s) written'
+    + (R.onscreen?' · '+R.onscreen+' left unlabelled (speaker on screen)':'')
+    + (R.noaudio?' · '+R.noaudio+' skipped with no speech detected':'')
+    + (R.unverified?' · '+R.unverified+' labelled without an on-screen check — review those':'')
+    + (R.overflow?' · '+R.overflow+' folded to 3 lines and may exceed '+maxLen+' chars':'')
+    + '.';
+}
+
+function csvEscape(v){ v=String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+$('btn-export-csv').addEventListener('click',()=>{
+  logEvent('roster', 'export', 'csv');
+  // Same header LEGACI's issues report uses, so this file drops straight into
+  // LEGACI's CSV re-import slot with no translation step.
+  const header=['start','end','rule','tier','message','text','note','ACTION','SPEAKER','POSITION'];
+  const rows=[header.join(',')];
+  const P=idPolicy(); let acted=0;
+  ROWS.forEach(r=>{
+    if(!r.name) return; // unresolved rows are left for a human in LEGACI, not exported half-guessed
+    const d=tagDecision(r,P);
+    const end = r.end!=null ? r.end : (S.cues[+r.key] ? S.cues[+r.key].end : r.t+2);
+    const message = r.manual ? 'Manually assigned in ROSTER'
+                  : r.evidence==='visual' ? 'Face matched to a reference photo, mouth motion confirmed speaking'
+                                            + (r.dist!=null?' (distance '+r.dist.toFixed(2)+')':'')
+                  : r.evidence==='voice'  ? 'Off-screen — voice matched to a visually-confirmed speaker cluster'
+                  : 'Assigned in ROSTER';
+    /* Every resolved cue still ships, so the report stays complete, but only the
+       ones the ID rule would actually label carry ACTION=fix. An on-screen
+       speaker is annotated and left alone rather than dropped from the file. */
+    const note = d.tag ? (d.why==='unverified' ? 'off-screen not verified — cast pass did not sample this cue' : 'speaker off screen — ID required')
+               : d.why==='onscreen' ? 'speaker visible on screen — no ID needed'
+               : d.why==='noaudio'  ? 'no speech detected in this cue' : '';
+    if(d.tag) acted++;
+    rows.push([s2vtt(r.t),s2vtt(end),'SPKR_OFF','difficult',message,r.txt||'',note,
+               d.tag?'fix':'',displayName(r.name,P),''].map(csvEscape).join(','));
+  });
+  const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='roster_speakers_for_legaci.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setProg('CSV exported — '+(rows.length-1)+' resolved cue(s), '+acted+' marked ACTION=fix under the current ID rule.','ok');
+});
+
+function uuid(){
+  if(crypto&&crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+    const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8); return v.toString(16); });
+}
+$('btn-export-ooona').addEventListener('click',()=>{
+  logEvent('roster', 'export', 'ooona_project');
+  const maxLen=32;
+  const RP=applySpeakerIds(maxLen,3);
+  const out=RP.cues;
+  const now=new Date().toISOString();
+  const paragraphs=out.map((c,i)=>({
+    index:i+1, start:+c.start.toFixed(3), end:+c.end.toFixed(3),
+    vAlign: /line:10%/.test(c.settings||'') ? 'Top' : 'Bottom',
+    id:uuid(), lastUpdateTime:now,
+    lines:c.text.split('\n').filter(l=>l.trim()!=='').map((l,k)=>({index:k+1,text:l}))
+  }));
+  const proj={ app:'CaptionMaker', version:'3.0',
+    settings:{ minSubDuration:1.00142, maxSubDuration:8.008004, maxParagraphLines:3, lineLength:maxLen,
+      readingSpeedCps:18, fps:23.976, format:'VTT18', flavor:'VTT18', extension:'vtt', mode:'Open', timecodeFormat:'24 fps',
+      safeArea:{left:10,right:10,bottom:10,top:10,units:'%',videoWidth:1920,videoHeight:1080,sameAsProject:false},
+      validation:{EmptyLine:true,Italics:true,ItalicsPartial:true,Multiplespaces:true,NoText:true,NotBottomOrTop:true,UnprintableCharacters:true} },
+    name:'roster_corrected', information:paragraphs.length+' subtitles', currentTime:0, local:false,
+    originalId:null, isAI:false, label:null, id:uuid(), dateCreated:now, lastSaved:now,
+    customShotchanges:{added:[],removed:[]}, validation:null, subtitles:{paragraphs} };
+  const blob=new Blob([JSON.stringify(proj,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='roster_ooona.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setProg('OOONA project · '+exportReport(RP,maxLen), RP.overflow||RP.unverified?'warn':'ok');
+});
+
+/* =========================================================
+   SESSION — save/restore everything except the media itself
+   A feature-length cast pass is a long, seek-bound job, and losing it to a
+   closed tab or a reload meant redoing all of it. The video stays out of the
+   file (it is the one thing already on disk); reference descriptors are kept
+   so a restored session can keep matching without re-reading every photo.
+========================================================= */
+function sessionSnapshot(){
+  return {
+    app:'ROSTER', version:1, saved:new Date().toISOString(),
+    videoName:S.videoFile?S.videoFile.name:null,
+    fmt:S.fmt, cues:S.cues,
+    pool:S.pool.map(p=>({ name:p.name, img:p.img, source:p.source,
+      // Float32Array will not survive JSON; store as a plain array and rehydrate
+      refDescriptor:p.refDescriptor?Array.from(p.refDescriptor):null,
+      instances:p.instances })),
+    results:S.results
+  };
+}
+$('btn-session-save').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(sessionSnapshot())],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  const base=(S.videoFile&&S.videoFile.name||'roster').replace(/\.[^.]+$/,'');
+  a.download=base+'_roster_session.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setProg('Session saved — reload it later and re-attach the same video proxy.','ok');
+});
+$('file-session').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(String(r.result));
+      if(d.app!=='ROSTER') throw new Error('not a ROSTER session file');
+      S.fmt=d.fmt||'vtt';
+      S.cues=Array.isArray(d.cues)?d.cues:[];
+      S.pool=(d.pool||[]).map(p=>({ name:p.name, img:p.img||null, source:p.source||'manual',
+        refDescriptor:p.refDescriptor?Float32Array.from(p.refDescriptor):null,
+        instances:p.instances||[], pending:false }));
+      S.results=d.results||{};
+      S.clusters=[]; S.cueClu=[];
+      if(S.cues.length){ $('drop-vtt').classList.add('on');
+        $('drop-vtt').querySelector('.ds').textContent='from session · '+S.cues.length+' cues'; }
+      renderPool(); buildGrid(); renderLimit=PAGE; render(); updateExportButtons();
+      const faces=S.pool.filter(p=>p.refDescriptor).length;
+      setProg('Session restored — '+S.pool.length+' pool member(s), '+faces+' with a reference face, '
+        +ROWS.filter(x=>x.name).length+' resolved cue(s).'
+        +(d.videoName?' Re-attach the video proxy ("'+d.videoName+'") to play or scan further.':''),'ok');
+    }catch(err){ setProg('Could not read that session file: '+err.message,'warn'); }
+    e.target.value='';
+  };
+  r.readAsText(f);
+});
+
+/* =========================================================
+   KEYBOARD — the grid is a review surface, so it should be drivable
+========================================================= */
+document.addEventListener('keydown',e=>{
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='select'||tag==='textarea'||tag==='button') return;
+  const rows=[...document.querySelectorAll('.gr:not(.head)')];
+  const at=rows.findIndex(r=>r.classList.contains('active'));
+  if(e.code==='Space'){ e.preventDefault(); video.paused?video.play():video.pause(); return; }
+  if(e.key==='j'||e.key==='ArrowDown'){ e.preventDefault(); const n=rows[Math.min(rows.length-1,at+1)]; if(n){n.click(); n.scrollIntoView({block:'nearest'});} return; }
+  if(e.key==='k'||e.key==='ArrowUp'){ e.preventDefault(); const n=rows[Math.max(0,at-1)]; if(n){n.click(); n.scrollIntoView({block:'nearest'});} return; }
+  if(e.key==='ArrowLeft'){ video.currentTime=Math.max(0,video.currentTime-2); return; }
+  if(e.key==='ArrowRight'){ video.currentTime=video.currentTime+2; return; }
+  if(e.key==='/'){ e.preventDefault(); $('grid-find').focus(); return; }
+});
+
+/* =========================================================
+   INGEST
+========================================================= */
+function wire(zone,input,fn){
+  $(zone).addEventListener('dragover',e=>e.preventDefault());
+  $(zone).addEventListener('drop',e=>{ e.preventDefault(); if(e.dataTransfer.files[0]) fn(e.dataTransfer.files[0]); });
+  $(input).addEventListener('change',e=>{ if(e.target.files[0]) fn(e.target.files[0]); });
+}
+function ready(){ $('btn-run').disabled = S.running || !S.videoURL; }
+wire('drop-vtt','file-vtt',f=>{
+  const r=new FileReader();
+  r.onerror=()=>setProg('Could not read '+f.name+'.','warn');
+  r.onload=()=>{
+    S.cues=parseCaptions(String(r.result||''));
+    S.results={}; ROWS=[]; S.clusters=[]; S.cueClu=[];
+    const ds=$('drop-vtt').querySelector('.ds');
+    if(!S.cues.length){
+      $('drop-vtt').classList.remove('on');
+      ds.textContent=f.name+' · no cues found';
+      setProg('No cues parsed from '+f.name+' — expected WebVTT or SRT timing lines (00:00:01.000 --> 00:00:04.000).','warn');
+    } else {
+      $('drop-vtt').classList.add('on');
+      ds.textContent=f.name+' · '+S.cues.length+' cues · '+S.fmt.toUpperCase();
+      setProg(S.cues.length+' cues loaded — analysis will use the cue grid.');
+    }
+    hideFaceBox(); render(); updateExportButtons();
+  };
+  r.readAsText(f);
+});
+wire('drop-video','file-video',f=>{
+  if(!/^video\//.test(f.type) && !/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(f.name)){
+    setProg('That does not look like a video file.','warn'); return;
+  }
+  S.videoFile=f; S.audio=null; S.sr=0;
+  if(S.videoURL) URL.revokeObjectURL(S.videoURL);
+  S.videoURL=URL.createObjectURL(f);
+  video.src=S.videoURL;
+  scanVideo.removeAttribute('src'); scanVideo.load();   // force the scanner to re-open the new file
+  hideFaceBox();
+  $('drop-video').classList.add('on'); $('drop-video').querySelector('.ds').textContent=f.name+' · '+(f.size/1048576).toFixed(0)+' MB';
+  ready();
+});
+video.addEventListener('error',()=>{
+  if(video.src) setProg('The player could not decode this file. Scanning may still work, but an H.264/AAC MP4 proxy is the safe format.','warn');
+});
+window.addEventListener('beforeunload',e=>{ if(S.running){ e.preventDefault(); e.returnValue=''; } });
+renderPool(); render(); updateExportButtons();
+</script>
+</body>
+</html>

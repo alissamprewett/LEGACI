@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --yellow:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(255,229,0,.06),transparent 55%);
+  min-height:100vh;display:flex;flex-direction:column}
+header{padding:24px 32px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:22px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--yellow)}
+.tag{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.05em;margin-top:4px}
+main{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;max-width:1400px;width:100%}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 24px;
+  text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:14px;
+  transition:border-color .15s,transform .15s,box-shadow .15s;position:relative;overflow:hidden}
+.card:hover{border-color:var(--yellow);transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.4)}
+.card .icon{font-size:30px}
+.card h2{font-size:18px;font-weight:700;letter-spacing:.02em}
+.card p{font-size:13px;color:var(--gray);line-height:1.55;flex:1}
+.card .status{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  border-radius:12px;padding:4px 10px;display:inline-block;width:fit-content}
+.status.ready{background:rgba(61,220,132,.15);color:var(--ok)}
+.status.beta{background:rgba(255,229,0,.15);color:var(--yellow)}
+.status.soon{background:rgba(255,255,255,.06);color:var(--faint)}
+.card .go{font-family:var(--mono);font-size:11px;color:var(--yellow);letter-spacing:.06em}
+.card.disabled{cursor:default;opacity:.7}
+.card.disabled:hover{border-color:var(--line);transform:none;box-shadow:none}
+footer{padding:18px 32px;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em;text-align:center;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <div class="tag">caption tools, run locally in your browser</div>
+</header>
+<main>
+  <div class="grid">
+    <a class="card" href="transcribe.html" data-tool="transcribe">
+      <span class="icon">🎙</span>
+      <span class="status beta">Beta</span>
+      <h2>Transcribe</h2>
+      <p>Generate a first-draft caption file straight from a video's audio, using a speech model that runs entirely in your browser. Choose speed or accuracy, then hand the draft to Analyze to clean it up.</p>
+      <span class="go">Open Transcribe →</span>
+    </a>
+    <a class="card" href="translate.html" data-tool="translate">
+      <span class="icon">🌐</span>
+      <span class="status beta">Beta</span>
+      <h2>Translate</h2>
+      <p>Open Helsinki-NLP translation models running in your browser — Spanish, French, Italian, and German, downloaded once and reused offline after that. Treat output as a first draft, same as Transcribe.</p>
+      <span class="go">Open Translate →</span>
+    </a>
+    <a class="card" href="legaci.html" data-tool="legaci">
+      <span class="icon">🛠</span>
+      <span class="status ready">Ready</span>
+      <h2>Analyze</h2>
+      <p>The full caption QC tool — auto-fixes formatting, flags speaker IDs, on-screen text, sync, and more, with an editable checklist and video preview.</p>
+      <span class="go">Open Analyze →</span>
+    </a>
+    <a class="card" href="audio-description.html" data-tool="audio-description">
+      <span class="icon">👁️‍🗨️</span>
+      <span class="status beta">Beta</span>
+      <h2>Audio Description</h2>
+      <p>Finds dialogue gaps and drafts a rough scene description for each one using an in-browser image-captioning model — a starting point for a human describer, not a finished script.</p>
+      <span class="go">Open Audio Description →</span>
+    </a>
+    <a class="card" href="convert.html" data-tool="convert">
+      <span class="icon">⇄</span>
+      <span class="status beta">Beta</span>
+      <h2>Convert</h2>
+      <p>VTT ⇄ SCC ⇄ SRT conversion — pop-on captions only, built from directly-verified open-source CEA-608 logic rather than reconstructed from memory. Pure format conversion, no AI, no upload.</p>
+      <span class="go">Open Convert →</span>
+    </a>
+    <a class="card" href="markups.html" data-tool="markups">
+      <span class="icon">▮▮</span>
+      <span class="status beta">Beta</span>
+      <h2>Markups</h2>
+      <p>Scans for scene cuts and fades, cross-referenced with quiet audio, and suggests ad breakpoints against the Delivery Guide's spacing rules. US Film and TV rules built in — every suggestion needs a human check.</p>
+      <span class="go">Open Markups →</span>
+    </a>
+    <a class="card" href="artwork.html" data-tool="artwork">
+      <span class="icon">🖼</span>
+      <span class="status beta">Beta</span>
+      <h2>Artwork</h2>
+      <p>Batch resize, center-crop, and compress screenshots to the Delivery Guide's exact specs — the same job as the internal ResizeIt extension, done here with real batch processing and one .zip download.</p>
+      <span class="go">Open Artwork →</span>
+    </a>
+    <a class="card" href="roster.html" data-tool="roster">
+      <span class="icon">🎭</span>
+      <span class="status beta">Beta</span>
+      <h2>Roster</h2>
+      <p>Standalone companion for cast-matched speaker ID — TVMaze/Wikidata cast search, face and voice matching, session save/restore, and export straight to a LEGACI-ready CSV or an OOONA project file.</p>
+      <span class="go">Open Roster →</span>
+    </a>
+  </div>
+</main>
+<footer>ALL PROCESSING RUNS LOCALLY IN YOUR BROWSER · NO CAPTION OR VIDEO DATA IS UPLOADED ANYWHERE · usage patterns only (never content) may be logged — see README</footer>
+<script>
+/* =========================================================
+   LEGACI ANALYTICS — structure/behavior only, never content.
+   Logs things like "which flag type got dismissed" or "which export
+   format was used" — never caption text, filenames, character names,
+   or video/image content. See README's Analytics section.
+
+   Paste your deployed Apps Script Web App URL below (ends in /exec).
+   Leave it as-is (containing "PASTE_YOUR") to keep logging silently
+   disabled — every tool works identically either way.
+========================================================= */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){
+      navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'}));
+      return;
+    }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, {
+      method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+logEvent('index', 'page_view', '');
+document.querySelectorAll('a.card[data-tool]').forEach(card=>{
+  card.addEventListener('click', ()=>{ logEvent('index', 'card_click', card.dataset.tool); });
+});
+</script>
+</body>
+</html>

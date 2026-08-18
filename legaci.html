@@ -1,0 +1,3013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --yellow:#3d8bfd; --yellowdim:#2f6fd6; --purple:#9b5cf6;
+  --accent-grad:linear-gradient(90deg,var(--purple),var(--yellow));
+  --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:
+    radial-gradient(ellipse 900px 500px at 85% -8%,rgba(155,92,246,.14),transparent 60%),
+    radial-gradient(ellipse 800px 600px at -5% 15%,rgba(61,139,253,.10),transparent 55%),
+    radial-gradient(ellipse 1000px 700px at 100% 100%,rgba(155,92,246,.06),transparent 60%);
+  background-attachment:fixed}
+::selection{background:var(--yellow);color:#fff}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+
+header{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;background:rgba(11,11,15,.88);backdrop-filter:blur(10px);box-shadow:0 2px 16px rgba(0,0,0,.4)}
+header::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent-grad);opacity:.55}
+.brand{position:relative;font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand em{font-style:normal}
+.tag{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.05em}
+.statusbar{display:inline-flex;font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:3px;overflow:hidden}
+.statusbar span{padding:5px 12px;border-right:1px solid var(--line);color:var(--gray)}
+.statusbar span:last-child{border-right:0}
+.statusbar b{color:var(--white);font-weight:600;margin-left:6px}
+.statusbar .s-y b{color:var(--yellow)}
+.statusbar .s-err b{color:var(--err)}
+.statusbar .s-ok b{color:var(--ok)}
+
+.menubar{display:flex;align-items:center;gap:2px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:19}
+.menubar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--accent-grad);opacity:.3}
+.menuwrap{position:relative}
+.menuitem{background:transparent;border:0;color:var(--gray);font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;padding:6px 12px;border-radius:3px}
+.menuitem:hover{background:rgba(255,229,0,.1);color:var(--yellow)}
+.menuwrap.open .menuitem{background:rgba(255,229,0,.14);color:var(--yellow)}
+.menudrop{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:220px;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;padding:5px;box-shadow:0 10px 28px rgba(0,0,0,.45);z-index:30;flex-direction:column;gap:1px}
+.menuwrap.open .menudrop{display:flex}
+.menudrop button{background:transparent;border:0;color:var(--white);font-family:var(--mono);font-size:11px;text-align:left;padding:8px 10px;border-radius:4px;width:100%}
+.menudrop button:hover{background:rgba(255,229,0,.12);color:var(--yellow)}
+.menudivider{height:1px;background:var(--line);margin:4px 2px}
+.menu-reviewmode{margin-left:auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--faint)}
+.app{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 60px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:22px;overflow-y:auto}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--yellow);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.drop:hover,.drop:focus-within{border-color:var(--yellow);background:rgba(255,229,0,.04)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--yellow);border-radius:2px;padding:2px 6px;font-weight:700;flex-shrink:0}
+.drop.loaded .dk{background:var(--ok)}
+.drop .dl{font-size:12.5px;color:var(--white)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stack{display:flex;flex-direction:column;gap:8px}
+.substep{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.05em;margin:-4px 0 2px}
+
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0}
+.opt label{font-size:12.5px;color:var(--gray)}
+.opt select,.opt input[type=number],.opt input[type=text]{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:4px 7px;font-family:var(--mono);font-size:11.5px;width:100px}
+.opt input[type=number]{width:60px;text-align:right}
+.opt input[type=checkbox]{width:auto;accent-color:var(--yellow)}
+
+.btn{border:0;background:var(--accent-grad);color:#fff;border-radius:8px;padding:12px 14px;font-size:13px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;width:100%;transition:filter .15s,box-shadow .15s,transform .1s;box-shadow:0 4px 18px rgba(155,92,246,.22)}
+.btn:active{transform:translateY(1px)}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--yellow)}
+.btn.ghost:hover{background:rgba(255,229,0,.08)}
+.btn.quiet{background:transparent;border-color:var(--line2);color:var(--gray);font-weight:500;text-transform:none;letter-spacing:0;font-size:12px;padding:8px 12px}
+.btn.quiet:hover{border-color:var(--yellow);color:var(--white)}
+.btn.small{padding:6px 10px;font-size:10.5px;width:auto;text-transform:none;letter-spacing:0;font-weight:600;border-radius:3px}
+
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--yellow);min-height:16px;line-height:1.6;white-space:pre-wrap}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+
+.main{padding:20px 24px 60px;min-width:0}
+@media(min-width:1180px){
+  .main{display:grid;grid-template-columns:minmax(360px,540px) 1fr;gap:28px}
+  .mainRight{min-width:0}
+}
+.videopane{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:2px;padding-bottom:14px}
+.collapsehead{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);cursor:pointer;padding:8px 2px;user-select:none;max-width:720px;border-top:1px solid var(--line);margin-top:4px}
+.collapsehead:hover{color:var(--yellow)}
+.videowrap{position:relative;background:#000;border:1px solid var(--line);border-radius:8px;max-width:720px;margin-bottom:0;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.videowrap.show{display:block}
+.tcbar{max-width:720px;display:none}
+.tcbar-track{position:relative;height:16px;background:var(--panel2);border:1px solid var(--line2);border-radius:3px;margin-top:6px;cursor:pointer;overflow:hidden}
+.tcbar-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,229,0,.18)}
+.tcbar-marks{position:absolute;inset:0}
+.tcmark{position:absolute;top:0;bottom:0;width:2px;background:var(--warn)}
+.tcmark.complex{background:var(--info)}
+.tcbar-playhead{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--yellow);left:0}
+.tcbar-controls{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.tcbar-controls input{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11px;width:110px}
+video{width:100%;display:block;border-radius:3px}
+.safearea{position:absolute;inset:10%;border:1px dashed rgba(255,229,0,.35);pointer-events:none}
+.sa-pct{position:absolute;font-family:var(--mono);font-size:8.5px;color:rgba(255,229,0,.55);background:rgba(0,0,0,.4);padding:1px 4px;border-radius:2px}
+.sa-top{top:-14px;left:50%;transform:translateX(-50%)}
+.sa-bottom{bottom:-14px;left:50%;transform:translateX(-50%)}
+.sa-left{left:-4px;top:50%;transform:translate(-100%,-50%)}
+.sa-right{right:-4px;top:50%;transform:translate(100%,-50%)}
+.modebadge{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--yellow);background:rgba(0,0,0,.55);border:1px solid rgba(255,229,0,.4);border-radius:3px;padding:3px 8px;pointer-events:none}
+.capoverlay{position:absolute;left:0;right:0;text-align:center;pointer-events:none;padding:0 6%}
+.capoverlay.pos-bottom{bottom:7%}
+.capoverlay.pos-top{top:6%}
+.capoverlay span{background:rgba(0,0,0,.82);color:#fff;font-family:var(--mono);font-size:clamp(11px,2.2vw,17px);padding:2px 8px;display:inline-block;white-space:pre-wrap;line-height:1.45}
+.scanband{position:absolute;left:0;right:0;pointer-events:none;display:none;border:1px dashed var(--yellow);background:rgba(255,229,0,.07)}
+.scanband.top{top:2%;height:23%}
+.scanband.bottom{bottom:2%;height:26%}
+
+.summary{max-width:720px;margin:0 0 16px;border:1px solid rgba(61,220,132,.35);background:rgba(61,220,132,.05);border-radius:4px;padding:12px 14px;display:none}
+.summary.show{display:block}
+.summary .oh{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ok);margin-bottom:6px}
+.summary .body{font-size:12.5px;color:var(--gray);line-height:1.6}
+
+.ctxbox{max-width:720px;margin:0 0 12px;border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--gray);display:none}
+.ctxbox.show{display:block}
+.ctxbox b{color:var(--white)}
+
+.panelbox{position:relative;max-width:720px;margin:0 0 12px;border:1px solid var(--line);border-radius:8px;padding:12px 14px 12px 18px;display:none;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent);box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.panelbox.show::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--accent-grad)}
+.panelbox.show{display:block}
+.panelbox .oh{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--yellow);margin-bottom:8px}
+.panelbox .oh.info{color:var(--info)}
+.prow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.prow select,.prow input[type=number],.prow input[type=text]{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11px;width:88px}
+.prow input[type=text].wide{width:170px}
+.pbtn{border:1px solid var(--yellow);background:transparent;color:var(--yellow);border-radius:3px;padding:5px 11px;font-size:11px;font-family:var(--mono);font-weight:600}
+.pbtn:hover{background:rgba(255,229,0,.08)}
+.pbtn.validate{border-color:var(--ok);color:var(--ok)}
+.pbtn.validate:hover{background:rgba(61,220,132,.1)}
+.pbtn.small{padding:5px 9px;font-size:10px}
+.pbtn.primary{background:var(--accent-grad);border:0;color:#fff;font-weight:700}
+.zonelist{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.zonemark{font-family:var(--mono);font-size:10px;border:1px dashed var(--warn);color:var(--warn);border-radius:3px;padding:3px 8px;cursor:pointer}
+.zonemark.auto{border-color:var(--yellow);color:var(--yellow)}
+.plabel{font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+.chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-family:var(--mono);font-size:10.5px;border:1px solid var(--info);color:var(--info);border-radius:12px;padding:3px 10px 3px 10px;cursor:pointer;background:transparent;display:inline-flex;align-items:center;gap:5px}
+.chip:hover{background:rgba(93,184,255,.12)}
+.chip .src{font-size:8px;color:var(--faint);border:1px solid var(--line2);border-radius:8px;padding:0 5px}
+
+.clusterrow{display:flex;align-items:center;gap:8px;padding:6px 0;flex-wrap:wrap}
+.hkrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0}
+.hkrow .hklabel{font-size:12px;color:var(--gray)}
+.hkkey{font-family:var(--mono);font-size:11px;color:var(--yellow);background:var(--panel2);border:1px solid var(--line2);border-radius:4px;padding:4px 10px;min-width:56px;text-align:center;cursor:pointer}
+.hkkey:hover{border-color:var(--yellow)}
+.hkkey.listening{border-color:var(--info);color:var(--info)}
+.clusterrow .lab{font-family:var(--mono);font-size:11px;color:var(--info);min-width:90px}
+.clusterrow input{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11px;width:150px}
+
+.mainhead{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.mainhead h2{font-size:15px;font-weight:700;letter-spacing:.04em;color:var(--white)}
+.mainhead .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+.empty{border:1px dashed var(--line2);border-radius:6px;padding:56px 30px;text-align:center;max-width:720px;color:var(--gray)}
+.empty .big{font-family:var(--mono);font-size:26px;color:var(--faint);letter-spacing:.1em;margin-bottom:12px}
+.empty p{max-width:480px;margin:0 auto;font-size:13px}
+
+.checklist{display:flex;flex-direction:column;gap:8px;max-width:900px}
+.item{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:13px 16px;transition:border-color .12s,transform .12s}
+.item:hover{border-color:var(--line2)}
+.item.active{border-color:var(--yellow)}
+.item .top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;cursor:pointer}
+.item .tc{font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600}
+.item .evnum{font-family:var(--mono);font-size:10px;color:var(--faint);background:var(--panel2);border-radius:3px;padding:2px 6px}
+.item .tier{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:2px}
+.tier-difficult{background:rgba(255,176,32,.15);color:var(--warn)}
+.tier-complex{background:rgba(93,184,255,.15);color:var(--info)}
+.item .msg{font-size:12.5px;color:var(--gray);margin-top:5px}
+.item textarea.txt-edit{width:100%;font-family:var(--mono);font-size:12px;color:var(--white);margin-top:6px;background:var(--panel2);border:1px solid var(--line2);border-radius:3px;padding:6px 8px;resize:vertical;min-height:44px}
+.item textarea.txt-edit:focus{border-color:var(--yellow);outline:none}
+.item .rowlabel{font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:8px;letter-spacing:.06em;text-transform:uppercase}
+.item .actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.item .spkfield{display:flex;gap:6px;align-items:center;margin-top:8px}
+.item .spkfield input{background:var(--panel2);border:1px solid var(--info);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11px;width:170px}
+.allclear{max-width:720px;padding:30px;text-align:center;color:var(--ok);font-family:var(--mono);font-size:13px;border:1px dashed rgba(61,220,132,.4);border-radius:6px}
+
+footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <div class="tag" id="readyTag">one pass: fix what's fixable, flag what isn't</div>
+</header>
+<div class="menubar">
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="project">PROJECT</button>
+    <div class="menudrop" id="menudrop-project">
+      <button data-act="load-vtt">Load VTT/SRT…</button>
+      <button data-act="load-video">Load video…</button>
+      <button data-act="load-json">Load JSON metadata…</button>
+      <div class="menudivider"></div>
+      <button data-act="export-file">Export corrected file</button>
+      <button data-act="export-csv">Export issues report .csv</button>
+    </div>
+  </div>
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="edit">EDIT <span id="undo-count" style="color:var(--faint)"></span></button>
+    <div class="menudrop" id="menudrop-edit">
+      <button data-act="undo">Undo</button>
+    </div>
+  </div>
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="subtitle">SUBTITLE</button>
+    <div class="menudrop" id="menudrop-subtitle">
+      <button data-act="jump" data-target="zonepanel">OST zones</button>
+      <button data-act="jump" data-target="clusterpanel">Voice-based speaker labels</button>
+      <button data-act="jump" data-target="castpanel">Character search</button>
+      <button data-act="jump" data-target="scriptpanel">Script &amp; transcript reference</button>
+    </div>
+  </div>
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="timecode">TIMECODE</button>
+    <div class="menudrop" id="menudrop-timecode">
+      <button data-act="jump" data-target="syncpanel">Sync panel</button>
+      <button data-act="sync-zero">Subtitle zero (first event → 0)</button>
+      <button data-act="focus-jump">Jump to timecode…</button>
+    </div>
+  </div>
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="settings">SETTINGS</button>
+    <div class="menudrop" id="menudrop-settings">
+      <button data-act="jump" data-target="settingsSection">Run settings</button>
+      <button data-act="jump" data-target="hotkeypanel">Hotkeys</button>
+    </div>
+  </div>
+  <div class="menuwrap">
+    <button class="menuitem" data-menu="view">VIEW</button>
+    <div class="menudrop" id="menudrop-view">
+      <button data-act="view-issues">What's left</button>
+      <button data-act="view-all">All events</button>
+      <button data-act="find">Find…</button>
+    </div>
+  </div>
+  <span class="menu-reviewmode" id="menu-reviewmode">REVIEW MODE</span>
+</div>
+
+<div class="app">
+<aside class="rail">
+  <div id="ingestSection">
+    <h3>Ingest</h3>
+    <div class="stack">
+      <label class="drop" id="drop-vtt">
+        <span class="dk">VTT</span>
+        <span><span class="dl">Caption file</span><span class="ds">.vtt / .srt</span></span>
+        <input type="file" id="file-vtt" accept=".vtt,.srt">
+      </label>
+      <label class="drop" id="drop-video">
+        <span class="dk">VID</span>
+        <span><span class="dl">Video proxy</span><span class="ds">optional — enables video/audio checks</span></span>
+        <input type="file" accept="video/*" id="file-video">
+      </label>
+      <label class="drop" id="drop-json">
+        <span class="dk">JSON</span>
+        <span><span class="dl">Metadata</span><span class="ds">series / episode context</span></span>
+        <input type="file" accept=".json" id="file-json">
+      </label>
+    </div>
+  </div>
+
+  <div id="settingsSection">
+    <h3>Run</h3>
+    <div class="substep">with just a VTT: text fixes only. With video too: OST + off-screen-speaker + voice-fingerprint checks run in the same pass, automatically.</div>
+    <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
+    <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
+    <div class="opt"><label>Flag single-line leading dashes</label><input type="checkbox" id="opt-extradash"></div>
+    <div class="substep">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
+    <div class="opt"><label>Convert ALL CAPS to mixed case</label><input type="checkbox" id="opt-mixedcase"></div>
+    <div class="substep" id="mixedcase-hint" style="display:none;color:var(--warn)">This file looks like it's written in ALL CAPS — check the box above to convert dialogue to mixed case (known character names get re-capitalized properly).</div>
+    <div class="opt"><label>Flag captions crossing a shot change</label><input type="checkbox" id="opt-shotchange"></div>
+    <div class="substep">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
+    <button class="btn" id="btn-run" disabled style="margin-top:8px">Run full analysis</button>
+  </div>
+
+  <div class="collapsehead" data-toggle="hotkeypanel">▸ HOTKEYS</div>
+  <div class="panelbox" id="hotkeypanel">
+    <div class="oh info">Click a key box, then press the key you want — it rebinds immediately. Ctrl/Cmd+F (find) and Escape are fixed.</div>
+    <div id="hotkeyList"></div>
+    <button class="pbtn small" id="hotkey-reset" style="margin-top:8px">Reset to defaults</button>
+  </div>
+
+  <div class="stack">
+    <div class="progress" id="progress"></div>
+    <div class="opt"><label>File name</label><input type="text" id="opt-exportname" value="corrected" style="width:120px"></div>
+    <div class="opt"><label>Export as</label><select id="opt-exportformat"><option value="vtt">.vtt</option><option value="srt">.srt</option></select></div>
+    <button class="btn ghost" id="btn-export" disabled>Export corrected file</button>
+    <button class="btn quiet" id="btn-export-csv" disabled>Export issues report .csv</button>
+  </div>
+</aside>
+
+<div id="waiver-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center">
+  <div style="background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:22px 24px;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <h3 style="font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--warn);margin-bottom:10px">Unresolved complex issue(s) — waiver required</h3>
+    <div class="plabel" id="waiver-message" style="margin-bottom:12px"></div>
+    <textarea id="waiver-text" placeholder="Briefly explain why it's OK to export with these unresolved (e.g. escalated to Compliance, awaiting source clarification)…" style="width:100%;min-height:80px;background:var(--panel);border:1px solid var(--line2);border-radius:6px;color:var(--white);padding:8px;font-family:var(--sans);font-size:12.5px;resize:vertical"></textarea>
+    <div class="prow" style="margin-top:12px;justify-content:flex-end">
+      <button class="pbtn small" id="waiver-cancel">Cancel</button>
+      <button class="pbtn small primary" id="waiver-confirm">Export with waiver</button>
+    </div>
+  </div>
+</div>
+
+<main class="main">
+<div class="mainLeft">
+  <div class="ctxbox" id="ctxbox"></div>
+
+  <div class="videopane" id="videopane">
+    <div class="videowrap" id="videowrap">
+      <video id="video" controls preload="metadata" muted playsinline></video>
+      <div class="safearea" id="safearea"><span class="sa-pct sa-top">10%</span><span class="sa-pct sa-bottom">10%</span><span class="sa-pct sa-left">10%</span><span class="sa-pct sa-right">10%</span></div>
+      <div class="modebadge" id="modebadge">MODE: WHAT'S LEFT</div>
+      <div class="capoverlay pos-bottom" id="capoverlay" style="display:none"><span id="captext"></span></div>
+    </div>
+    <div class="tcbar" id="tcbar" style="display:none">
+      <div class="tcbar-track" id="tcbarTrack">
+        <div class="tcbar-fill" id="tcbarFill"></div>
+        <div class="tcbar-marks" id="tcbarMarks"></div>
+        <div class="tcbar-playhead" id="tcbarPlayhead"></div>
+      </div>
+      <div class="tcbar-controls">
+        <button class="pbtn small" id="skip-back10">⏪ 10s</button>
+        <span class="plabel" id="tcbar-pos">00:00:00.000</span>
+        <button class="pbtn small" id="skip-fwd10">10s ⏩</button>
+        <input type="text" id="tc-jump" placeholder="HH:MM:SS.mmm">
+        <button class="pbtn small" id="tc-jump-go">Jump</button>
+        <span style="flex:1"></span>
+        <button class="pbtn small" id="nav-prev">◀ Prev flagged</button>
+        <span class="plabel" id="nav-pos">–/–</span>
+        <button class="pbtn small" id="nav-next">Next flagged ▶</button>
+      </div>
+    </div>
+    <div class="statusbar" id="statusbar-under-video" style="margin-top:8px">
+      <span>CUES<b id="st-cues">–</b></span>
+      <span class="s-y">AUTO-FIXED<b id="st-fixed">–</b></span>
+      <span class="s-err">NEEDS REVIEW<b id="st-flag">–</b></span>
+      <span class="s-ok"><span style="color:var(--gray)">VALIDATED</span><b id="st-validated">–</b></span>
+    </div>
+  </div>
+
+  <div class="collapsehead" data-toggle="zonepanel">▸ OST ZONES</div>
+  <div class="panelbox" id="zonepanel">
+    <div class="oh">OST zones — captions in a zone move to the opposite side of the frame</div>
+    <div class="prow">
+      <select id="ost-zone"><option value="bottom">Text at BOTTOM</option><option value="top">Text at TOP</option></select>
+      <button class="pbtn" id="ost-mark">⦿ Mark in at playhead</button>
+      <span class="plabel">or</span>
+      <input type="number" id="ost-in" placeholder="in s" step="0.1" min="0">
+      <input type="number" id="ost-out" placeholder="out s" step="0.1" min="0">
+      <button class="pbtn" id="ost-add">Add manual zone</button>
+    </div>
+    <div class="zonelist" id="zonelist"></div>
+  </div>
+
+  <div class="collapsehead" data-toggle="clusterpanel">▸ VOICE-BASED SPEAKER LABELS</div>
+  <div class="panelbox" id="clusterpanel">
+    <div class="oh info">Cues with no speaker ID are grouped by rough voice similarity (pitch + timbre). This is an acoustic estimate, not verified voice-print recognition — check before trusting a grouping. Rename a label once and apply it everywhere that label was used.</div>
+    <div id="clusterlist"></div>
+  </div>
+
+  <div class="collapsehead" data-toggle="syncpanel">▸ SYNC</div>
+  <div class="panelbox" id="syncpanel">
+    <div class="oh info">If the "captions may be running early/late" finding shows up below, use these to preview an offset live against the video, then bake it in once it looks right.</div>
+    <div class="prow">
+      <button class="pbtn small" id="sync-back1">−1s</button>
+      <button class="pbtn small" id="sync-back-half">−0.5s</button>
+      <button class="pbtn small" id="sync-back-tenth">−0.1s</button>
+      <span class="plabel" id="sync-offset-display">offset: 0.00s</span>
+      <button class="pbtn small" id="sync-fwd-tenth">+0.1s</button>
+      <button class="pbtn small" id="sync-fwd-half">+0.5s</button>
+      <button class="pbtn small" id="sync-fwd1">+1s</button>
+    </div>
+    <div class="prow" style="margin-top:6px">
+      <button class="pbtn small" id="sync-reset">Reset preview to 0</button>
+      <button class="pbtn small primary" id="sync-apply">Bake this offset into every timecode</button>
+      <button class="pbtn small" id="sync-zero">Subtitle zero (first event → 00:00:00.000)</button>
+    </div>
+    <div class="oh info" style="margin-top:10px">Stretch/Squeeze — for when the whole file needs to be conformed to a re-cut or slightly different-duration master, not just shifted. Give two points that should land at new times; everything scales proportionally between and around them.</div>
+    <div class="prow">
+      <span class="plabel">Point A: currently at</span>
+      <input type="text" id="stretch-a-old" placeholder="00:00:05.000" style="width:100px">
+      <span class="plabel">→ should be</span>
+      <input type="text" id="stretch-a-new" placeholder="00:00:05.000" style="width:100px">
+    </div>
+    <div class="prow" style="margin-top:6px">
+      <span class="plabel">Point B: currently at</span>
+      <input type="text" id="stretch-b-old" placeholder="00:20:00.000" style="width:100px">
+      <span class="plabel">→ should be</span>
+      <input type="text" id="stretch-b-new" placeholder="00:20:03.000" style="width:100px">
+    </div>
+    <div class="prow" style="margin-top:6px">
+      <button class="pbtn small primary" id="stretch-apply">Apply stretch/squeeze to every timecode</button>
+    </div>
+  </div>
+
+  <div class="collapsehead" data-toggle="castpanel">▸ CHARACTER SEARCH</div>
+  <div class="panelbox" id="castpanel">
+    <div class="oh info">Searches free public sources for this show/movie's characters and adds every name found straight into the speaker ID pool — no clicking through, no manual typing. If your network blocks these fetches, the two link buttons below are a manual fallback.</div>
+    <div class="prow">
+      <input type="text" class="wide" id="cast-series" placeholder="Series / movie name">
+      <input type="number" id="cast-season" placeholder="Season" style="width:64px">
+      <input type="number" id="cast-episode" placeholder="Ep #" style="width:64px">
+      <button class="pbtn small primary" id="cast-search">Search &amp; add to speaker pool</button>
+    </div>
+    <div class="prow" style="margin-top:8px">
+      <input type="text" class="wide" id="cast-tmdb-key" placeholder="Optional: TMDb key, free, for episode-level cast">
+      <input type="text" class="wide" id="cast-omdb-key" placeholder="Optional: OMDb key, free, instant email signup">
+    </div>
+    <div class="plabel" id="cast-status" style="margin-top:8px"></div>
+    <div class="chiprow" id="cast-chips"></div>
+    <div class="prow" style="margin-top:10px">
+      <button class="pbtn small" id="cast-diag">Test network access</button>
+      <button class="pbtn small" id="cast-open-wikipedia">Open in Wikipedia →</button>
+      <button class="pbtn small" id="cast-open-imdb">Open in IMDb →</button>
+    </div>
+  </div>
+
+  <div class="collapsehead" data-toggle="scriptpanel">▸ SCRIPT &amp; TRANSCRIPT REFERENCE</div>
+  <div class="panelbox" id="scriptpanel">
+    <div class="oh info">Opens a real search on a specific reference site in a new tab — no fetch, no scraping, nothing imported automatically. Same reason as Character Search: cross-site fetches like this get blocked by browser CORS policy anyway, and there's no way for this tool to verify the rights status or accuracy of anything found this way. Use these to sanity-check a name, a line, or a scene against what's publicly out there — never as a substitute for QC on the actual delivered file.</div>
+    <div class="prow">
+      <input type="text" class="wide" id="script-series" placeholder="Series / movie name">
+      <input type="number" id="script-season" placeholder="Season" style="width:64px">
+      <input type="number" id="script-episode" placeholder="Ep #" style="width:64px">
+    </div>
+    <div class="prow" style="margin-top:8px;flex-wrap:wrap">
+      <button class="pbtn small" id="script-open-simplyscripts">SimplyScripts →</button>
+      <button class="pbtn small" id="script-open-imsdb">IMSDb →</button>
+      <button class="pbtn small" id="script-open-foreverdreaming">Forever Dreaming →</button>
+      <button class="pbtn small" id="script-open-subslikescript">Subslikescript →</button>
+      <button class="pbtn small" id="script-open-8flix">8FLiX →</button>
+      <button class="pbtn small" id="script-open-web">General web search →</button>
+    </div>
+    <div class="plabel" style="margin-top:8px;color:var(--faint)">SimplyScripts / IMSDb host screenplay drafts (often shooting scripts, not final-air dialogue). Forever Dreaming / Subslikescript / 8FLiX are episode dialogue transcripts, closer to what actually aired. None of these are guaranteed accurate or officially licensed — verify, don't assume.</div>
+  </div>
+
+  <div class="collapsehead" data-toggle="comparepanel">▸ TRANSCRIPT COMPARE</div>
+  <div class="panelbox" id="comparepanel">
+    <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt) and flags captions whose text diverges significantly from what the reference has for the same timespan. This flags a DISAGREEMENT, not a confirmed error — the reference transcript can itself be wrong (ASR mishears things constantly), especially on names. Treat every flag as "these two disagree, a human should check," never as "the caption is wrong."</div>
+    <div class="prow">
+      <label class="drop" id="drop-reftranscript" style="flex:1">
+        <span class="dk">FILE</span>
+        <span><span>Reference transcript</span><span class="ds" id="reftranscript-name">.vtt / .srt with real timecodes</span></span>
+        <input type="file" id="file-reftranscript" accept=".vtt,.srt">
+      </label>
+    </div>
+    <div class="opt"><label>Enable this check</label><input type="checkbox" id="opt-compare-enabled"></div>
+    <div class="opt"><label>Flag sensitivity (lower = stricter)</label><input type="number" id="opt-compare-threshold" value="0.5" step="0.05" min="0.1" max="0.9" style="width:70px"></div>
+    <div class="plabel" id="compare-status" style="margin-top:6px"></div>
+  </div>
+
+  <div class="collapsehead" data-toggle="charlibpanel">▸ CHARACTER LIBRARY (BETA)</div>
+  <div class="panelbox" id="charlibpanel">
+    <div class="oh info">A per-show library of voice and face reference data, built up as you confirm names — export it, share the file, and anyone importing it gets automatic name suggestions on the next episode instead of starting from scratch. This is NOT a live shared database — it's a plain exportable/importable file, so "sharing" means passing the file around (shared drive, etc.), not automatic syncing between people. Face matching uses a new model (face-api.js) that, like every AI feature in this suite, has not been verified end-to-end from this side — test it before trusting it.</div>
+    <div class="prow">
+      <input type="text" class="wide" id="charlib-show" placeholder="Show name (library is per-show)">
+    </div>
+    <div class="prow" style="margin-top:8px">
+      <label class="drop" id="drop-charlib" style="flex:1">
+        <span class="dk">FILE</span>
+        <span><span>Import library</span><span class="ds" id="charlib-import-name">.json exported from this tool</span></span>
+        <input type="file" id="file-charlib" accept=".json">
+      </label>
+      <button class="pbtn small primary" id="charlib-export">Export library →</button>
+    </div>
+    <div class="plabel" style="margin-top:10px;color:var(--info)">Voice entries (auto-added when you Apply a cluster name above)</div>
+    <div id="charlib-voices" style="margin-top:4px"></div>
+    <div class="plabel" style="margin-top:10px;color:var(--info)">Face entries</div>
+    <div id="charlib-faces" style="margin-top:4px"></div>
+    <div class="prow" style="margin-top:10px">
+      <input type="text" placeholder="Character name" id="charlib-face-name" style="width:160px">
+      <button class="pbtn small" id="charlib-face-capture">Capture face from current video frame</button>
+    </div>
+    <div class="prow" style="margin-top:8px">
+      <button class="pbtn small" id="charlib-face-scan">Scan unlabeled cues against face library</button>
+    </div>
+    <div class="plabel" id="charlib-status" style="margin-top:8px"></div>
+  </div>
+
+  <div class="collapsehead" data-toggle="dictpanel">▸ PERSONAL DICTIONARY</div>
+  <div class="panelbox" id="dictpanel">
+    <div class="oh info">A list of proper nouns (character names, places, show-specific terms) that get protected from the ALL CAPS → mixed case conversion, so they come out correctly capitalized instead of just title-cased. Export/import as a plain text file — one term per line — to reuse across episodes of the same show.</div>
+    <div class="prow">
+      <input type="text" class="wide" id="dict-add-term" placeholder="Add a term (e.g. a character or place name)">
+      <button class="pbtn small primary" id="dict-add-btn">Add</button>
+    </div>
+    <div class="chiprow" id="dict-chips" style="margin-top:8px"></div>
+    <div class="prow" style="margin-top:10px">
+      <label class="drop" id="drop-dict" style="flex:1">
+        <span class="dk">FILE</span>
+        <span><span>Import dictionary</span><span class="ds" id="dict-import-name">.txt, one term per line</span></span>
+        <input type="file" id="file-dict" accept=".txt">
+      </label>
+      <button class="pbtn small" id="dict-export">Export dictionary →</button>
+    </div>
+  </div>
+
+  <div class="collapsehead" data-toggle="shortformspanel">▸ SHORT FORMS &amp; AUTOCORRECT</div>
+  <div class="panelbox" id="shortformspanel">
+    <div class="oh info">Whole-word find-and-replace, applied automatically during "Run full analysis" and live while editing a row. Every occurrence of the short form gets expanded — this isn't a one-time trigger, so don't add a term you sometimes want to appear literally.</div>
+    <div class="prow">
+      <input type="text" id="shortform-short" placeholder="Short form (e.g. w/)" style="width:120px">
+      <span class="plabel">→</span>
+      <input type="text" class="wide" id="shortform-long" placeholder="Expands to (e.g. with)">
+      <button class="pbtn small primary" id="shortform-add-btn">Add</button>
+    </div>
+    <div id="shortform-list" style="margin-top:8px"></div>
+  </div>
+
+  <div class="summary" id="fixSummary"></div>
+</div>
+
+<div class="mainRight">
+  <div class="substep" id="hotkeyHint" style="display:none;margin-bottom:6px">⌨ Hotkeys are active — see Settings → Hotkeys to view or rebind them.</div>
+
+  <div class="prow" id="findBar" style="display:none;margin-bottom:12px;border:1px solid var(--line2);border-radius:6px;padding:8px 10px">
+    <span class="plabel">🔎 Find</span>
+    <input type="text" class="wide" id="find-input" placeholder="word, name, anything… (Ctrl+F)">
+    <button class="pbtn small" id="find-prev">◀</button>
+    <button class="pbtn small" id="find-next">▶</button>
+    <span class="plabel" id="find-count">0/0</span>
+    <button class="pbtn small" id="find-close">✕ Close</button>
+  </div>
+
+  <div class="mainhead" id="mainhead" style="display:none">
+    <h2 id="mainheadTitle">What's left</h2>
+    <div class="sub" id="mainheadSub"></div>
+    <span style="flex:1"></span>
+    <div class="filters" style="display:flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden">
+      <button class="pbtn small" id="view-issues" style="border:0;border-radius:0;background:var(--yellow);color:#fff">What's left</button>
+      <button class="pbtn small" id="view-all" style="border:0;border-radius:0">All events</button>
+    </div>
+    <button class="pbtn small" id="find-open">🔎 Find</button>
+  </div>
+  <div class="chiprow" id="issueFilterBar" style="margin-bottom:14px"></div>
+  <div class="prow" id="bulkBar" style="display:none;margin-bottom:14px;border:1px solid var(--info);border-radius:6px;padding:10px 12px;background:rgba(93,184,255,.05);flex-direction:column;align-items:stretch;gap:8px">
+    <div class="prow">
+      <span class="plabel" id="bulkCount" style="color:var(--info)"></span>
+      <button class="pbtn small" id="bulk-select-all">Select all shown</button>
+      <button class="pbtn small" id="bulk-clear">Clear selection</button>
+      <span style="flex:1"></span>
+      <button class="pbtn small" id="bulk-top">Move selected to TOP</button>
+      <button class="pbtn small" id="bulk-bottom">Move selected to BOTTOM</button>
+      <button class="pbtn small" id="bulk-apply-suggested">Apply each row's own OST suggestion</button>
+      <button class="pbtn small validate" id="bulk-validate">✓ Validate selected</button>
+    </div>
+    <div class="prow">
+      <span class="plabel">Same speaker in all selected?</span>
+      <select id="bulk-spk-select"><option value="">— choose speaker —</option><option value="__new__">+ New name…</option></select>
+      <input type="text" placeholder="new name" id="bulk-spk-new" style="display:none">
+      <button class="pbtn small primary" id="bulk-spk-apply">Apply speaker ID to all selected</button>
+    </div>
+  </div>
+
+  <div class="empty" id="empty">
+    <div class="big">⬛ → ⬆</div>
+    <p>Load the <b>.vtt</b> (and optionally the video proxy + metadata JSON), then run the analysis. Deterministic issues get fixed silently. Anything needing a human — stacking, speaker ID, on-screen text — shows up below, editable in place: fix the text, move it top/bottom, or set the speaker, right here.</p>
+  </div>
+
+  <div class="checklist" id="checklist"></div>
+</div>
+</main>
+</div>
+
+<footer>LEGACI · TEXT + VIDEO/AUDIO ANALYSIS RUNS LOCALLY IN BROWSER · NO NETWORK CALLS</footer>
+
+<script>
+/* =========================================================
+   LEGACI ANALYTICS — structure/behavior only, never content.
+   See index.html / README for the full explanation. Fully self-contained,
+   safe to sit at the top of the script before anything else is declared.
+========================================================= */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('legaci', 'page_view', '');
+
+function expandAndScrollTo(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  if(el.classList.contains('panelbox') && !el.classList.contains('show')){
+    el.classList.add('show');
+    const head=document.querySelector('.collapsehead[data-toggle="'+id+'"]');
+    if(head)head.textContent='▾ '+head.textContent.slice(2);
+    syncStickyOffsets();
+  }
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+document.querySelectorAll('.menuwrap > .menuitem').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const wrap=btn.closest('.menuwrap');
+    const wasOpen=wrap.classList.contains('open');
+    document.querySelectorAll('.menuwrap.open').forEach(w=>w.classList.remove('open'));
+    if(!wasOpen)wrap.classList.add('open');
+  });
+});
+document.addEventListener('click',()=>{ document.querySelectorAll('.menuwrap.open').forEach(w=>w.classList.remove('open')); });
+document.querySelectorAll('.menudrop button[data-act]').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    document.querySelectorAll('.menuwrap.open').forEach(w=>w.classList.remove('open'));
+    const act=btn.dataset.act;
+    if(act==='jump')expandAndScrollTo(btn.dataset.target);
+    else if(act==='load-vtt')document.getElementById('file-vtt').click();
+    else if(act==='load-video')document.getElementById('file-video').click();
+    else if(act==='load-json')document.getElementById('file-json').click();
+    else if(act==='export-file')document.getElementById('btn-export').click();
+    else if(act==='export-csv')document.getElementById('btn-export-csv').click();
+    else if(act==='undo')undo();
+    else if(act==='sync-zero')document.getElementById('sync-zero').click();
+    else if(act==='focus-jump'){ expandAndScrollTo('tcbar'); document.getElementById('tc-jump').focus(); }
+    else if(act==='view-issues'){ if(!S.cues.length){setProg('Run the analysis first.',true);return;} setViewMode('issues'); render(); document.getElementById('mainhead').scrollIntoView({behavior:'smooth',block:'center'}); }
+    else if(act==='view-all'){ if(!S.cues.length){setProg('Run the analysis first.',true);return;} setViewMode('all'); render(); document.getElementById('mainhead').scrollIntoView({behavior:'smooth',block:'center'}); }
+    else if(act==='find')openFindBar();
+  });
+});
+(function(){
+  const d=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  document.getElementById('menu-reviewmode').textContent=
+    'REVIEW MODE · '+pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear()+'-'+pad(d.getHours())+':'+pad(d.getMinutes());
+})();
+
+/* =========================================================
+   STICKY LAYOUT — keep header + the whole control pane pinned
+========================================================= */
+function syncStickyOffsets(){
+  const h=document.querySelector('header');
+  const mb=document.querySelector('.menubar');
+  mb.style.top=h.offsetHeight+'px';
+  document.getElementById('videopane').style.top=(h.offsetHeight+mb.offsetHeight)+'px';
+}
+window.addEventListener('resize',syncStickyOffsets);
+syncStickyOffsets();
+
+document.querySelectorAll('.collapsehead').forEach(head=>{
+  head.addEventListener('click',()=>{
+    const panel=document.getElementById(head.dataset.toggle);
+    const collapsed=panel.classList.toggle('show')===false;
+    head.textContent=(collapsed?'▸':'▾')+' '+head.textContent.slice(2);
+    syncStickyOffsets();
+  });
+});
+
+/* =========================================================
+   STATE
+========================================================= */
+const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
+  ost:[],ostPending:null,detected:{},offset:0,scanning:false,
+  meta:null,kidvid:false,speakerFlags:{},voiceFeatures:{},speakerClusters:{},clusterNames:{},fixCounts:null,
+  validated:new Set(),everSeen:new Set(),speakerPool:[],issueFilter:'all',currentVisible:[],selectedRows:new Set(),
+  viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],playBoundEnd:null,
+  keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v'},
+  refTranscript:null,
+  charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[]};
+const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row'};
+
+/* =========================================================
+   VTT PARSE / SERIALIZE
+========================================================= */
+function parseTime(t){
+  const m=t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
+  if(!m)return null;
+  return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
+}
+function fmtTime(s){
+  const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=Math.floor(s%60),
+        ms=Math.round((s-Math.floor(s))*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+'.'+String(ms).padStart(3,'0');
+}
+function parseVTT(text){
+  const cues=[];
+  let skipped=0, flipped=0;
+  text=text.replace(/^\uFEFF/,'');
+  for(const b of text.split(/\r?\n\r?\n+/)){
+    const lines=b.split(/\r?\n/).filter(l=>l!=='');
+    if(!lines.length)continue;
+    let i=0;
+    if(/^WEBVTT|^NOTE|^STYLE/.test(lines[0]))continue;
+    if(!lines[i].includes('-->'))i++;
+    if(i>=lines.length||!lines[i].includes('-->')){ if(i<lines.length)skipped++; continue; }
+    const[tpart,...rest]=lines[i].split('-->');
+    const endTok=rest.join('-->').trim().split(/\s+/);
+    let start=parseTime(tpart),end=parseTime(endTok[0]);
+    if(start==null||end==null){ skipped++; continue; }
+    if(end<start){ const tmp=start; start=end; end=tmp; flipped++; }
+    cues.push({start,end,settings:endTok.slice(1).join(' '),origText:lines.slice(i+1).join('\n')});
+  }
+  cues.sort((a,b)=>a.start-b.start);
+  cues._skipped=skipped; cues._flipped=flipped;
+  return cues;
+}
+document.getElementById('file-reftranscript').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const cues=parseVTT(reader.result).map(c=>({start:c.start,end:c.end,text:(c.origText||'').replace(/<[^>]+>/g,' ')}));
+    S.refTranscript=cues;
+    document.getElementById('drop-reftranscript').classList.add('loaded');
+    document.getElementById('reftranscript-name').textContent=f.name+' — '+cues.length+' segment(s)';
+    document.getElementById('compare-status').textContent='Loaded. Check "Enable this check" and re-run analysis to compare.';
+  };
+  reader.readAsText(f);
+});
+// Word-level edit distance (words as the unit, not characters) — a missing word is a
+// deletion, a misheard/mistyped word is a substitution. Similarity is normalized so it
+// stays comparable across short and long lines.
+function wordDiffSimilarity(a,b){
+  const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9' ]/g,' ').split(/\s+/).filter(Boolean);
+  const wa=norm(a), wb=norm(b);
+  if(!wa.length && !wb.length)return 1;
+  if(!wa.length || !wb.length)return 0;
+  const dp=Array.from({length:wa.length+1},()=>new Array(wb.length+1).fill(0));
+  for(let i=0;i<=wa.length;i++)dp[i][0]=i;
+  for(let j=0;j<=wb.length;j++)dp[0][j]=j;
+  for(let i=1;i<=wa.length;i++){
+    for(let j=1;j<=wb.length;j++){
+      if(wa[i-1]===wb[j-1])dp[i][j]=dp[i-1][j-1];
+      else dp[i][j]=1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+    }
+  }
+  const dist=dp[wa.length][wb.length];
+  return 1-(dist/Math.max(wa.length,wb.length));
+}
+function referenceTextForWindow(start,end){
+  if(!S.refTranscript)return '';
+  return S.refTranscript.filter(s=>s.end>start && s.start<end).map(s=>s.text.trim()).join(' ').trim();
+}
+function serializeVTT(cues){
+  let out='WEBVTT\nNOTE Generated by Legaci\n\n';
+  cues.forEach(c=>{out+=fmtTime(c.start)+' --> '+fmtTime(c.end)+(c.settings?' '+c.settings:'')+'\n'+c.text+'\n\n';});
+  return out;
+}
+function fmtTimeSRT(s){ return fmtTime(s).replace('.',','); }
+function serializeSRT(cues){
+  // SRT has no standard way to carry align/position — that information is dropped on export.
+  let out='';
+  cues.forEach((c,i)=>{out+=(i+1)+'\n'+fmtTimeSRT(c.start)+' --> '+fmtTimeSRT(c.end)+'\n'+c.text+'\n\n';});
+  return out.trim()+'\n';
+}
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* =========================================================
+   JSON METADATA INGEST
+========================================================= */
+function ingestMetadata(json){
+  try{
+    const rec=json.data&&json.data[0]?json.data[0]:json;
+    const series=rec.series||{};
+    const ep=(rec.episodes&&rec.episodes[0])||{};
+    S.meta={
+      seriesName:series.name||series.displayName||null,
+      season:ep.season!=null?ep.season:series.season,
+      episodeNumber:ep.number,
+      episodeName:ep.name,
+      tags:[...(series.tags||[]),...(ep.tags||[])],
+    };
+    S.kidvid=/kid|preschool|nick jr|family/i.test((S.meta.tags||[]).join(' '));
+    if(S.kidvid)document.getElementById('opt-kidvid').checked=true;
+    renderCtx();
+    document.getElementById('drop-json').classList.add('loaded');
+    setProg('Metadata loaded — '+(S.meta.seriesName||'untitled')+
+      (S.meta.season!=null?' S'+S.meta.season+'E'+(S.meta.episodeNumber||'?'):'')+'.');
+  }catch(err){
+    setProg('Could not parse metadata JSON — expected the Pluto ingest schema (series/episodes/clips). '+err.message,true);
+  }
+}
+function renderCtx(){
+  const box=document.getElementById('ctxbox');
+  if(!S.meta){box.classList.remove('show');return;}
+  box.classList.add('show');
+  box.innerHTML='<b>'+esc(S.meta.seriesName||'—')+'</b>'+
+    (S.meta.season!=null?' · S'+S.meta.season+'E'+(S.meta.episodeNumber||'?')+' "'+esc(S.meta.episodeName||'')+'"':'')+
+    (S.kidvid?' <span style="color:var(--warn)">— kids content, CTA/link check active</span>':'');
+  if(S.meta.seriesName)document.getElementById('cast-series').value=S.meta.seriesName;
+  if(S.meta.season!=null)document.getElementById('cast-season').value=S.meta.season;
+  if(S.meta.episodeNumber!=null)document.getElementById('cast-episode').value=S.meta.episodeNumber;
+  if(S.meta.seriesName)document.getElementById('script-series').value=S.meta.seriesName;
+  if(S.meta.season!=null)document.getElementById('script-season').value=S.meta.season;
+  if(S.meta.episodeNumber!=null)document.getElementById('script-episode').value=S.meta.episodeNumber;
+  if(S.meta.seriesName && !document.getElementById('charlib-show').value)document.getElementById('charlib-show').value=S.meta.seriesName;
+}
+// Free, no-key structured lookup: Wikidata's "cast member" (P161) / "character role" (P453)
+// statements, queried straight from their public SPARQL endpoint.
+async function lookupWikidata(name){
+  const query='SELECT DISTINCT ?characterLabel ?actorLabel WHERE {\n'+
+    '  ?series rdfs:label "'+name.replace(/"/g,'')+'"@en.\n'+
+    '  ?series p:P161 ?statement.\n'+
+    '  ?statement ps:P161 ?actor.\n'+
+    '  OPTIONAL { ?statement pq:P453 ?character. }\n'+
+    '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }\n'+
+    '} LIMIT 40';
+  const url='https://query.wikidata.org/sparql?format=json&query='+encodeURIComponent(query);
+  const res=await fetch(url,{headers:{'Accept':'application/sparql-results+json'}});
+  if(!res.ok)throw new Error('Wikidata query failed (HTTP '+res.status+')');
+  const json=await res.json();
+  return json.results.bindings.map(b=>b.characterLabel?b.characterLabel.value:(b.actorLabel?b.actorLabel.value:null)).filter(Boolean);
+}
+// Free, no-key: Wikipedia's MediaWiki API with origin=* (its documented CORS mechanism,
+// independent of Wikidata's service) — pulls the "starring" field from the page infobox.
+async function lookupWikipedia(name){
+  const searchUrl='https://en.wikipedia.org/w/api.php?action=opensearch&search='+encodeURIComponent(name)+'&limit=1&namespace=0&format=json&origin=*';
+  const searchRes=await fetch(searchUrl);
+  if(!searchRes.ok)throw new Error('Wikipedia search failed (HTTP '+searchRes.status+')');
+  const searchJson=await searchRes.json();
+  const title=searchJson[1]&&searchJson[1][0];
+  if(!title)throw new Error('no Wikipedia page found for "'+name+'"');
+  const parseUrl='https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&rvslots=main&titles='+encodeURIComponent(title)+'&format=json&origin=*';
+  const parseRes=await fetch(parseUrl);
+  if(!parseRes.ok)throw new Error('Wikipedia page fetch failed (HTTP '+parseRes.status+')');
+  const parseJson=await parseRes.json();
+  const pages=parseJson.query&&parseJson.query.pages;
+  const page=pages&&Object.values(pages)[0];
+  const wikitext=page&&page.revisions&&page.revisions[0].slots.main['*'];
+  if(!wikitext)throw new Error('page had no readable content');
+  const m=wikitext.match(/\|\s*starring\s*=([^\n]*(?:\n(?!\s*\|)[^\n]*)*)/i);
+  if(!m)throw new Error('page has no "starring" field — may not be a TV/film infobox');
+  return m[1].split(/\n|<br\s*\/?>|\{\{[^}]*\}\}/).map(s=>s.replace(/\[\[|\]\]|\{\{|\}\}|'{2,}/g,'').replace(/\|.*$/,'').trim()).filter(Boolean);
+}
+async function lookupTMDb(name,season,ep,key){
+  const searchRes=await fetch('https://api.themoviedb.org/3/search/tv?api_key='+encodeURIComponent(key)+'&query='+encodeURIComponent(name));
+  if(!searchRes.ok)throw new Error('TMDb search failed (HTTP '+searchRes.status+')');
+  const searchJson=await searchRes.json();
+  const show=searchJson.results&&searchJson.results[0];
+  if(!show)throw new Error('no TMDb match for "'+name+'"');
+  if(!season||!ep)return [];
+  const credRes=await fetch('https://api.themoviedb.org/3/tv/'+show.id+'/season/'+season+'/episode/'+ep+'/credits?api_key='+encodeURIComponent(key));
+  if(!credRes.ok)throw new Error('TMDb credits failed (HTTP '+credRes.status+')');
+  const credJson=await credRes.json();
+  return [...(credJson.cast||[]),...(credJson.guest_stars||[])].map(p=>p.character||p.name).filter(Boolean);
+}
+async function lookupOMDb(name,key){
+  const res=await fetch('https://www.omdbapi.com/?apikey='+encodeURIComponent(key)+'&t='+encodeURIComponent(name));
+  if(!res.ok)throw new Error('OMDb request failed (HTTP '+res.status+')');
+  const json=await res.json();
+  if(json.Response==='False')throw new Error(json.Error||'no OMDb match');
+  return (json.Actors||'').split(',').map(s=>s.trim()).filter(Boolean);
+}
+document.getElementById('cast-search').addEventListener('click',async()=>{
+  const name=(document.getElementById('cast-series').value||'').trim();
+  const season=document.getElementById('cast-season').value;
+  const ep=document.getElementById('cast-episode').value;
+  const tmdbKey=document.getElementById('cast-tmdb-key').value.trim();
+  const omdbKey=document.getElementById('cast-omdb-key').value.trim();
+  const statusEl=document.getElementById('cast-status'), chipsEl=document.getElementById('cast-chips');
+  if(!name){statusEl.textContent='Enter a series or movie name first.';return;}
+  statusEl.textContent='Searching…'; chipsEl.innerHTML='';
+  const found=[]; const notes=[];
+  try{ const r=await lookupWikidata(name); r.forEach(n=>found.push({n,src:'wikidata'})); notes.push('Wikidata: '+r.length+' found'); }
+  catch(err){ notes.push('Wikidata failed — '+err.message); }
+  try{ const r=await lookupWikipedia(name); r.forEach(n=>found.push({n,src:'wikipedia'})); notes.push('Wikipedia: '+r.length+' found'); }
+  catch(err){ notes.push('Wikipedia failed — '+err.message); }
+  if(tmdbKey){
+    try{ const r=await lookupTMDb(name,season,ep,tmdbKey); r.forEach(n=>found.push({n,src:'tmdb'})); notes.push('TMDb: '+r.length+' found'); }
+    catch(err){ notes.push('TMDb failed — '+err.message); }
+  }
+  if(omdbKey){
+    try{ const r=await lookupOMDb(name,omdbKey); r.forEach(n=>found.push({n,src:'omdb'})); notes.push('OMDb: '+r.length+' found'); }
+    catch(err){ notes.push('OMDb failed — '+err.message); }
+  }
+  const seen=new Set();
+  const merged=found.filter(x=>{ const k=x.n.toLowerCase(); if(seen.has(k))return false; seen.add(k); return true; });
+  if(!merged.length){
+    statusEl.textContent='No names found from any source. '+notes.join(' · ')+'. Try "Test network access" below, or use the manual links as a fallback.';
+    return;
+  }
+  merged.forEach(({n})=>addToPool(n.toUpperCase()));
+  statusEl.textContent=merged.length+' name(s) added straight to the speaker pool — '+notes.join(' · ')+'. Every row\'s speaker dropdown now includes them.';
+  chipsEl.innerHTML='';
+  merged.forEach(({n,src})=>{
+    const c=document.createElement('span'); c.className='chip';
+    c.innerHTML=esc(n)+' <span class="src">'+src+'</span>';
+    chipsEl.appendChild(c);
+  });
+});
+document.getElementById('cast-diag').addEventListener('click',async()=>{
+  const statusEl=document.getElementById('cast-status');
+  statusEl.textContent='Testing network access with a plain, unrelated CORS-open endpoint…';
+  try{
+    const res=await fetch('https://api.github.com/zen');
+    if(!res.ok)throw new Error('got HTTP '+res.status);
+    const txt=await res.text();
+    statusEl.textContent='✓ Network access works ("'+txt.trim()+'"). If the character search still fails, it\'s likely those specific domains (Wikidata/Wikipedia) rather than a blanket block — copy the exact error above if you want help narrowing it down further.';
+  }catch(err){
+    statusEl.textContent='✗ Even this unrelated request failed: '+err.message+'. Outbound requests are being blocked at the network/browser level — most likely a firewall/proxy or a restricted preview, not a bug in this tool. The manual link buttons below still work since they\'re normal navigation, not a fetch.';
+  }
+});
+document.getElementById('cast-open-wikipedia').addEventListener('click',()=>{
+  const name=(document.getElementById('cast-series').value||'').trim();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  const season=document.getElementById('cast-season').value;
+  const ep=document.getElementById('cast-episode').value;
+  let q=name+' cast characters';
+  if(season)q+=' season '+season;
+  if(ep)q+=' episode '+ep;
+  window.open('https://en.wikipedia.org/w/index.php?search='+encodeURIComponent(q),'_blank');
+});
+document.getElementById('cast-open-imdb').addEventListener('click',()=>{
+  const name=(document.getElementById('cast-series').value||'').trim();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  window.open('https://www.imdb.com/find/?q='+encodeURIComponent(name)+'&s=tt','_blank');
+});
+function scriptRefQuery(){
+  const name=(document.getElementById('script-series').value||'').trim();
+  const season=document.getElementById('script-season').value;
+  const ep=document.getElementById('script-episode').value;
+  return {name, season, ep};
+}
+document.getElementById('script-open-simplyscripts').addEventListener('click',()=>{
+  const {name}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  window.open('https://www.simplyscripts.com/search.html?q='+encodeURIComponent(name),'_blank');
+});
+document.getElementById('script-open-imsdb').addEventListener('click',()=>{
+  const {name}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  window.open('https://www.google.com/search?q='+encodeURIComponent('site:imsdb.com '+name),'_blank');
+});
+document.getElementById('script-open-foreverdreaming').addEventListener('click',()=>{
+  const {name,season,ep}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  let q='site:forever-dreaming.net '+name;
+  if(season&&ep)q+=' '+season+'x'+String(ep).padStart(2,'0');
+  window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank');
+});
+document.getElementById('script-open-subslikescript').addEventListener('click',()=>{
+  const {name,season,ep}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  let q=name;
+  if(season&&ep)q+=' season '+season+' episode '+ep;
+  window.open('https://subslikescript.com/search?q='+encodeURIComponent(q),'_blank');
+});
+document.getElementById('script-open-8flix').addEventListener('click',()=>{
+  const {name,season,ep}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  let q=name;
+  if(season&&ep)q+=' S'+String(season).padStart(2,'0')+'E'+String(ep).padStart(2,'0');
+  window.open('https://8flix.com/pages/search-results?q='+encodeURIComponent(q),'_blank');
+});
+document.getElementById('script-open-web').addEventListener('click',()=>{
+  const {name,season,ep}=scriptRefQuery();
+  if(!name){setProg('Enter a series or movie name first.',true);return;}
+  let q=name+' script transcript';
+  if(season&&ep)q+=' season '+season+' episode '+ep;
+  window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank');
+});
+document.getElementById('file-json').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  document.querySelector('#drop-json .ds').textContent=f.name;
+  const reader=new FileReader();
+  reader.onload=()=>{ try{ingestMetadata(JSON.parse(reader.result));}catch(err){setProg('Invalid JSON file.',true);} };
+  reader.onerror=()=>setProg('Could not read JSON file.',true);
+  reader.readAsText(f);
+});
+
+/* =========================================================
+   FILES
+========================================================= */
+function checkReady(){ document.getElementById('btn-run').disabled=!S.src.length; }
+document.getElementById('file-vtt').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  S.sourceFormat=/\.srt$/i.test(f.name)?'srt':'vtt';
+  document.getElementById('opt-exportformat').value=S.sourceFormat;
+  document.getElementById('opt-exportname').value=f.name.replace(/\.(vtt|srt)$/i,'')+'_corrected';
+  const reader=new FileReader();
+  reader.onload=()=>{
+    S.vttRaw=reader.result;
+    S.src=parseVTT(S.vttRaw);
+    S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0;
+    S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
+    S.validated=new Set(); S.everSeen=new Set(); S.speakerPool=[]; S.rowsByKey={}; S.selectedRows=new Set();
+    S.viewMode='issues'; S.searchMatches=[]; S.searchMatchIdx=0; S.manualOverrides={}; S.annotations={};
+    S.offset=0; updateSyncDisplay();
+    document.getElementById('findBar').style.display='none'; document.getElementById('find-input').value='';
+    document.getElementById('drop-vtt').classList.add('loaded');
+    document.querySelector('#drop-vtt .ds').textContent=f.name+' · '+S.src.length+' cues';
+    if(!S.src.length)setProg('File read, but no cues parsed — is it a valid .vtt/.srt?',true);
+    else{
+      let msg=S.src.length+' cues loaded.';
+      if(S.parseSkipped)msg+=' ⚠ '+S.parseSkipped+' block(s) skipped — missing or unparseable timecodes, not counted anywhere else.';
+      if(S.parseFlipped)msg+=' '+S.parseFlipped+' flipped timecode(s) auto-swapped.';
+      msg+=' Add a video proxy for the video/audio checks, or just run the analysis on text alone.';
+      setProg(msg,!!S.parseSkipped);
+      const letters=S.src.map(c=>c.origText.replace(/<[^>]+>/g,'')).join('').match(/[A-Za-z]/g)||[];
+      const upperFrac=letters.length?letters.filter(ch=>ch===ch.toUpperCase()).length/letters.length:0;
+      document.getElementById('mixedcase-hint').style.display=upperFrac>0.9?'block':'none';
+    }
+    checkReady();
+  };
+  reader.onerror=()=>setProg('Could not read file.',true);
+  reader.readAsText(f);
+});
+document.getElementById('file-video').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(S.videoURL)URL.revokeObjectURL(S.videoURL);
+  S.videoURL=URL.createObjectURL(f);
+  video.src=S.videoURL;
+  scanVideo.src=S.videoURL;
+  document.getElementById('drop-video').classList.add('loaded');
+  document.querySelector('#drop-video .ds').textContent=f.name;
+  document.getElementById('videowrap').classList.add('show');
+  setProg('Video loaded — the next run will include OST + speaker + voice checks, scanned in the background without disturbing this preview.');
+  checkReady();
+});
+
+/* =========================================================
+   STEP 1 TEXT FIXES (deterministic, always runs first)
+========================================================= */
+function wrapLine(line,maxChars){
+  if(line.length<=maxChars)return [line];
+  const words=line.split(' ');
+  const out=[]; let cur='';
+  words.forEach(w=>{
+    if(w.length>maxChars){ if(cur)out.push(cur); out.push(w); cur=''; return; }
+    const test=cur?cur+' '+w:w;
+    if(test.length<=maxChars)cur=test;
+    else { if(cur)out.push(cur); cur=w; }
+  });
+  if(cur)out.push(cur);
+  return out;
+}
+// Hard live cap for manual editing: re-wraps every line to the char limit and caps the
+// whole cue at 3 lines. Anything that would make a 4th line is dropped, not silently
+// allowed — this runs on every keystroke/paste in an editable caption textarea.
+function applyShortForms(text){
+  if(!S.shortForms||!S.shortForms.length)return text;
+  let out=text;
+  S.shortForms.forEach(({short,long})=>{
+    if(!short)return;
+    // (?<![a-zA-Z0-9])...(?![a-zA-Z0-9]) instead of \b — \b only fires on a word/non-word
+    // transition, which silently fails to match a term like "w/" when it's followed by
+    // another non-word character (e.g. a space): found by testing, not assumed.
+    const re=new RegExp('(?<![a-zA-Z0-9])'+short.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![a-zA-Z0-9])','g');
+    out=out.replace(re,long);
+  });
+  return out;
+}
+function enforceCaptionLimits(rawText,maxLen){
+  rawText=applyShortForms(rawText);
+  const wrapped=[];
+  rawText.split('\n').forEach(l=>wrapped.push(...wrapLine(l,maxLen)));
+  const overflow=wrapped.length>3;
+  return {text:(overflow?wrapped.slice(0,3):wrapped).join('\n'), overflow};
+}
+// Insert a manual line break at the cursor — e.g. moving the second half of a sentence to
+// its own line — then re-enforce the char/line caps so it can't produce an illegal event.
+function insertLineBreakAtCursor(text,cursorPos){
+  return text.slice(0,cursorPos)+'\n'+text.slice(cursorPos);
+}
+
+/* =========================================================
+   UNDO — a snapshot is pushed before every mutating action (button
+   clicks, and once per textarea editing session on focus). Ctrl/Cmd+Z
+   restores the last one. Native browser undo still handles in-progress
+   typing inside a focused textarea — this is for everything else:
+   applied speaker IDs, merges, splits, position moves, validations.
+========================================================= */
+const MAX_HISTORY=50;
+function pushHistory(){
+  S.history.push({
+    src:JSON.parse(JSON.stringify(S.src)),
+    cues:JSON.parse(JSON.stringify(S.cues)),
+    validated:new Set(S.validated),
+    annotations:{...S.annotations},
+    manualOverrides:JSON.parse(JSON.stringify(S.manualOverrides)),
+    speakerPool:[...S.speakerPool],
+    selectedRows:new Set(S.selectedRows)
+  });
+  if(S.history.length>MAX_HISTORY)S.history.shift();
+  updateUndoCount();
+}
+function undo(){
+  if(!S.history.length){ setProg('Nothing to undo.',true); return; }
+  const snap=S.history.pop();
+  S.src=snap.src; S.cues=snap.cues; S.validated=snap.validated; S.annotations=snap.annotations;
+  S.manualOverrides=snap.manualOverrides; S.speakerPool=snap.speakerPool; S.selectedRows=snap.selectedRows;
+  buildChecklist(); render(); refreshCaptionOverlay();
+  updateUndoCount();
+  setProg('Undid last change — '+S.history.length+' more undo step(s) available.');
+}
+function updateUndoCount(){
+  const el=document.getElementById('undo-count');
+  if(el)el.textContent=S.history.length?'('+S.history.length+')':'';
+}
+// Live readout like Ooona's grid: per-line char counts + a CPS "budget" (how many more/fewer
+// characters this cue's duration can support) instead of just a bare reading-speed number.
+function captionMeta(text,dur,maxLen,maxCPS){
+  const lines=text.split('\n');
+  const counts=lines.map(l=>l.length);
+  const total=counts.reduce((a,b)=>a+b,0);
+  const cps=total/Math.max(dur,0.01);
+  const budget=Math.floor(maxCPS*Math.max(dur,0.01))-total;
+  return {counts,total,cps,budget,lines:lines.length};
+}
+function renderCaptionMeta(text,dur,maxLen,maxCPS){
+  const m=captionMeta(text,dur,maxLen,maxCPS);
+  const lineStr=m.counts.map(c=>(c>maxLen?'<span style="color:var(--err)">'+c+'</span>':c)+'/'+maxLen).join(' · ');
+  const budgetColor=m.budget<0?'var(--err)':'var(--ok)';
+  return '<span class="plabel">'+m.lines+' line(s): '+lineStr+' · '+m.cps.toFixed(1)+' CPS'+
+    ' <span style="color:'+budgetColor+'">('+(m.budget>=0?'+':'')+m.budget+' char'+(Math.abs(m.budget)===1?'':'s')+')</span></span>';
+}
+// Ooona-style "word to previous/next line": nudges just one word across a line boundary
+// near the cursor, instead of retyping to rebalance a wrap.
+function moveWordBetweenLines(text,cursorPos,direction){
+  const lines=text.split('\n');
+  let idx=0,count=0;
+  for(let i=0;i<lines.length;i++){
+    if(cursorPos<=count+lines[i].length){idx=i;break;}
+    count+=lines[i].length+1; idx=i;
+  }
+  if(direction==='next'){
+    if(idx>=lines.length-1)return null;
+    const words=lines[idx].split(' ').filter(Boolean);
+    if(!words.length)return null;
+    const w=words.pop();
+    lines[idx]=words.join(' ');
+    lines[idx+1]=(w+' '+lines[idx+1]).trim();
+  } else {
+    if(idx<=0)return null;
+    const words=lines[idx].split(' ').filter(Boolean);
+    if(!words.length)return null;
+    const w=words.shift();
+    lines[idx]=words.join(' ');
+    lines[idx-1]=(lines[idx-1]+' '+w).trim();
+  }
+  const cleaned=lines.filter(l=>l.trim()!=='');
+  return (cleaned.length?cleaned:lines).join('\n');
+}
+// Ooona-style "split subtitle": breaks one event into two at the cursor, dividing the
+// original duration proportionally by character share — same math the auto-fix splitter
+// already uses for >3-line events. Like a merge, this changes cue COUNT, so (same as
+// merges) it doesn't survive a fresh "Run full analysis" — only individual text/position edits do.
+function splitCueAtCursor(cueIdx,cursorPos){
+  const cue=S.cues[cueIdx];
+  const text=cue.text;
+  const before=text.slice(0,cursorPos).trim();
+  const after=text.slice(cursorPos).trim();
+  if(!before||!after)return null;
+  const totalChars=text.replace(/\n/g,'').length||1;
+  const beforeChars=before.replace(/\n/g,'').length;
+  const dur=cue.end-cue.start;
+  const splitPoint=cue.start+dur*(beforeChars/totalChars);
+  const cueA={...cue,end:Math.max(cue.start+0.3,Math.min(splitPoint,cue.end-0.1)),text:before};
+  const cueB={...cue,start:cueA.end+0.001,text:after};
+  return [cueA,cueB];
+}
+function autoFixText(rawText,counts){
+  let t=rawText;
+  const before=t;
+  t=t.replace(/&amp;/g,'&');
+  t=t.replace(/<\/?(i|b|u|c|ruby|rt|lang|font|em|strong)\b[^>]*>/gi,'');
+  t=t.replace(/<br\s*\/?>/gi,'\n');
+  t=t.replace(/<v\s*->/gi,'- ');
+  t=t.replace(/<v\s+([^>]*)>/gi,(m,name)=>name.replace(/^[(\[]|[)\]]$/g,'')+': ');
+  t=t.replace(/<\/v>/gi,'');
+  t=t.split('\n').map(l=>l.replace(/^\s*>>\s*/,'- ')).join('\n');
+  // Speaker dashes cannot share a physical line — split a second (or later) dash-marked
+  // segment onto its own line. Only counts a genuine new segment (after . ! ?), matching
+  // the DASH_SAME_LINE detector exactly, so this never touches an incidental mid-sentence hyphen.
+  const beforeDashSplit=t;
+  t=t.split('\n').map(l=>l.replace(/([.!?]\s+)(-\s*\S)/g,'$1\n$2')).join('\n');
+  if(t!==beforeDashSplit)counts.dashLine=(counts.dashLine||0)+1;
+  t=t.split('\n').filter(l=>l.trim()!=='').join('\n');
+  t=t.split('\n').filter(l=>!/^\d+$/.test(l.trim())).join('\n');
+  if(t!==before)counts.tags++;
+  const beforeSpace=t;
+  t=t.split('\n').map(l=>{
+    l=l.replace(/\s+/g,' ').trim();
+    const prot=[];
+    l=l.replace(/\.{3}/g,m=>{prot.push(m);return '\u0000E'+(prot.length-1)+'\u0000';});
+    l=l.replace(/\b(?:[A-Z]\.){2,}/g,m=>{prot.push(m);return '\u0000A'+(prot.length-1)+'\u0000';});
+    l=l.replace(/([.!?])(?=\S)/g,'$1 ');
+    prot.forEach((v,idx)=>{l=l.replace(new RegExp('\u0000[EA]'+idx+'\u0000','g'),v);});
+    return l;
+  }).join('\n');
+  if(t!==beforeSpace)counts.space++;
+  const beforeCase=t;
+  t=t.replace(/([.!?] )([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  if(t!==beforeCase)counts.caseFix++;
+  // redundant terminal punctuation: "Am I first? ." / "Sure!." -> "Am I first?" / "Sure!"
+  // (ellipsis "..." is protected — only a single stray . or , right after ? or ! is stripped)
+  const beforePunct=t;
+  t=t.replace(/([?!])\s*\.(?!\.)/g,'$1');
+  t=t.replace(/([?!])\s*,(?=\s|$)/g,'$1');
+  if(t!==beforePunct)counts.punct=(counts.punct||0)+1;
+  return t;
+}
+function titleCaseWord(w){ return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase(); }
+function convertToMixedCase(text){
+  const knownNames=[...new Set([...(S.speakerPool||[]),...((S.meta&&S.meta.actors)||[]),...(S.personalDictionary||[])])];
+  const m=text.match(HAS_ID);
+  let prefix='', body=text;
+  if(m){ prefix=text.slice(0,m[0].length); body=text.slice(m[0].length); }
+  let out=body.toLowerCase();
+  // Capitalization triggers: start of string, after .!?, OR after a closing bracket/paren
+  // sound cue like "[laughing] " or "(chuckles) " — without that third case, a sentence
+  // starting right after a bracketed cue never got capitalized at all (found by testing
+  // against real ALL-CAPS source files that mix bracket cues with dialogue on one line).
+  out=out.replace(/(^\s*|[.!?]\s+|[\]\)]\s+)([a-z])/g,(mm,p1,p2)=>p1+p2.toUpperCase());
+  out=out.replace(/\bi\b/g,'I').replace(/\bi'/g,"I'");
+  knownNames.forEach(name=>{
+    if(!name)return;
+    const titled=name.split(' ').map(titleCaseWord).join(' ');
+    const re=new RegExp('\\b'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi');
+    out=out.replace(re,titled);
+  });
+  return prefix+out;
+}
+function buildFixedCues(counts){
+  const maxLen=+document.getElementById('opt-len').value;
+  const useMixedCase=document.getElementById('opt-mixedcase').checked;
+  const minDur=1, maxDur=6.99;
+  let out=[];
+  let narratorEstablished=false;
+  S.src.forEach((c,srcIdx)=>{
+    // Track italics + narrator-continuity BEFORE tags get stripped: once a "NARRATOR:"
+    // ID appears, later italicized lines with no ID of their own are assumed to still be
+    // the narrator (per house style) and shouldn't be flagged as missing a speaker ID.
+    const origStripped=c.origText.replace(/<[^>]+>/g,'');
+    const isNarratorId=/^\s*(\(|\[)?\s*narrator\s*(\)|\])?\s*:/i.test(origStripped);
+    const wasItalic=/<i\b[^>]*>/i.test(c.origText);
+    const narratorContext=narratorEstablished && wasItalic;
+    if(isNarratorId)narratorEstablished=true;
+
+    const override=S.manualOverrides[srcIdx];
+    let text, settings, posTag, ostSuggested;
+    if(override){
+      text=override.text;
+      settings=override.settings;
+      posTag=null; ostSuggested=null; // a manual override means the person already decided position
+      if(!text.trim()){ counts.removed++; return; }
+    } else {
+      text=autoFixText(c.origText,counts);
+      if(useMixedCase){ const before=text; text=convertToMixedCase(text); if(text!==before)counts.mixedCase=(counts.mixedCase||0)+1; }
+      if(!text.trim()){ counts.removed++; return; }
+      const autoZone=S.detected[srcIdx]?S.detected[srcIdx].zone:null;
+      const manualHitObj=S.ost.find(o=>Math.max(0,Math.min(c.end,o.end)-Math.max(c.start,o.start))>0.15);
+      const manualZone=manualHitObj?(manualHitObj.zone||'bottom'):null;
+      // Only a MANUAL zone (you explicitly drew it) auto-applies. An auto-detected zone is
+      // a suggestion only — it shows up in the checklist with a Move button, nothing moves
+      // until you confirm it.
+      settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : ((c.settings||'').includes('line:0%') ? 'align:middle line:0%' : 'align:middle line:90%');
+      if((c.settings||'')!==settings)counts.position++;
+      posTag = manualZone ? (manualZone==='bottom'?'MAN-UP':'MAN-DOWN') : null;
+      ostSuggested = (autoZone && !manualZone) ? autoZone : null;
+    }
+
+    let lines=text.split('\n');
+    const beforeShortForms=lines.join('\n');
+    lines=applyShortForms(beforeShortForms).split('\n');
+    if(lines.join('\n')!==beforeShortForms)counts.shortForms=(counts.shortForms||0)+1;
+    const wrapped=[];
+    lines.forEach(l=>{ const w=wrapLine(l,maxLen); if(w.length>1)counts.wrapped++; wrapped.push(...w); });
+    lines=wrapped;
+
+    const chunks=[];
+    for(let i=0;i<lines.length;i+=3)chunks.push(lines.slice(i,i+3));
+    if(chunks.length>1)counts.split++;
+    const totalChars=chunks.reduce((s,ch)=>s+ch.join(' ').length,0)||1;
+    const dur=Math.max(c.end-c.start,0.01);
+    let cursor=c.start;
+    chunks.forEach((ch,ci)=>{
+      const share=ch.join(' ').length/totalChars;
+      const chunkEnd = ci===chunks.length-1 ? c.end : cursor+dur*share;
+      out.push({start:cursor,end:chunkEnd,settings,text:ch.join('\n'),srcIdx,posTag,narratorContext,ostSuggested});
+      cursor=chunkEnd;
+    });
+  });
+  for(let i=0;i<out.length;i++){
+    const cue=out[i];
+    let d=cue.end-cue.start;
+    if(d<minDur){ cue.end=cue.start+minDur; counts.duration++; }
+    else if(d>maxDur){ cue.end=cue.start+maxDur; counts.duration++; }
+    const next=out[i+1];
+    if(next && next.start<cue.end+0.001) next.start=cue.end+0.001;
+  }
+  return out;
+}
+
+/* =========================================================
+   COMBINED VIDEO/AUDIO PASS — OST + off-screen speaker + voice fingerprint
+   in ONE loop, ONE seek pair per source cue, instead of three separate scans.
+========================================================= */
+const progEl=document.getElementById('progress');
+const setProg=(t,err)=>{progEl.textContent=t;progEl.className='progress'+(err?' err':'')};
+const video=document.getElementById('video');
+// Scanning needs to seek all over the file to sample frames/audio. Doing that on the
+// video the person is actually watching made the player visibly jump around during a
+// scan — this hidden, muted, background element does all the seeking instead, so the
+// visible player never moves unless the person moves it.
+const scanVideo=document.createElement('video');
+scanVideo.muted=true; scanVideo.playsInline=true; scanVideo.preload='auto'; scanVideo.style.display='none';
+document.body.appendChild(scanVideo);
+function waitForScanVideoReady(){
+  if(scanVideo.readyState>=1)return Promise.resolve();
+  return new Promise(res=>{
+    const to=setTimeout(res,5000); // don't hang forever if metadata never fires
+    scanVideo.addEventListener('loadedmetadata',()=>{clearTimeout(to);res();},{once:true});
+  });
+}
+const scanCanvas=document.createElement('canvas');
+const AW=192, AH=108;
+scanCanvas.width=AW; scanCanvas.height=AH;
+const sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
+function analyzeFrame(el){
+  sctx.drawImage(el,0,0,AW,AH);
+  let d; try{ d=sctx.getImageData(0,0,AW,AH).data; } catch(e){ throw new Error('FRAME_BLOCKED'); }
+  const gray=new Float32Array(AW*AH);
+  for(let i=0;i<AW*AH;i++){ const p=i*4; gray[i]=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2]; }
+  const EDGE=42, ROWFRAC=0.12, MINROWS=3;
+  function bandAnalysis(y0,y1){
+    let textRows=0;
+    const colEdgeCount=new Uint16Array(AW);
+    for(let y=y0;y<y1;y++){
+      let edges=0, runs=0, inRun=false;
+      for(let x=1;x<AW;x++){
+        const diff=Math.abs(gray[y*AW+x]-gray[y*AW+x-1]);
+        if(diff>EDGE){edges++;if(!inRun){runs++;inRun=true;} colEdgeCount[x]++;} else inRun=false;
+      }
+      if(edges>AW*ROWFRAC&&runs>=6)textRows++;
+    }
+    // per-column "busy" footprint — used to check whether the same columns stay busy
+    // across two samples (a static graphic) vs. shift around (a person's face/body).
+    const rowSpan=y1-y0, colBusy=new Uint8Array(AW);
+    for(let x=0;x<AW;x++)colBusy[x]=colEdgeCount[x]>=Math.max(2,rowSpan*0.25)?1:0;
+    return {textRows,colBusy};
+  }
+  const bot=bandAnalysis(Math.floor(AH*0.72),Math.floor(AH*0.97));
+  const top=bandAnalysis(Math.floor(AH*0.03),Math.floor(AH*0.26));
+  return {bottom:bot.textRows>=MINROWS, top:top.textRows>=MINROWS, bottomProfile:bot.colBusy, topProfile:top.colBusy};
+}
+function profileOverlap(a,b){
+  let inter=0,union=0;
+  for(let i=0;i<a.length;i++){ if(a[i]||b[i])union++; if(a[i]&&b[i])inter++; }
+  return union===0?0:inter/union;
+}
+function seekAndWait(el,t){
+  return new Promise((res,rej)=>{
+    const to=setTimeout(()=>rej(new Error('seek timeout')),4000);
+    const on=()=>{clearTimeout(to);el.removeEventListener('seeked',on);
+      requestAnimationFrame(()=>requestAnimationFrame(res));};
+    el.addEventListener('seeked',on);
+    el.currentTime=Math.max(0,Math.min(t,(el.duration||1e9)-0.05));
+  });
+}
+
+// Scan audio graph is entirely separate from the visible player's — it is never
+// connected to the speakers, so scanning makes no sound and never touches what's
+// audibly/visually playing for the person.
+let scanAudioCtx=null, scanAnalyserRef=null;
+function ensureScanAudioGraph(){
+  if(scanAudioCtx)return;
+  scanAudioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const srcNode=scanAudioCtx.createMediaElementSource(scanVideo);
+  const analyser=scanAudioCtx.createAnalyser(); analyser.fftSize=2048;
+  srcNode.connect(analyser); // deliberately NOT connected to scanAudioCtx.destination — silent
+  scanAnalyserRef=analyser;
+}
+function sampleAudioEnergyAndVoice(){
+  const timeBuf=new Float32Array(scanAnalyserRef.fftSize);
+  scanAnalyserRef.getFloatTimeDomainData(timeBuf);
+  let sum=0; for(let i=0;i<timeBuf.length;i++)sum+=timeBuf[i]*timeBuf[i];
+  const energy=Math.sqrt(sum/timeBuf.length);
+
+  const freqBuf=new Uint8Array(scanAnalyserRef.frequencyBinCount);
+  scanAnalyserRef.getByteFrequencyData(freqBuf);
+  let wsum=0,tot=0; for(let i=0;i<freqBuf.length;i++){wsum+=i*freqBuf[i];tot+=freqBuf[i];}
+  const centroidHz = tot>0 ? (wsum/tot)*(scanAudioCtx.sampleRate/2)/freqBuf.length : 0;
+
+  const minOff=Math.floor(scanAudioCtx.sampleRate/400), maxOff=Math.floor(scanAudioCtx.sampleRate/70);
+  let bestOff=-1,bestCorr=0;
+  for(let off=minOff; off<=maxOff && off<timeBuf.length; off+=2){
+    let corr=0; for(let i=0;i<timeBuf.length-off;i+=2)corr+=timeBuf[i]*timeBuf[i+off];
+    if(corr>bestCorr){bestCorr=corr;bestOff=off;}
+  }
+  const pitchHz = bestOff>0 ? scanAudioCtx.sampleRate/bestOff : 0;
+  return {energy,centroidHz,pitchHz};
+}
+
+let blazefaceModel=null, blazefaceLoading=null;
+function loadBlazeface(){
+  if(blazefaceModel)return Promise.resolve(blazefaceModel);
+  if(blazefaceLoading)return blazefaceLoading;
+  blazefaceLoading=new Promise((resolve,reject)=>{
+    const s1=document.createElement('script');
+    s1.src='https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script');
+      s2.src='https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js';
+      s2.onload=async()=>{ try{ blazefaceModel=await blazeface.load(); resolve(blazefaceModel); } catch(err){reject(err);} };
+      s2.onerror=()=>reject(new Error('face model blocked'));
+      document.head.appendChild(s2);
+    };
+    s1.onerror=()=>reject(new Error('tfjs blocked'));
+    document.head.appendChild(s1);
+  });
+  return blazefaceLoading;
+}
+const faceCanvas=document.createElement('canvas'); faceCanvas.width=320; faceCanvas.height=180;
+const fctx=faceCanvas.getContext('2d',{willReadFrequently:true});
+async function detectMouthPatch(el){
+  fctx.drawImage(el,0,0,faceCanvas.width,faceCanvas.height);
+  const preds=await blazefaceModel.estimateFaces(faceCanvas,false);
+  if(!preds.length)return null;
+  const mouth=preds[0].landmarks&&preds[0].landmarks[3];
+  if(!mouth)return null;
+  const mx=Math.max(0,Math.round(mouth[0]-8)), my=Math.max(0,Math.round(mouth[1]-6));
+  return fctx.getImageData(mx,my,Math.min(16,faceCanvas.width-mx),Math.min(12,faceCanvas.height-my));
+}
+function patchDiff(a,b){
+  if(!a||!b||a.data.length!==b.data.length)return 1;
+  let diff=0; for(let i=0;i<a.data.length;i+=4)diff+=Math.abs(a.data[i]-b.data[i]);
+  return diff/(a.data.length/4)/255;
+}
+const HAS_ID=/^\s*(\(|\[)?[A-Z][A-Z .'-]{1,20}(\)|\])?\s*:/;
+// A speaker ID replaces the need for a leading dash (dashes are only for two speakers
+// sharing one caption event) — so strip any existing ID AND a leading dash before inserting a new ID.
+function recordOverride(cue){ S.manualOverrides[cue.srcIdx]={text:cue.text,settings:cue.settings}; }
+function setSpeakerId(cue,name){
+  cue.text = cue.text.replace(HAS_ID,'').trimStart();
+  cue.text = cue.text.replace(/^-\s*/,'');
+  cue.text = name.toUpperCase()+': '+cue.text;
+  recordOverride(cue);
+}
+// Manual italic/bold toggle — wraps or unwraps the WHOLE cue text (not a partial
+// selection, since a plain <textarea> can't track rich-text selections). This is a
+// deliberate final-pass action; it's preserved across re-runs like any other manual edit.
+function toggleWrapTag(cue,tag){
+  const openRe=new RegExp('^<'+tag+'>'), closeRe=new RegExp('</'+tag+'>$');
+  if(openRe.test(cue.text)&&closeRe.test(cue.text)){
+    cue.text=cue.text.replace(openRe,'').replace(closeRe,'');
+  } else {
+    cue.text='<'+tag+'>'+cue.text+'</'+tag+'>';
+  }
+  recordOverride(cue);
+}
+
+const SPEECH_THRESH=0.03;
+const MAXCPS_REF=25; // reference only, for the live character-budget display — not a flag. Confirmed against Ooona's real "PLUTO TV CC SPECS" preset.
+async function runCombinedVideoPass(){
+  let faceOk=true;
+  try{ await loadBlazeface(); }catch(err){ faceOk=false; setProg('Face model unavailable ('+err.message+') — OST + voice checks still run, off-screen-speaker face check skipped.','info'); }
+  ensureScanAudioGraph();
+  scanVideo.play().catch(()=>{});
+  S.detected={}; S.speakerFlags={}; S.voiceFeatures={};
+  let preHits=0, postHits=0, syncConsidered=0;
+  let blocked=false;
+  try{
+    for(let i=0;i<S.src.length;i++){
+      const c=S.src[i];
+      setProg('Analyzing video/audio in the background — cue '+(i+1)+'/'+S.src.length+'… (your preview stays put — feel free to keep reviewing)','info');
+      const dur=c.end-c.start;
+      const times=[c.start+dur*0.33+S.offset, c.start+dur*0.66+S.offset];
+      let bottomFlags=[],topFlags=[],bottomProfiles=[],topProfiles=[],energies=[],voiceSamples=[],patches=[],faceSeen=false;
+      for(const t of times){
+        try{
+          await seekAndWait(scanVideo,t);
+          const band=analyzeFrame(scanVideo);
+          bottomFlags.push(band.bottom); topFlags.push(band.top);
+          bottomProfiles.push(band.bottomProfile); topProfiles.push(band.topProfile);
+          if(faceOk){ try{ const p=await detectMouthPatch(scanVideo); if(p){faceSeen=true;patches.push(p);} }catch(e){} }
+          const v=sampleAudioEnergyAndVoice();
+          energies.push(v.energy);
+          voiceSamples.push(v);
+        }catch(err){ if(err.message==='FRAME_BLOCKED'){blocked=true;break;} }
+      }
+      if(blocked)break;
+      // Require BOTH samples to look text-like AND land on the same columns (a static
+      // graphic/lower-third) rather than just one busy frame — a person's face/body
+      // produces busy edges too, but those edges shift between samples; real on-screen
+      // text or a lower-third graphic stays put.
+      const bottomStatic=bottomFlags.length===2 && bottomFlags.every(Boolean) && profileOverlap(bottomProfiles[0],bottomProfiles[1])>=0.55;
+      const topStatic=topFlags.length===2 && topFlags.every(Boolean) && profileOverlap(topProfiles[0],topProfiles[1])>=0.55;
+      if(bottomStatic)S.detected[i]={zone:'bottom'};
+      else if(topStatic)S.detected[i]={zone:'top'};
+
+      // sync check: is dialogue audible right before this cue starts, or right after it
+      // ends, while the cue's own window was quiet? A consistent pattern across many
+      // cues (not just one) suggests the caption track is offset from the audio.
+      if((c.origText||'').trim()){
+        syncConsidered++;
+        const insideQuiet=Math.max(...energies,0)<=SPEECH_THRESH;
+        try{
+          await seekAndWait(scanVideo,Math.max(0,c.start-0.4+S.offset));
+          if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)preHits++;
+          await seekAndWait(scanVideo,c.end+0.4+S.offset);
+          if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)postHits++;
+        }catch(e){}
+      }
+
+      const text=c.origText||'';
+      const speechLikely=Math.max(...energies,0)>SPEECH_THRESH;
+      if(text.trim() && !HAS_ID.test(text) && speechLikely){
+        if(!faceSeen && faceOk)S.speakerFlags[i]={reason:'No face visible during dialogue — candidate off-screen speaker (or phone-call cutaway).'};
+        else if(faceSeen && patches.length===2 && patchDiff(patches[0],patches[1])<0.02)
+          S.speakerFlags[i]={reason:'Face on screen but mouth shows no motion during dialogue — candidate off-screen speaker.'};
+        const avgPitch=voiceSamples.reduce((s,v)=>s+v.pitchHz,0)/voiceSamples.length;
+        const avgCentroid=voiceSamples.reduce((s,v)=>s+v.centroidHz,0)/voiceSamples.length;
+        if(avgPitch>0)S.voiceFeatures[i]={pitchHz:avgPitch,centroidHz:avgCentroid};
+      }
+    }
+    S.syncFlag=null;
+    if(syncConsidered>=6){
+      if(preHits>=3 && preHits>postHits*1.5)
+        S.syncFlag={dir:'late',preHits,postHits,syncConsidered};
+      else if(postHits>=3 && postHits>preHits*1.5)
+        S.syncFlag={dir:'early',preHits,postHits,syncConsidered};
+    }
+  } finally {
+    scanVideo.pause();
+  }
+  if(blocked)setProg('Video blocks frame reading (codec/DRM) — text fixes still applied; use manual OST zones below.',true);
+  clusterVoices();
+  renderClusterPanel();
+}
+
+/* =========================================================
+   SHOT-CHANGE DETECTION — same deterministic frame-difference technique
+   built for Markups' ad-breakpoint scene-cut detection, reused here to
+   flag a caption that spans across a hard cut (bad practice — Ooona's
+   own "shot change" snapping exists for exactly this reason).
+========================================================= */
+const shotChangeCanvas=document.createElement('canvas');
+shotChangeCanvas.width=64; shotChangeCanvas.height=36;
+const scctx=shotChangeCanvas.getContext('2d',{willReadFrequently:true});
+function sampleGrayFrame(el){
+  scctx.drawImage(el,0,0,64,36);
+  const d=scctx.getImageData(0,0,64,36).data;
+  const gray=new Float32Array(64*36);
+  for(let i=0;i<64*36;i++){ const p=i*4; gray[i]=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2]; }
+  return gray;
+}
+function grayFrameDiff(a,b){
+  let s=0; for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);
+  return s/a.length/255;
+}
+async function scanForShotChanges(){
+  S.shotChanges=[];
+  if(!scanVideo.duration)return;
+  const STEP=0.5;
+  let prevGray=null;
+  for(let t=0;t<scanVideo.duration;t+=STEP){
+    setProg('Scanning for shot changes — '+fmtTime(t).slice(0,8)+' / '+fmtTime(scanVideo.duration).slice(0,8)+'…','info');
+    try{
+      await seekAndWait(scanVideo,t);
+      const g=sampleGrayFrame(scanVideo);
+      if(prevGray){ if(grayFrameDiff(g,prevGray)>0.18)S.shotChanges.push(t); }
+      prevGray=g;
+    }catch(e){}
+  }
+}
+/* =========================================================
+   GAP SCAN — runs over the FINAL cue set (after Step 1 fixes),
+   sampling only the silent/uncovered stretches between captions.
+   This is a heuristic proxy, not real transcription:
+     - "speech-like" energy in a gap with no caption over it -> candidate missing caption
+     - non-speech-but-energetic audio in a gap with no bracket sound cue nearby -> candidate missing sound/music cue
+   Both get flagged for a human, never auto-inserted.
+========================================================= */
+async function scanGapsForMissingContent(){
+  S.gapFlags=[];
+  if(!scanVideo.duration)return;
+  const MIN_GAP=0.6; // was 1.5s — musical stings/sound effects are often brief
+  const cues=S.cues.slice().sort((a,b)=>a.start-b.start);
+  const gaps=[]; let cursor=0;
+  cues.forEach(c=>{ if(c.start-cursor>MIN_GAP)gaps.push({start:cursor,end:c.start}); cursor=Math.max(cursor,c.end); });
+  if(scanVideo.duration-cursor>MIN_GAP)gaps.push({start:cursor,end:scanVideo.duration});
+  for(const g of gaps){
+    const dur=g.end-g.start;
+    const n=Math.min(4,Math.max(1,Math.round(dur/3)));
+    let speechHits=0,soundHits=0,samples=0;
+    const bottomFlags=[],topFlags=[],bottomProfiles=[],topProfiles=[];
+    for(let s=0;s<n;s++){
+      const t=g.start+dur*((s+1)/(n+1))+S.offset;
+      try{
+        await seekAndWait(scanVideo,t);
+        const v=sampleAudioEnergyAndVoice();
+        samples++;
+        if(v.energy>SPEECH_THRESH){
+          if(v.pitchHz>=70&&v.pitchHz<=400)speechHits++; else soundHits++;
+        }
+        try{
+          const band=analyzeFrame(scanVideo);
+          bottomFlags.push(band.bottom); topFlags.push(band.top);
+          bottomProfiles.push(band.bottomProfile); topProfiles.push(band.topProfile);
+        }catch(e){}
+      }catch(e){}
+    }
+    if(samples>0 && speechHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
+    else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
+    // On-screen text/graphic that persists into a captionless stretch (e.g. a chyron that
+    // outlasts its caption, or end credits) — the per-cue detector can't see this since
+    // there's no caption cue here to attach a flag to. Same static-across-samples check as
+    // the main OST detector, applied across every sampled point in the gap, not just two.
+    if(bottomFlags.length>=2 && bottomFlags.every(Boolean)){
+      let allOverlap=true;
+      for(let i=1;i<bottomProfiles.length;i++) if(profileOverlap(bottomProfiles[0],bottomProfiles[i])<0.55)allOverlap=false;
+      if(allOverlap)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:'bottom'});
+    } else if(topFlags.length>=2 && topFlags.every(Boolean)){
+      let allOverlap=true;
+      for(let i=1;i<topProfiles.length;i++) if(profileOverlap(topProfiles[0],topProfiles[i])<0.55)allOverlap=false;
+      if(allOverlap)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:'top'});
+    }
+  }
+}
+
+/* ---- rough voice clustering: nearest-centroid on normalized pitch+timbre ---- */
+function clusterVoices(){
+  S.speakerClusters={};
+  const entries=Object.entries(S.voiceFeatures);
+  const clusters=[];
+  entries.forEach(([idxStr,f])=>{
+    const idx=+idxStr;
+    const np=f.pitchHz/300, nc=f.centroidHz/3000;
+    let best=-1,bestDist=Infinity;
+    clusters.forEach((cl,ci)=>{
+      const d=Math.hypot(np-cl.p/cl.n, nc-cl.c/cl.n);
+      if(d<bestDist){bestDist=d;best=ci;}
+    });
+    if(best>=0 && bestDist<0.28){
+      clusters[best].p+=np; clusters[best].c+=nc; clusters[best].n++; clusters[best].members.push(idx);
+    } else {
+      clusters.push({label:'SPEAKER_'+String.fromCharCode(65+clusters.length%26),p:np,c:nc,n:1,members:[idx]});
+    }
+  });
+  clusters.forEach(cl=>cl.members.forEach(idx=>S.speakerClusters[idx]=cl.label));
+  // Character Library: suggest (never auto-apply) a name for a cluster whose average
+  // fingerprint is close to a previously confirmed voice from an earlier episode.
+  clusters.forEach(cl=>{
+    if(S.clusterNames[cl.label])return; // don't overwrite something already typed
+    const match=matchVoiceLibrary(cl.p/cl.n*300, cl.c/cl.n*3000);
+    if(match)S.clusterNames[cl.label]=match.name;
+  });
+}
+function matchVoiceLibrary(avgPitch,avgCentroid){
+  if(!S.charLibrary.voices.length)return null;
+  const np=avgPitch/300, nc=avgCentroid/3000;
+  let best=null,bestDist=Infinity;
+  S.charLibrary.voices.forEach(v=>{
+    const d=Math.hypot(np-v.avgPitch/300, nc-v.avgCentroid/3000);
+    if(d<bestDist){bestDist=d;best=v;}
+  });
+  return (best && bestDist<0.28) ? best : null;
+}
+function upsertVoiceLibraryEntry(name,avgPitch,avgCentroid){
+  const existing=S.charLibrary.voices.find(v=>v.name.toLowerCase()===name.toLowerCase());
+  if(existing){
+    // running average so repeated confirmations across episodes refine the fingerprint
+    existing.avgPitch=(existing.avgPitch*existing.n+avgPitch)/(existing.n+1);
+    existing.avgCentroid=(existing.avgCentroid*existing.n+avgCentroid)/(existing.n+1);
+    existing.n+=1;
+  } else {
+    S.charLibrary.voices.push({name,avgPitch,avgCentroid,n:1});
+  }
+  renderCharLibPanel();
+}
+function addToPool(name){
+  name=(name||'').trim(); if(!name)return;
+  if(!S.speakerPool.some(n=>n.toLowerCase()===name.toLowerCase()))S.speakerPool.push(name);
+  refreshSpeakerDropdowns();
+}
+function refreshSpeakerDropdowns(){
+  document.querySelectorAll('select.spk-select').forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML='<option value="">— choose speaker —</option>'+
+      S.speakerPool.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')+
+      '<option value="__new__">+ New name…</option>';
+    if(S.speakerPool.includes(cur))sel.value=cur;
+  });
+}
+/* =========================================================
+   CHARACTER LIBRARY (BETA) — per-show voice + face reference data,
+   exportable/importable as plain JSON. Not a live shared database —
+   just a file you pass around. Face matching needs face-api.js,
+   loaded on demand like the other optional CDN models in this suite.
+========================================================= */
+/* =========================================================
+   PERSONAL DICTIONARY — protects proper nouns from the mixed-case
+   conversion. Plain text, one term per line, exportable/importable.
+========================================================= */
+function renderDictPanel(){
+  const box=document.getElementById('dict-chips');
+  box.innerHTML = S.personalDictionary.length
+    ? S.personalDictionary.map((term,i)=>'<span class="chip" data-rmterm="'+i+'">'+esc(term)+' ✕</span>').join('')
+    : '<span class="plabel" style="color:var(--faint)">No terms yet.</span>';
+  box.querySelectorAll('[data-rmterm]').forEach(c=>c.addEventListener('click',()=>{
+    S.personalDictionary.splice(+c.dataset.rmterm,1); renderDictPanel();
+  }));
+}
+document.getElementById('dict-add-btn').addEventListener('click',()=>{
+  const inp=document.getElementById('dict-add-term');
+  const term=(inp.value||'').trim();
+  if(!term)return;
+  if(!S.personalDictionary.some(t=>t.toLowerCase()===term.toLowerCase()))S.personalDictionary.push(term);
+  inp.value='';
+  renderDictPanel();
+});
+document.getElementById('dict-add-term').addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('dict-add-btn').click(); });
+document.getElementById('dict-export').addEventListener('click',()=>{
+  if(!S.personalDictionary.length){ setProg('Dictionary is empty — add a term first.',true); return; }
+  const blob=new Blob([S.personalDictionary.join('\n')+'\n'],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='personal_dictionary.txt'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+document.getElementById('file-dict').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const terms=reader.result.split(/\r?\n/).map(t=>t.trim()).filter(Boolean);
+    const seen=new Set(S.personalDictionary.map(t=>t.toLowerCase()));
+    terms.forEach(t=>{ if(!seen.has(t.toLowerCase())){ S.personalDictionary.push(t); seen.add(t.toLowerCase()); } });
+    document.getElementById('drop-dict').classList.add('loaded');
+    document.getElementById('dict-import-name').textContent=f.name+' — '+terms.length+' term(s)';
+    renderDictPanel();
+    setProg('Imported '+terms.length+' term(s) into the Personal Dictionary.');
+  };
+  reader.readAsText(f);
+});
+
+/* =========================================================
+   SHORT FORMS & AUTOCORRECT — whole-word find/replace pairs,
+   applied via applyShortForms() at the single chokepoint both the
+   bulk auto-fix pass and live row editing already route through.
+========================================================= */
+function renderShortFormsPanel(){
+  const box=document.getElementById('shortform-list');
+  box.innerHTML = S.shortForms.length
+    ? S.shortForms.map((sf,i)=>'<div class="clusterrow"><span class="lab">'+esc(sf.short)+'</span><span class="plabel">→ '+esc(sf.long)+'</span><button class="pbtn small" data-rmsf="'+i+'">Remove</button></div>').join('')
+    : '<div class="plabel" style="color:var(--faint)">None yet.</div>';
+  box.querySelectorAll('[data-rmsf]').forEach(b=>b.addEventListener('click',()=>{
+    S.shortForms.splice(+b.dataset.rmsf,1); renderShortFormsPanel();
+  }));
+}
+document.getElementById('shortform-add-btn').addEventListener('click',()=>{
+  const shortInp=document.getElementById('shortform-short'), longInp=document.getElementById('shortform-long');
+  const short=(shortInp.value||'').trim(), long=(longInp.value||'').trim();
+  if(!short||!long){ setProg('Fill in both the short form and what it expands to.',true); return; }
+  if(S.shortForms.some(sf=>sf.short.toLowerCase()===short.toLowerCase())){ setProg('"'+short+'" is already in the list — remove it first to change it.',true); return; }
+  S.shortForms.push({short,long});
+  shortInp.value=''; longInp.value='';
+  renderShortFormsPanel();
+});
+
+function renderCharLibPanel(){
+  const vbox=document.getElementById('charlib-voices');
+  vbox.innerHTML = S.charLibrary.voices.length
+    ? S.charLibrary.voices.map((v,i)=>'<div class="clusterrow"><span class="lab">'+esc(v.name)+'</span><span class="plabel">~'+Math.round(v.avgPitch)+'Hz · '+v.n+' sample(s)</span><button class="pbtn small" data-rmvoice="'+i+'">Remove</button></div>').join('')
+    : '<div class="plabel" style="color:var(--faint)">None yet — apply a cluster name above to add one.</div>';
+  vbox.querySelectorAll('[data-rmvoice]').forEach(b=>b.addEventListener('click',()=>{
+    S.charLibrary.voices.splice(+b.dataset.rmvoice,1); renderCharLibPanel();
+  }));
+  const fbox=document.getElementById('charlib-faces');
+  fbox.innerHTML = S.charLibrary.faces.length
+    ? S.charLibrary.faces.map((f,i)=>'<div class="clusterrow"><span class="lab">'+esc(f.name)+'</span><button class="pbtn small" data-rmface="'+i+'">Remove</button></div>').join('')
+    : '<div class="plabel" style="color:var(--faint)">None yet.</div>';
+  fbox.querySelectorAll('[data-rmface]').forEach(b=>b.addEventListener('click',()=>{
+    S.charLibrary.faces.splice(+b.dataset.rmface,1); renderCharLibPanel();
+  }));
+}
+document.getElementById('charlib-export').addEventListener('click',()=>{
+  S.charLibrary.show=(document.getElementById('charlib-show').value||'').trim();
+  if(!S.charLibrary.voices.length && !S.charLibrary.faces.length){ setProg('Nothing in the library yet — apply a cluster name or capture a face first.',true); return; }
+  const blob=new Blob([JSON.stringify(S.charLibrary,null,2)],{type:'application/json'});
+  const name=(S.charLibrary.show||'library').replace(/[^A-Za-z0-9_-]/g,'_');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='charlibrary_'+name+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  document.getElementById('charlib-status').textContent='Exported '+S.charLibrary.voices.length+' voice(s) and '+S.charLibrary.faces.length+' face(s).';
+});
+document.getElementById('file-charlib').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const lib=JSON.parse(reader.result);
+      if(!lib || !Array.isArray(lib.voices) || !Array.isArray(lib.faces))throw new Error('not a Character Library file');
+      S.charLibrary=lib;
+      document.getElementById('charlib-show').value=lib.show||'';
+      document.getElementById('drop-charlib').classList.add('loaded');
+      document.getElementById('charlib-import-name').textContent=f.name;
+      renderCharLibPanel();
+      document.getElementById('charlib-status').textContent='Imported '+lib.voices.length+' voice(s) and '+lib.faces.length+' face(s). Re-run analysis to get name suggestions from these.';
+    }catch(err){ setProg('Could not read that as a Character Library file: '+err.message,true); }
+  };
+  reader.readAsText(f);
+});
+
+let faceApiLoading=null;
+// The npm package only ships the JS code — model weight files are too large to publish
+// to npm and are hosted separately. Try the project's own model-hosting page first, then
+// a GitHub-mirror path as a fallback if that's moved or is unreachable.
+const FACE_MODEL_URLS=[
+  'https://justadudewhohacks.github.io/face-api.js/models',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
+];
+function ensureFaceApi(){
+  if(S.faceApiReady)return Promise.resolve();
+  if(faceApiLoading)return faceApiLoading;
+  faceApiLoading=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+    s.onload=async()=>{
+      let lastErr=null;
+      for(const MODEL_URL of FACE_MODEL_URLS){
+        try{
+          await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+          S.faceApiReady=true; resolve(); return;
+        }catch(err){ lastErr=err; }
+      }
+      reject(new Error('Could not load face model weights from any known location (tried '+FACE_MODEL_URLS.length+'). Last error: '+(lastErr&&lastErr.message)));
+    };
+    s.onerror=()=>reject(new Error('face-api.js script itself failed to load — check network access'));
+    document.head.appendChild(s);
+  });
+  faceApiLoading.catch(()=>{ faceApiLoading=null; }); // allow a later retry instead of replaying this same failure forever
+  return faceApiLoading;
+}
+function faceDistance(a,b){
+  let sum=0; for(let i=0;i<a.length;i++)sum+=(a[i]-b[i])**2;
+  return Math.sqrt(sum);
+}
+document.getElementById('charlib-face-capture').addEventListener('click',async()=>{
+  const name=(document.getElementById('charlib-face-name').value||'').trim();
+  if(!name){setProg('Type a character name first.',true);return;}
+  if(!S.videoURL){setProg('Load a video first, pause on a clear frame of that character.',true);return;}
+  document.getElementById('charlib-status').textContent='Loading face model (one-time download)…';
+  try{
+    await ensureFaceApi();
+    const detection=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks().withFaceDescriptor();
+    if(!detection){ document.getElementById('charlib-status').textContent='No face detected in the current frame — pause on a clearer shot and try again.'; return; }
+    S.charLibrary.faces.push({name,descriptor:Array.from(detection.descriptor)});
+    renderCharLibPanel();
+    document.getElementById('charlib-face-name').value='';
+    document.getElementById('charlib-status').textContent='Captured a face reference for "'+name+'" from the current frame.';
+  }catch(err){
+    document.getElementById('charlib-status').textContent='Face capture failed: '+err.message;
+  }
+});
+document.getElementById('charlib-face-scan').addEventListener('click',async()=>{
+  if(!S.charLibrary.faces.length){setProg('No face entries in the library yet.',true);return;}
+  if(!S.videoURL){setProg('Load a video first.',true);return;}
+  if(!S.cues.length){setProg('Run the analysis first.',true);return;}
+  document.getElementById('charlib-status').textContent='Loading face model…';
+  try{
+    await ensureFaceApi();
+    scanVideo.play().catch(()=>{});
+    const unlabeled=S.cues.filter(c=>!HAS_ID.test(c.text) && c.text.trim());
+    let matched=0;
+    for(let i=0;i<unlabeled.length;i++){
+      const cue=unlabeled[i];
+      document.getElementById('charlib-status').textContent='Scanning '+(i+1)+'/'+unlabeled.length+' (background — your preview stays put)…';
+      try{
+        await seekAndWait(scanVideo,Math.max(0,(cue.start+cue.end)/2+S.offset));
+        const detection=await faceapi.detectSingleFace(scanVideo,new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks().withFaceDescriptor();
+        if(!detection)continue;
+        const desc=Array.from(detection.descriptor);
+        let best=null,bestDist=Infinity;
+        S.charLibrary.faces.forEach(f=>{ const d=faceDistance(desc,f.descriptor); if(d<bestDist){bestDist=d;best=f;} });
+        if(best && bestDist<0.6){
+          cue.faceMatchSuggestion={name:best.name,distance:bestDist};
+          matched++;
+        }
+      }catch(e){}
+    }
+    buildChecklist(); render();
+    scanVideo.pause();
+    document.getElementById('charlib-status').textContent='Scan complete — '+matched+' cue(s) got a face-match suggestion. Check the checklist.';
+  }catch(err){
+    document.getElementById('charlib-status').textContent='Face scan failed: '+err.message;
+  }
+});
+
+function renderClusterPanel(){
+  renderCharLibPanel();
+  const box=document.getElementById('clusterlist');
+  const labels=[...new Set(Object.values(S.speakerClusters))];
+  labels.forEach(lab=>addToPool(lab));
+  if(!labels.length){ box.innerHTML='<div class="plabel">No unlabeled-dialogue voices detected this pass.</div>'; return; }
+  box.innerHTML='';
+  labels.forEach(lab=>{
+    const count=Object.values(S.speakerClusters).filter(v=>v===lab).length;
+    const row=document.createElement('div'); row.className='clusterrow';
+    row.innerHTML='<span class="lab">'+lab+'</span><span class="plabel">'+count+' cue(s)</span>'+
+      '<input type="text" placeholder="Real name" data-cluster="'+lab+'" value="'+esc(S.clusterNames[lab]||'')+'">'+
+      '<button class="pbtn small" data-apply="'+lab+'">Apply to all '+lab+' cues</button>';
+    box.appendChild(row);
+  });
+  box.querySelectorAll('input[data-cluster]').forEach(inp=>inp.addEventListener('input',()=>{S.clusterNames[inp.dataset.cluster]=inp.value;}));
+  box.querySelectorAll('[data-apply]').forEach(btn=>btn.addEventListener('click',()=>{
+    const lab=btn.dataset.apply, name=(S.clusterNames[lab]||'').trim();
+    if(!name){setProg('Type a real name for '+lab+' first.',true);return;}
+    pushHistory();
+    let n=0;
+    S.cues.forEach(cue=>{
+      if(S.speakerClusters[cue.srcIdx]===lab){
+        const placeholderRe=new RegExp('^\\s*'+lab+'\\s*:\\s*','i');
+        if(placeholderRe.test(cue.text)){ cue.text=cue.text.replace(placeholderRe,''); setSpeakerId(cue,name); n++; }
+        else if(!HAS_ID.test(cue.text)){ setSpeakerId(cue,name); n++; }
+      }
+    });
+    addToPool(name.toUpperCase());
+    buildChecklist(); render();
+    const members=Object.keys(S.speakerClusters).filter(idx=>S.speakerClusters[idx]===lab).map(Number);
+    const feats=members.map(idx=>S.voiceFeatures[idx]).filter(Boolean);
+    if(feats.length){
+      const avgPitch=feats.reduce((s,f)=>s+f.pitchHz,0)/feats.length;
+      const avgCentroid=feats.reduce((s,f)=>s+f.centroidHz,0)/feats.length;
+      upsertVoiceLibraryEntry(name,avgPitch,avgCentroid);
+    }
+    setProg('Applied "'+name+'" to '+n+' cue(s) that were labeled '+lab+'. Voice fingerprint saved to the Character Library.');
+  }));
+}
+
+/* =========================================================
+   STEP 2 — CHECKLIST
+========================================================= */
+const CTA_WORDS=/\b(donate|buy now|order now|visit our website|call now|text\s+\w+\s+to|subscribe now|www\.|https?:\/\/)\b/i;
+function findCueIdxByStart(t){
+  return S.cues.findIndex(c=>Math.abs(c.start-t)<0.0005);
+}
+function buildChecklist(){
+  const kidvidOn=document.getElementById('opt-kidvid').checked;
+  const extraDashOn=document.getElementById('opt-extradash').checked;
+  const compareOn=document.getElementById('opt-compare-enabled').checked && S.refTranscript;
+  const compareThreshold=+document.getElementById('opt-compare-threshold').value||0.5;
+  const freshByKey={}; // groupKey -> {startKey?/stackStartA+B?/gap?, issues:[{id,tier,message}]}
+  const add=(groupKey,ref,id,tier,message)=>{
+    if(!freshByKey[groupKey])freshByKey[groupKey]={...ref,issues:[]};
+    freshByKey[groupKey].issues.push({id,tier,message});
+  };
+
+  S.cues.forEach((cue,i)=>{
+    const gk='c'+cue.start.toFixed(3);
+    const ref={startKey:cue.start};
+    const notes=(cue.text.match(/♪/g)||[]).length;
+    if(notes%2===1)add(gk,ref,'NOTES','difficult','Unpaired ♪ — lyrics should open and close with ♪.');
+    const lines=cue.text.split('\n');
+    lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
+    if(extraDashOn && lines.length===1 && /^\s*-\s*\S/.test(lines[0]))
+      add(gk,ref,'EXTRA_DASH','difficult','Single-line cue starts with a dash — confirm this is really a second speaker and not a leftover/extra dash.');
+    if(compareOn){
+      const refText=referenceTextForWindow(cue.start,cue.end);
+      if(refText.trim()){
+        const captionText=cue.text.replace(HAS_ID,'').replace(/^-\s*/gm,'').replace(/\n/g,' ');
+        const sim=wordDiffSimilarity(captionText,refText);
+        if(sim<compareThreshold)
+          add(gk,ref,'TRANSCRIPT_MISMATCH','complex','Caption disagrees with the reference transcript for this timespan (similarity '+Math.round(sim*100)+'%). Reference says: "'+refText.slice(0,120)+(refText.length>120?'…':'')+'" — check which one (if either) is right; the reference can be wrong too.');
+      }
+    }
+    if(cue.faceMatchSuggestion)
+      add(gk,ref,'FACE_MATCH_SUGGESTION','difficult','Character Library face match: "'+cue.faceMatchSuggestion.name+'" (distance '+cue.faceMatchSuggestion.distance.toFixed(2)+', lower is more confident). Not applied — type this name into the speaker ID field below if it looks right.');
+    if(S.shotChanges && S.shotChanges.length){
+      const crossing=S.shotChanges.find(t=>t>cue.start+0.1 && t<cue.end-0.1);
+      if(crossing!=null)add(gk,ref,'SHOT_CHANGE_CROSS','difficult','This caption spans a detected shot change at '+fmtTime(crossing).slice(0,11)+' — consider splitting it so it doesn\'t cross the cut (matches Ooona\'s own shot-change snapping practice).');
+    }
+    // Speaker dashes cannot share a physical line — each speaker's line must be its own line.
+    lines.forEach(l=>{
+      const dashSegments=(l.match(/(^|[.!?]\s+)-\s*\S/g)||[]).length;
+      if(dashSegments>=2)add(gk,ref,'DASH_SAME_LINE','difficult','Two speaker-change dashes appear on the same line — each speaker\'s line must be split onto its own line.');
+    });
+    // Sentence-break heuristic (mirrors the team's mscd3 logic): only a REAL sentence
+    // boundary between lines suggests a possible speaker change — not mid-line "?",
+    // not a title/abbreviation (Mr., Dr., etc.), and not a trailing ellipsis fragment.
+    const endsWithRealSentenceBreak=l=>{
+      const t=l.trim();
+      if(/\.{2,}["'\u2019)\]]?\s*$/.test(t))return false;
+      if(/\b(Mr|Mrs|Ms|Dr|Jr|Sr|St|vs|etc|Rev|Gen|Sgt|Capt|Lt|Col|Prof)\.\s*$/i.test(t))return false;
+      return /[.!?]["'\u2019)\]]?\s*$/.test(t);
+    };
+    const sentenceBreakBetweenLines = lines.slice(0,-1).some(endsWithRealSentenceBreak);
+    if(lines.length>1 && sentenceBreakBetweenLines && lines.every(l=>!/^\s*-/.test(l)) && !HAS_ID.test(cue.text) && !cue.narratorContext)
+      add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — confirm whether two people are speaking here.');
+    if(/\*/.test(cue.text))
+      add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
+    const stripped=cue.text.replace(/♪|[-'\u2019.,!?:;"()\[\]\s@#$%&*]/g,'');
+    const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
+    if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
+    if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
+    if(cue.posTag)add(gk,ref,'OST','difficult',(cue.posTag.includes('UP')?'On-screen text at bottom — caption moved to top.':'On-screen text at top — caption moved to bottom.')+' (manual zone, already applied)');
+    if(cue.ostSuggested)add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
+    if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
+      const cl=S.speakerClusters[cue.srcIdx];
+      add(gk,ref,'SPKR_OFF','complex',S.speakerFlags[cue.srcIdx].reason+(cl?' Voice-fingerprint group: '+cl+'.':''));
+      if(cl){ const re=new RegExp('^\\s*'+cl+'\\s*:','i'); if(!re.test(cue.text)){ cue.text=cue.text.replace(/^-\s*/,''); cue.text=cl+': '+cue.text; } }
+    }
+  });
+
+  for(let i=1;i<S.cues.length;i++){
+    const prev=S.cues[i-1], cur=S.cues[i];
+    if(cur.start===prev.start&&cur.end===prev.end){
+      add('s'+prev.start.toFixed(3),{stackStartA:prev.start,stackStartB:cur.start},'STACK','difficult',
+        'Identical in/out timecodes as previous cue. If two people share this instance, merge with a dash on each line. If it\'s the same speaker, merge with no dash — never add one automatically.');
+    } else if(cur.start<prev.end-0.001){
+      add('c'+cur.start.toFixed(3),{startKey:cur.start},'OVL','difficult','Overlapping cues — not allowed.');
+    }
+  }
+
+  // gap-based candidates: possible missing captions / possible missing sound cues /
+  // on-screen text that outlasts its caption into a captionless stretch.
+  // Heuristic only (energy + rough pitch-lock, not real transcription) — always flag, never auto-insert.
+  (S.gapFlags||[]).forEach((g,gi)=>{
+    if(g.kind==='speech')
+      add('gap'+g.start.toFixed(3),{gap:g},'MISSING_CAPTION','complex',
+        'Speech-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption covering it — possible missing caption(s) or an out-of-sync file. Confirm against the audio.');
+    else if(g.kind==='sound')
+      add('gap'+g.start.toFixed(3),{gap:g},'MISSING_SOUND_CUE','complex',
+        'Non-speech audio (music/effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no [sound cue] nearby — possible missing sound/music cue. Confirm against the audio.');
+    else if(g.kind==='ost')
+      add('gap'+g.start.toFixed(3),{gap:g},'OST_GAP','difficult',
+        'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — likely a graphic that outlasted its caption (e.g. end credits). No caption to move; add one manually if dialogue needs to go here, or ignore if this is just end-credits/no-dialogue footage.');
+  });
+  if(S.syncFlag){
+    const f=S.syncFlag;
+    add('sync',{gap:{start:0,end:0}},'SYNC','complex',
+      'Captions may be running '+f.dir+' relative to the audio — dialogue was audible right '+(f.dir==='late'?'before':'after')+' the caption window in '+(f.dir==='late'?f.preHits:f.postHits)+' of '+f.syncConsidered+' cues checked, well above the other direction. Worth a manual sync check.');
+  }
+
+  // Persist rows once seen — fixing the underlying issue doesn't remove a row by itself
+  // (it shows as resolved, awaiting a deliberate Validate click). A row only disappears
+  // outright if its underlying cue no longer exists at all (e.g. spliced away by a merge).
+  if(!S.rowsByKey)S.rowsByKey={};
+  Object.keys(S.rowsByKey).forEach(key=>{
+    const r=S.rowsByKey[key];
+    const stillExists = r.gap ? true
+      : r.stackStartA!=null ? (findCueIdxByStart(r.stackStartA)>=0 && findCueIdxByStart(r.stackStartB)>=0)
+      : findCueIdxByStart(r.startKey)>=0;
+    if(!stillExists)delete S.rowsByKey[key];
+  });
+  Object.keys(freshByKey).forEach(key=>{ S.rowsByKey[key]={...freshByKey[key],key}; });
+  Object.keys(S.rowsByKey).forEach(key=>{
+    if(!freshByKey[key])S.rowsByKey[key]={...S.rowsByKey[key],issues:[]};
+  });
+
+  const report=Object.values(S.rowsByKey).filter(r=>!S.validated.has(r.key));
+  report.forEach(r=>{ if(!S.everSeen.has(r.key))S.everSeen.add(r.key); });
+  report.sort((a,b)=>rowRef(a).start-rowRef(b).start);
+  S.report=report;
+}
+// Resolves any report row (normal / stacked-pair / gap-or-sync) to a common {start,end,cue} shape.
+// Cue lookups are always by start-time, never a stored array index, since merges shift indices.
+function rowRef(r){
+  if(r.gap)return {start:r.gap.start,end:r.gap.end,cue:null};
+  if(r.stackStartA!=null){
+    const a=findCueIdxByStart(r.stackStartA), b=findCueIdxByStart(r.stackStartB);
+    if(a<0||b<0)return {start:r.stackStartA,end:r.stackStartA,cue:null};
+    return {start:S.cues[a].start,end:S.cues[b].end,cue:S.cues[a]};
+  }
+  const idx=findCueIdxByStart(r.startKey);
+  if(idx<0)return {start:r.startKey,end:r.startKey,cue:null};
+  const c=S.cues[idx]; return {start:c.start,end:c.end,cue:c};
+}
+
+/* =========================================================
+   RUN — single entry point
+========================================================= */
+async function runFullAnalysis(){
+  if(!S.src.length){setProg('Load a caption file first.',true);return;}
+  if(S.scanning)return;
+  S.scanning=true;
+  logEvent('legaci', 'run_analysis', S.videoURL ? 'with_video' : 'no_video');
+  document.getElementById('btn-run').disabled=true;
+  const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0};
+  try{
+    if(S.videoURL){
+      await waitForScanVideoReady();
+      // build a provisional cue set first so combined pass has correct source alignment,
+      // then rebuild once more after detection so positions reflect what was found.
+      S.cues=buildFixedCues({tags:0,space:0,caseFix:0,punct:0,mixedCase:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0});
+      await runCombinedVideoPass();
+      S.cues=buildFixedCues(counts);
+      setProg('Scanning gaps between captions for missed dialogue/sound…','info');
+      await scanGapsForMissingContent();
+      if(document.getElementById('opt-shotchange').checked)await scanForShotChanges();
+    } else {
+      S.cues=buildFixedCues(counts);
+    }
+    S.fixCounts=counts;
+    buildChecklist();
+    renderSummary(counts);
+    render();
+    document.getElementById('btn-export').disabled=false;
+    document.getElementById('btn-export-csv').disabled=false;
+    setProg('Analysis complete — '+S.report.length+' item(s) need a human look.');
+  } finally {
+    S.scanning=false;
+    document.getElementById('btn-run').disabled=false;
+  }
+}
+document.getElementById('btn-run').addEventListener('click',runFullAnalysis);
+
+function renderSummary(counts){
+  const box=document.getElementById('fixSummary');
+  box.classList.add('show');
+  box.innerHTML='<div class="oh">✓ Auto-fixed silently</div>'+
+    '<div class="body">'+counts.tags+' tag/entity/illegal-character cleanups · '+counts.space+' spacing fixes · '+
+    counts.caseFix+' capitalization fixes · '+(counts.punct||0)+' redundant punctuation fixes · '+
+    (counts.dashLine?counts.dashLine+' same-line speaker dash(es) split onto their own line · ':'')+
+    (counts.mixedCase?counts.mixedCase+' cue(s) converted from ALL CAPS to mixed case · ':'')+
+    counts.wrapped+' line(s) rewrapped · '+counts.split+' event(s) split for &gt;3 lines · '+
+    counts.duration+' duration(s) clamped to 1–6.99s · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
+}
+
+/* =========================================================
+   OST MANUAL ZONES
+========================================================= */
+function renderZones(){
+  const list=document.getElementById('zonelist');
+  list.innerHTML='';
+  const detCount=Object.keys(S.detected).length;
+  if(detCount){
+    const b=document.createElement('button'); b.className='zonemark auto';
+    b.textContent='AUTO: '+detCount+' cues flagged ✕';
+    b.addEventListener('click',()=>{S.detected={};renderZones();runFullAnalysis();});
+    list.appendChild(b);
+  }
+  S.ost.forEach((o,i)=>{
+    const b=document.createElement('button'); b.className='zonemark';
+    b.textContent=(o.zone==='top'?'TOP':'BTM')+' '+o.start.toFixed(1)+'–'+o.end.toFixed(1)+'s ✕';
+    b.addEventListener('click',()=>{S.ost.splice(i,1);renderZones();runFullAnalysis();});
+    list.appendChild(b);
+  });
+}
+function addOST(start,end,zone){
+  if(!(end>start)){setProg('Zone out must be after in.',true);return;}
+  S.ost.push({start,end,zone}); S.ost.sort((a,b)=>a.start-b.start);
+  renderZones(); if(S.cues.length)runFullAnalysis();
+}
+document.getElementById('ost-mark').addEventListener('click',()=>{
+  const btn=document.getElementById('ost-mark'); const zone=document.getElementById('ost-zone').value;
+  if(S.ostPending==null){ S.ostPending={start:video.currentTime,zone}; btn.textContent='■ Mark out at playhead'; btn.classList.add('rec'); }
+  else { addOST(S.ostPending.start,video.currentTime,S.ostPending.zone); S.ostPending=null; btn.textContent='⦿ Mark in at playhead'; btn.classList.remove('rec'); }
+});
+document.getElementById('ost-add').addEventListener('click',()=>{
+  const i=parseFloat(document.getElementById('ost-in').value), o=parseFloat(document.getElementById('ost-out').value);
+  if(isNaN(i)||isNaN(o)){setProg('Enter in/out seconds for the zone.',true);return;}
+  addOST(i,o,document.getElementById('ost-zone').value);
+  document.getElementById('ost-in').value=''; document.getElementById('ost-out').value='';
+});
+
+/* =========================================================
+   SYNC — nudge a live-preview offset (used by the overlay and any
+   video/audio scan already in flight) then optionally bake it in
+   permanently by shifting every source timecode.
+========================================================= */
+function updateSyncDisplay(){
+  document.getElementById('sync-offset-display').textContent='offset: '+(S.offset>=0?'+':'')+S.offset.toFixed(2)+'s';
+}
+function nudgeSync(delta){
+  S.offset=Math.round((S.offset+delta)*100)/100;
+  updateSyncDisplay();
+  refreshCaptionOverlay();
+}
+document.getElementById('sync-back1').addEventListener('click',()=>nudgeSync(-1));
+document.getElementById('sync-back-half').addEventListener('click',()=>nudgeSync(-0.5));
+document.getElementById('sync-back-tenth').addEventListener('click',()=>nudgeSync(-0.1));
+document.getElementById('sync-fwd-tenth').addEventListener('click',()=>nudgeSync(0.1));
+document.getElementById('sync-fwd-half').addEventListener('click',()=>nudgeSync(0.5));
+document.getElementById('sync-fwd1').addEventListener('click',()=>nudgeSync(1));
+document.getElementById('sync-reset').addEventListener('click',()=>{ S.offset=0; updateSyncDisplay(); refreshCaptionOverlay(); });
+document.getElementById('sync-apply').addEventListener('click',()=>{
+  if(!S.offset){ setProg('Offset is 0 — nothing to bake in. Nudge it first while watching the preview.',true); return; }
+  if(!S.src.length){ setProg('Load a caption file first.',true); return; }
+  pushHistory();
+  const off=S.offset;
+  S.src.forEach(c=>{ c.start=Math.max(0,c.start+off); c.end=Math.max(c.start+0.1,c.end+off); });
+  S.offset=0;
+  updateSyncDisplay();
+  setProg('Baked '+(off>=0?'+':'')+off.toFixed(2)+'s into every timecode — re-running analysis so scans line up with the corrected timing…');
+  if(S.cues.length)runFullAnalysis();
+});
+document.getElementById('sync-zero').addEventListener('click',()=>{
+  if(!S.src.length){ setProg('Load a caption file first.',true); return; }
+  const off=-S.src[0].start;
+  if(!off){ setProg('First event already starts at 00:00:00.000 — nothing to do.',true); return; }
+  pushHistory();
+  S.src.forEach(c=>{ c.start=Math.max(0,c.start+off); c.end=Math.max(c.start+0.1,c.end+off); });
+  setProg('Zero-based — every timecode shifted by '+off.toFixed(2)+'s so the first event starts at 0. Re-running analysis…');
+  if(S.cues.length)runFullAnalysis();
+});
+document.getElementById('stretch-apply').addEventListener('click',()=>{
+  if(!S.src.length){ setProg('Load a caption file first.',true); return; }
+  const aOld=parseTime(document.getElementById('stretch-a-old').value);
+  const aNew=parseTime(document.getElementById('stretch-a-new').value);
+  const bOld=parseTime(document.getElementById('stretch-b-old').value);
+  const bNew=parseTime(document.getElementById('stretch-b-new').value);
+  if([aOld,aNew,bOld,bNew].some(v=>v==null)){ setProg('Fill in all four timecodes as HH:MM:SS.mmm first.',true); return; }
+  if(Math.abs(bOld-aOld)<0.001){ setProg('Point A and Point B must be at different original times.',true); return; }
+  const scale=(bNew-aNew)/(bOld-aOld);
+  const offset=aNew-scale*aOld;
+  if(scale<=0){ setProg('That combination produces a negative or zero scale — check the four values.',true); return; }
+  pushHistory();
+  S.src.forEach(c=>{
+    c.start=Math.max(0,scale*c.start+offset);
+    c.end=Math.max(c.start+0.1,scale*c.end+offset);
+  });
+  setProg('Stretch/squeeze applied — scale ×'+scale.toFixed(5)+', offset '+offset.toFixed(3)+'s. Re-running analysis…');
+  if(S.cues.length)runFullAnalysis();
+});
+
+/* =========================================================
+   EXPORT
+========================================================= */
+function performExport(waiverText){
+  const fmt=document.getElementById('opt-exportformat').value;
+  const name=(document.getElementById('opt-exportname').value||'corrected').trim().replace(/[^A-Za-z0-9_-]/g,'_');
+  logEvent('legaci', 'export', fmt+(waiverText?'_with_waiver':''));
+  let content = fmt==='srt' ? serializeSRT(S.cues) : serializeVTT(S.cues);
+  if(waiverText && fmt==='vtt'){
+    content=content.replace(/^WEBVTT\n/,'WEBVTT\n\nNOTE Export waiver — exported with unresolved complex-tier issue(s).\nReason: '+waiverText.replace(/\n/g,' ')+'\n\n');
+  }
+  const mime = fmt==='srt' ? 'application/x-subrip' : 'text/vtt';
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.'+fmt; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  if(fmt==='srt' && waiverText)setProg('Exported '+name+'.srt with a waiver on file (SRT has no comment field, so the waiver text isn\'t embedded — keep a record of it separately). Note: OST repositioning is also dropped on SRT export.');
+  else if(fmt==='srt')setProg('Exported '+name+'.srt — note SRT has no standard field for top/bottom position, so the OST repositioning is dropped on export (the .vtt export keeps it).');
+  else if(waiverText)setProg('Exported '+name+'.vtt with the waiver embedded as a NOTE at the top of the file.');
+  else setProg('Exported '+name+'.'+fmt+'.');
+}
+document.getElementById('btn-export').addEventListener('click',()=>{
+  const unresolvedComplex=Object.values(S.rowsByKey).filter(r=>!S.validated.has(r.key) && r.issues.some(x=>x.tier==='complex'));
+  if(unresolvedComplex.length){
+    document.getElementById('waiver-message').textContent=unresolvedComplex.length+' complex-tier issue(s) are still unresolved (e.g. transcript mismatches). Type a brief reason to export anyway, or go back and validate them first.';
+    document.getElementById('waiver-text').value='';
+    document.getElementById('waiver-overlay').style.display='flex';
+    return;
+  }
+  performExport(null);
+});
+document.getElementById('waiver-cancel').addEventListener('click',()=>{ document.getElementById('waiver-overlay').style.display='none'; });
+document.getElementById('waiver-confirm').addEventListener('click',()=>{
+  const text=(document.getElementById('waiver-text').value||'').trim();
+  if(!text){ setProg('Type a reason before exporting with unresolved issues.',true); return; }
+  document.getElementById('waiver-overlay').style.display='none';
+  performExport(text);
+});
+function csvEscape(v){ v=String(v??''); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+document.getElementById('btn-export-csv').addEventListener('click',()=>{
+  const header=['start','end','rule','tier','message','text','note'];
+  let csv=header.join(',')+'\n';
+  S.report.forEach(r=>{
+    const ref=rowRef(r);
+    const note=ref.cue?(S.annotations[ref.cue.srcIdx]||''):'';
+    r.issues.forEach(iss=>{
+      const row={start:fmtTime(ref.start),end:fmtTime(ref.end),rule:iss.id,tier:iss.tier,message:iss.message,text:ref.cue?ref.cue.text:'(no caption — timeline gap)',note};
+      csv+=header.map(h=>csvEscape(row[h])).join(',')+'\n';
+    });
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const name=(document.getElementById('opt-exportname').value||'corrected').trim().replace(/[^A-Za-z0-9_-]/g,'_');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'_issues.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+
+/* =========================================================
+   RENDER — editable checklist
+========================================================= */
+function visibleReport(){
+  return S.issueFilter && S.issueFilter!=='all'
+    ? S.report.filter(r=>r.issues.some(x=>x.id===S.issueFilter))
+    : S.report;
+}
+function setViewMode(mode){
+  S.viewMode=mode;
+  const issBtn=document.getElementById('view-issues'), allBtn=document.getElementById('view-all');
+  issBtn.style.background = mode==='issues' ? 'var(--yellow)' : 'transparent';
+  issBtn.style.color = mode==='issues' ? '#fff' : 'var(--yellow)';
+  allBtn.style.background = mode==='all' ? 'var(--yellow)' : 'transparent';
+  allBtn.style.color = mode==='all' ? '#fff' : 'var(--yellow)';
+  document.getElementById('modebadge').textContent = 'MODE: '+(mode==='all'?'ALL EVENTS':"WHAT'S LEFT");
+}
+document.getElementById('view-issues').addEventListener('click',()=>{ setViewMode('issues'); render(); });
+document.getElementById('view-all').addEventListener('click',()=>{ setViewMode('all'); render(); });
+
+function findIssueRowForCueIdx(i){
+  return S.report.find(r=>{
+    if(r.gap)return false;
+    if(r.stackStartA!=null)return findCueIdxByStart(r.stackStartA)===i||findCueIdxByStart(r.stackStartB)===i;
+    return findCueIdxByStart(r.startKey)===i;
+  });
+}
+function renderAllEvents(){
+  document.getElementById('mainheadTitle').textContent='All events';
+  document.getElementById('mainheadSub').textContent=S.cues.length+' total event(s) — browse and edit any caption, flagged or not';
+  document.getElementById('issueFilterBar').style.display='none';
+  document.getElementById('issueFilterBar').innerHTML='';
+  document.getElementById('bulkBar').style.display='none';
+  const box=document.getElementById('checklist');
+  box.innerHTML='';
+  if(!S.cues.length){ box.innerHTML='<div class="allclear">No captions loaded.</div>'; return; }
+  const query=(document.getElementById('find-input').value||'').trim().toLowerCase();
+  S.cues.forEach((cue,i)=>{
+    const el=document.createElement('div');
+    const isMatch=query && cue.text.toLowerCase().includes(query);
+    el.className='item'+(isMatch?' active':'');
+    el.dataset.cueidx=i;
+    const issueRow=findIssueRowForCueIdx(i);
+    const badges = (issueRow && issueRow.issues.length)
+      ? issueRow.issues.map(x=>'<span class="tier tier-'+x.tier+'">'+x.id+'</span>').join('')
+      : '<span class="tier" style="background:rgba(255,255,255,.06);color:var(--faint)">no issues flagged</span>';
+    const maxLen=+document.getElementById('opt-len').value||32;
+    let body =
+      '<div class="top"><span class="evnum">#'+(i+1)+'</span><span class="tc">'+fmtTime(cue.start).slice(0,11)+' → '+fmtTime(cue.end).slice(0,11)+'</span>'+badges+'</div>'+
+      '<textarea spellcheck="true" class="txt-edit" data-cue="'+i+'">'+esc(cue.text)+'</textarea>'+
+      '<div class="livemeta" data-metafor="'+i+'" style="margin:4px 0">'+renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF)+'</div>'+
+      '<div class="actions">'+
+      '<button class="pbtn small" data-allact="pos-top" data-cueidx="'+i+'">Move to TOP</button>'+
+      '<button class="pbtn small" data-allact="pos-bottom" data-cueidx="'+i+'">Move to BOTTOM</button>'+
+      '<button class="pbtn small" data-allact="toggle-italic" data-cueidx="'+i+'"><i>I</i> Italic</button>'+
+      '<button class="pbtn small" data-allact="toggle-bold" data-cueidx="'+i+'"><b>B</b> Bold</button>'+
+      '<button class="pbtn small" data-allact="word-next" data-cueidx="'+i+'">Word ► next line</button>'+
+      '<button class="pbtn small" data-allact="word-prev" data-cueidx="'+i+'">◄ Word prev line</button>'+
+      '<button class="pbtn small" data-allact="linebreak" data-cueidx="'+i+'">↵ Break line here</button>'+
+      '<button class="pbtn small" data-allact="split" data-cueidx="'+i+'">✂ Split at cursor</button>'+
+      '</div>'+
+      '<div class="spkfield"><span class="plabel">Note:</span>'+
+      '<input type="text" placeholder="reviewer note (not exported as a caption)" data-allnote="'+i+'" value="'+esc(S.annotations[cue.srcIdx]||'')+'" style="width:220px">'+
+      '</div>'+
+      '<div class="spkfield"><span class="plabel">Speaker ID:</span>'+
+      '<select class="spk-select-all" data-cueidx="'+i+'"><option value="">— choose speaker —</option>'+
+      S.speakerPool.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')+
+      '<option value="__new__">+ New name…</option></select>'+
+      '<input type="text" placeholder="new name" data-allnewspk="'+i+'" style="display:none">'+
+      '<button class="pbtn small" data-allact="apply-spk" data-cueidx="'+i+'">Apply</button></div>';
+    el.innerHTML=body;
+    box.appendChild(el);
+  });
+  box.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('button,textarea,select,input'))return;
+    const i=+el.dataset.cueidx;
+    if(S.videoURL){
+      video.currentTime=Math.max(0,S.cues[i].start+S.offset+0.01);
+      S.playBoundEnd=S.cues[i].end+S.offset;
+      video.pause();
+    }
+    box.querySelectorAll('.item.active').forEach(a=>a.classList.remove('active'));
+    el.classList.add('active');
+  }));
+  box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
+    ta.addEventListener('focus',()=>pushHistory(),{once:false});
+    ta.addEventListener('input',()=>{
+    const cue=S.cues[+ta.dataset.cue];
+    const maxLen=+document.getElementById('opt-len').value||32;
+    const pos=ta.selectionStart;
+    const {text,overflow}=enforceCaptionLimits(ta.value,maxLen);
+    if(text!==ta.value){ ta.value=text; const np=Math.min(pos,text.length); ta.setSelectionRange(np,np); }
+    cue.text=text;
+    recordOverride(cue);
+    refreshCaptionOverlay();
+    const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
+    if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
+    if(overflow)setProg('This event is capped at 3 lines / '+maxLen+' chars per line — extra text was trimmed. Split the dialogue into a new event if it needs more room.',true);
+  });});
+  box.querySelectorAll('[data-allnote]').forEach(inp=>inp.addEventListener('input',()=>{
+    const cue=S.cues[+inp.dataset.allnote];
+    S.annotations[cue.srcIdx]=inp.value;
+  }));
+  box.querySelectorAll('select.spk-select-all').forEach(sel=>sel.addEventListener('change',()=>{
+    const newInp=document.querySelector('[data-allnewspk="'+sel.dataset.cueidx+'"]');
+    newInp.style.display = sel.value==='__new__' ? 'inline-block' : 'none';
+  }));
+  box.querySelectorAll('[data-allact]').forEach(btn=>btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const i=+btn.dataset.cueidx, act=btn.dataset.allact, cue=S.cues[i];
+    pushHistory();
+    if(act==='pos-top'||act==='pos-bottom'){
+      cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
+      recordOverride(cue);
+      buildChecklist(); refreshCaptionOverlay();
+      setProg('Position updated — check the video preview, it\'s already updated.');
+    } else if(act==='toggle-italic'||act==='toggle-bold'){
+      toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
+      buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+    } else if(act==='word-next'||act==='word-prev'){
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
+      const moved=moveWordBetweenLines(cue.text,ta?ta.selectionStart:0,act==='word-next'?'next':'prev');
+      if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
+      cue.text=moved; recordOverride(cue);
+      buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+    } else if(act==='linebreak'){
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
+      const cursor=ta?ta.selectionStart:cue.text.length;
+      const maxLen=+document.getElementById('opt-len').value||32;
+      const withBreak=insertLineBreakAtCursor(cue.text,cursor);
+      const {text,overflow}=enforceCaptionLimits(withBreak,maxLen);
+      cue.text=text; recordOverride(cue);
+      buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+      if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
+    } else if(act==='split'){
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
+      const cursor=ta?ta.selectionStart:Math.floor(cue.text.length/2);
+      const parts=splitCueAtCursor(i,cursor);
+      if(!parts){setProg('Put the cursor where you want the split — not at the very start or end.',true);return;}
+      S.cues.splice(i,1,parts[0],parts[1]);
+      buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+      setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
+    } else if(act==='apply-spk'){
+      const sel=document.querySelector('select.spk-select-all[data-cueidx="'+i+'"]');
+      const newInp=document.querySelector('[data-allnewspk="'+i+'"]');
+      const name = sel.value==='__new__' ? (newInp.value||'').trim() : sel.value;
+      if(!name){setProg('Choose or type a speaker name first.',true);return;}
+      setSpeakerId(cue,name);
+      addToPool(name.toUpperCase());
+      buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+      setProg('Speaker ID "'+name.toUpperCase()+'" applied.');
+    }
+  }));
+}
+
+/* =========================================================
+   FIND BAR — Ctrl+F / Cmd+F searches every caption, not just
+   flagged ones, and jumps into the All Events view to show it.
+========================================================= */
+function computeSearchMatches(query){
+  if(!query)return [];
+  const q=query.toLowerCase();
+  const matches=[];
+  S.cues.forEach((c,i)=>{ if(c.text.toLowerCase().includes(q))matches.push(i); });
+  return matches;
+}
+function updateSearchCount(){
+  document.getElementById('find-count').textContent = S.searchMatches.length ? (S.searchMatchIdx+1)+'/'+S.searchMatches.length : '0/0';
+}
+function gotoSearchMatch(delta){
+  if(!S.searchMatches.length)return;
+  S.searchMatchIdx=((S.searchMatchIdx+delta)%S.searchMatches.length+S.searchMatches.length)%S.searchMatches.length;
+  const cueIdx=S.searchMatches[S.searchMatchIdx];
+  if(S.viewMode!=='all'){ setViewMode('all'); }
+  render();
+  updateSearchCount();
+  const el=document.querySelector('.item[data-cueidx="'+cueIdx+'"]');
+  if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+  if(S.videoURL)video.currentTime=Math.max(0,S.cues[cueIdx].start+S.offset+0.01);
+}
+function openFindBar(){
+  if(!S.cues.length)return;
+  document.getElementById('findBar').style.display='flex';
+  const inp=document.getElementById('find-input');
+  inp.focus(); inp.select();
+}
+document.getElementById('find-open').addEventListener('click',openFindBar);
+document.getElementById('find-close').addEventListener('click',()=>{ document.getElementById('findBar').style.display='none'; });
+function isTypingInField(){
+  const t=document.activeElement;
+  return t && (t.tagName==='TEXTAREA'||t.tagName==='INPUT'||t.tagName==='SELECT'||t.isContentEditable);
+}
+function displayKey(k){
+  if(k===' ')return 'Space';
+  if(k==='ArrowLeft')return '←'; if(k==='ArrowRight')return '→';
+  if(k==='ArrowUp')return '↑'; if(k==='ArrowDown')return '↓';
+  return k.length===1?k.toUpperCase():k;
+}
+function renderHotkeyPanel(){
+  const box=document.getElementById('hotkeyList');
+  box.innerHTML=Object.keys(S.keybinds).map(action=>
+    '<div class="hkrow"><span class="hklabel">'+HOTKEY_LABELS[action]+'</span><span class="hkkey" data-action="'+action+'">'+displayKey(S.keybinds[action])+'</span></div>'
+  ).join('');
+  box.querySelectorAll('.hkkey').forEach(el=>el.addEventListener('click',()=>{
+    box.querySelectorAll('.hkkey').forEach(x=>x.classList.remove('listening'));
+    el.classList.add('listening');
+    el.textContent='press a key…';
+    const action=el.dataset.action;
+    const capture=e=>{
+      if(['Shift','Control','Alt','Meta'].includes(e.key))return;
+      e.preventDefault(); e.stopPropagation();
+      S.keybinds[action]=e.key;
+      document.removeEventListener('keydown',capture,true);
+      renderHotkeyPanel();
+      setProg('Rebound "'+HOTKEY_LABELS[action]+'" to '+displayKey(e.key)+'.');
+    };
+    document.addEventListener('keydown',capture,true);
+  }));
+}
+document.getElementById('hotkey-reset').addEventListener('click',()=>{
+  S.keybinds={prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v'};
+  renderHotkeyPanel();
+  setProg('Hotkeys reset to defaults.');
+});
+renderHotkeyPanel();
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'){ e.preventDefault(); openFindBar(); return; }
+  if(e.key==='Escape'&&document.getElementById('findBar').style.display!=='none'){ document.getElementById('findBar').style.display='none'; return; }
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){
+    if(isTypingInField())return; // let the browser's native in-field undo handle typing mistakes
+    e.preventDefault(); undo(); return;
+  }
+  if(isTypingInField())return; // never hijack hotkeys while editing text
+  if(document.querySelector('.hkkey.listening'))return; // a rebind capture is in progress, handled separately
+  const v=S.currentVisible||S.report;
+  const k=e.key;
+  if(k===S.keybinds.nextFlagged){ e.preventDefault(); selectReportRow(S.activeReportIdx<0?0:S.activeReportIdx+1); }
+  else if(k===S.keybinds.prevFlagged){ e.preventDefault(); selectReportRow(S.activeReportIdx<=0?v.length-1:S.activeReportIdx-1); }
+  else if(k===S.keybinds.playPause&&S.videoURL){ e.preventDefault(); video.paused?video.play().catch(()=>{}):video.pause(); }
+  else if(k===S.keybinds.validate&&S.activeReportIdx>=0&&v[S.activeReportIdx]){
+    pushHistory();
+    S.validated.add(v[S.activeReportIdx].key); buildChecklist(); render();
+    setProg('Validated via hotkey — '+S.report.length+' item(s) still outstanding.');
+  }
+  else if(k===S.keybinds.nextIssueType){ e.preventDefault(); cycleIssueFilter(1); }
+  else if(k===S.keybinds.prevIssueType){ e.preventDefault(); cycleIssueFilter(-1); }
+});
+document.getElementById('find-input').addEventListener('input',()=>{
+  S.searchMatches=computeSearchMatches(document.getElementById('find-input').value.trim());
+  S.searchMatchIdx=0;
+  updateSearchCount();
+});
+document.getElementById('find-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); gotoSearchMatch(e.shiftKey?-1:1); }
+});
+document.getElementById('find-next').addEventListener('click',()=>gotoSearchMatch(1));
+document.getElementById('find-prev').addEventListener('click',()=>gotoSearchMatch(-1));
+
+function renderIssueFilterBar(){
+  const bar=document.getElementById('issueFilterBar');
+  const counts={};
+  S.report.forEach(r=>{ new Set(r.issues.map(x=>x.id)).forEach(id=>{counts[id]=(counts[id]||0)+1;}); });
+  const ids=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!ids.length){bar.innerHTML='';return;}
+  let html='<button class="chip'+(!S.issueFilter||S.issueFilter==='all'?' hit':'')+'" data-filter="all">All ('+S.report.length+')</button>';
+  ids.forEach(id=>{ html+='<button class="chip'+(S.issueFilter===id?' hit':'')+'" data-filter="'+id+'">'+id+' ('+counts[id]+')</button>'; });
+  bar.innerHTML=html;
+  bar.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{
+    S.issueFilter=b.dataset.filter;
+    S.activeReportIdx=0;
+    render();
+  }));
+}
+// Hotkey-driven issue-type stepping (bracket keys) — cycles through the same list the
+// filter chips show, so you can move type-to-type without scrolling/clicking at all.
+function cycleIssueFilter(delta){
+  const counts={};
+  S.report.forEach(r=>{ new Set(r.issues.map(x=>x.id)).forEach(id=>{counts[id]=(counts[id]||0)+1;}); });
+  const ids=['all',...Object.keys(counts).sort((a,b)=>counts[b]-counts[a])];
+  if(ids.length<=1){setProg('Only one issue type present — nothing to cycle to.',true);return;}
+  let curIdx=ids.indexOf(S.issueFilter||'all');
+  if(curIdx<0)curIdx=0;
+  curIdx=(curIdx+delta+ids.length)%ids.length;
+  S.issueFilter=ids[curIdx];
+  S.activeReportIdx=0;
+  render();
+  setProg('Issue-type filter: '+ids[curIdx].toUpperCase()+' ('+(curIdx===0?S.report.length:counts[ids[curIdx]])+' row(s))');
+}
+
+function renderBulkBar(){
+  const bar=document.getElementById('bulkBar');
+  // drop selections for rows no longer visible/outstanding
+  const validKeys=new Set(S.report.map(r=>r.key));
+  [...S.selectedRows].forEach(k=>{ if(!validKeys.has(k))S.selectedRows.delete(k); });
+  if(S.selectedRows.size===0){ bar.style.display='none'; return; }
+  bar.style.display='flex';
+  document.getElementById('bulkCount').textContent=S.selectedRows.size+' selected';
+  const sel=document.getElementById('bulk-spk-select');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— choose speaker —</option>'+
+    S.speakerPool.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')+
+    '<option value="__new__">+ New name…</option>';
+  if(S.speakerPool.includes(cur))sel.value=cur;
+}
+document.getElementById('bulk-spk-select').addEventListener('change',e=>{
+  document.getElementById('bulk-spk-new').style.display = e.target.value==='__new__' ? 'inline-block' : 'none';
+});
+document.getElementById('bulk-spk-apply').addEventListener('click',()=>{
+  const sel=document.getElementById('bulk-spk-select'), newInp=document.getElementById('bulk-spk-new');
+  const name = sel.value==='__new__' ? (newInp.value||'').trim() : sel.value;
+  if(!name){setProg('Choose or type a speaker name first.',true);return;}
+  pushHistory();
+  let n=0;
+  S.report.forEach(r=>{
+    if(!S.selectedRows.has(r.key))return;
+    if(r.gap)return; // no single cue to attach a speaker ID to
+    const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+    const cue=S.cues[idx];
+    if(!cue)return;
+    setSpeakerId(cue,name);
+    n++;
+  });
+  addToPool(name.toUpperCase());
+  S.selectedRows.clear();
+  buildChecklist(); render(); refreshCaptionOverlay();
+  setProg('Applied speaker ID "'+name.toUpperCase()+'" to '+n+' selected cue(s) in bulk.');
+});
+document.getElementById('bulk-select-all').addEventListener('click',()=>{
+  (S.currentVisible||[]).forEach(r=>S.selectedRows.add(r.key));
+  render();
+});
+document.getElementById('bulk-clear').addEventListener('click',()=>{ S.selectedRows.clear(); render(); });
+document.getElementById('bulk-validate').addEventListener('click',()=>{
+  pushHistory();
+  const n=S.selectedRows.size;
+  S.selectedRows.forEach(k=>S.validated.add(k));
+  S.selectedRows.clear();
+  buildChecklist(); render();
+  setProg('Validated '+n+' selected item(s) in bulk.');
+});
+function bulkMove(zone){
+  pushHistory();
+  let moved=0;
+  S.report.forEach(r=>{
+    if(!S.selectedRows.has(r.key))return;
+    if(r.gap)return; // no single cue to reposition
+    const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+    const cue=S.cues[idx];
+    if(!cue)return;
+    cue.settings = zone==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+    recordOverride(cue);
+    moved++;
+  });
+  S.selectedRows.clear();
+  buildChecklist(); render(); refreshCaptionOverlay();
+  setProg('Moved '+moved+' selected cue(s) to '+zone.toUpperCase()+'.');
+}
+document.getElementById('bulk-top').addEventListener('click',()=>bulkMove('top'));
+document.getElementById('bulk-bottom').addEventListener('click',()=>bulkMove('bottom'));
+document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
+  pushHistory();
+  let applied=0,skipped=0;
+  S.report.forEach(r=>{
+    if(!S.selectedRows.has(r.key))return;
+    if(r.gap)return;
+    const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+    const cue=S.cues[idx];
+    if(!cue||!cue.ostSuggested){skipped++;return;}
+    cue.settings = cue.ostSuggested==='bottom' ? 'align:middle line:0%' : 'align:middle line:90%';
+    cue.ostSuggested=null;
+    recordOverride(cue);
+    applied++;
+  });
+  S.selectedRows.clear();
+  buildChecklist(); render(); refreshCaptionOverlay();
+  setProg('Applied '+applied+' OST suggestion(s)'+(skipped?' · '+skipped+' selected row(s) had no OST suggestion, skipped':'')+'.');
+});
+document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.max(0,video.currentTime-10); });
+document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); });
+
+function render(){
+  document.getElementById('empty').style.display='none';
+  document.getElementById('mainhead').style.display='flex';
+  document.getElementById('hotkeyHint').style.display='block';
+  document.getElementById('st-cues').textContent=S.cues.length;
+  document.getElementById('st-fixed').textContent=Object.values(S.fixCounts||{}).reduce((a,b)=>a+b,0);
+  document.getElementById('st-flag').textContent=S.report.length;
+  document.getElementById('st-validated').textContent=S.validated.size;
+  if(S.viewMode==='all'){ renderAllEvents(); return; }
+  document.getElementById('issueFilterBar').style.display='';
+  document.getElementById('mainheadTitle').textContent="What's left";
+  const visible=visibleReport();
+  S.currentVisible=visible;
+  document.getElementById('mainheadSub').textContent=S.report.length+' row(s) outstanding ('+visible.length+' shown) · '+S.validated.size+' validated';
+  renderIssueFilterBar();
+  renderBulkBar();
+  const readyTag=document.getElementById('readyTag');
+  if(S.everSeen.size>0 && S.report.length===0){
+    readyTag.textContent='✓ 100% validated — ready for delivery';
+    readyTag.style.color='var(--ok)';
+  } else {
+    readyTag.textContent='one pass: fix what\'s fixable, flag what isn\'t';
+    readyTag.style.color='';
+  }
+
+  const box=document.getElementById('checklist');
+  box.innerHTML='';
+  if(!S.report.length){
+    box.innerHTML='<div class="allclear">✓ Nothing outstanding'+(S.validated.size?' — '+S.validated.size+' item(s) validated. You\'re good to go.':' — all clear.')+'</div>';
+    return;
+  }
+  if(!visible.length){
+    box.innerHTML='<div class="allclear">No outstanding rows match this issue-type filter.</div>';
+    return;
+  }
+
+  visible.forEach((r,ri)=>{
+    const el=document.createElement('div');
+    el.className='item'+(ri===S.activeReportIdx?' active':'');
+    el.dataset.select=ri;
+    const isStack=r.stackStartA!=null;
+    const isGap=!!r.gap;
+    const ref=rowRef(r);
+    const resolved=r.issues.length===0;
+
+    const badges=resolved
+      ? '<span class="tier" style="background:rgba(61,220,132,.15);color:var(--ok)">✓ resolved</span>'
+      : r.issues.map(x=>'<span class="tier tier-'+x.tier+'">'+x.id+' · '+x.tier+'</span>').join('');
+    const msgs=resolved
+      ? '<div class="msg" style="color:var(--ok)">No outstanding issues detected here anymore — validate to remove, or keep editing if you\'re not done.</div>'
+      : r.issues.map(x=>'<div class="msg">'+esc(x.message)+'</div>').join('');
+
+    const evIdx = r.gap ? null : (r.stackStartA!=null ? findCueIdxByStart(r.stackStartA) : findCueIdxByStart(r.startKey));
+    let body =
+      '<div class="top"><input type="checkbox" class="bulk-select" data-key="'+esc(r.key)+'" '+(S.selectedRows.has(r.key)?'checked':'')+' title="Select for bulk actions">'+
+      (evIdx!=null&&evIdx>=0?'<span class="evnum">#'+(evIdx+1)+'</span>':'')+
+      '<span class="tc">'+fmtTime(ref.start).slice(0,11)+' → '+fmtTime(ref.end).slice(0,11)+'</span>'+
+      badges+
+      '<button class="pbtn small validate" data-act="validate" data-ri="'+ri+'" style="margin-left:auto">✓ Validate</button></div>'+
+      msgs;
+
+    if(isGap){
+      body+='<div class="plabel">No caption event here to edit — this is a gap/timeline finding. Check the audio at this timecode and add a caption event manually in your VTT if needed, then re-run.</div>';
+      el.innerHTML=body; box.appendChild(el); return;
+    }
+
+    const idxA = isStack ? findCueIdxByStart(r.stackStartA) : findCueIdxByStart(r.startKey);
+    const idxB = isStack ? findCueIdxByStart(r.stackStartB) : null;
+    const cueA = S.cues[idxA];
+    const cueB = isStack ? S.cues[idxB] : null;
+    if(!cueA){ el.innerHTML=body; box.appendChild(el); return; } // stale, will self-clean next build
+
+    if(isStack){
+      body+='<div class="rowlabel">Cue A</div><textarea spellcheck="true" class="txt-edit" data-cue="'+idxA+'">'+esc(cueA.text)+'</textarea>'+
+        '<div class="rowlabel">Cue B</div><textarea spellcheck="true" class="txt-edit" data-cue="'+idxB+'">'+esc(cueB.text)+'</textarea>'+
+        '<div class="actions">'+
+        '<button class="pbtn small" data-act="merge-nodash" data-ri="'+ri+'">Merge — same speaker (no dash)</button>'+
+        '<button class="pbtn small" data-act="merge-dash" data-ri="'+ri+'">Merge — two speakers (dash each line)</button>'+
+        '</div>';
+    } else {
+      const maxLen=+document.getElementById('opt-len').value||32;
+      body+='<textarea spellcheck="true" class="txt-edit" data-cue="'+idxA+'">'+esc(cueA.text)+'</textarea>'+
+        '<div class="livemeta" data-metafor="'+idxA+'" style="margin:4px 0">'+renderCaptionMeta(cueA.text,cueA.end-cueA.start,maxLen,MAXCPS_REF)+'</div>'+
+        '<div class="actions">'+
+        '<button class="pbtn small" data-act="pos-top" data-ri="'+ri+'">Move to TOP</button>'+
+        '<button class="pbtn small" data-act="pos-bottom" data-ri="'+ri+'">Move to BOTTOM</button>'+
+        '<button class="pbtn small" data-act="toggle-italic" data-ri="'+ri+'"><i>I</i> Italic</button>'+
+        '<button class="pbtn small" data-act="toggle-bold" data-ri="'+ri+'"><b>B</b> Bold</button>'+
+        '<button class="pbtn small" data-act="word-next" data-ri="'+ri+'">Word ► next line</button>'+
+        '<button class="pbtn small" data-act="word-prev" data-ri="'+ri+'">◄ Word prev line</button>'+
+        '<button class="pbtn small" data-act="linebreak" data-ri="'+ri+'">↵ Break line here</button>'+
+        '<button class="pbtn small" data-act="split" data-ri="'+ri+'">✂ Split at cursor</button>'+
+        '</div>'+
+        '<div class="spkfield"><span class="plabel">Note:</span>'+
+        '<input type="text" placeholder="reviewer note (not exported as a caption)" data-note-ri="'+ri+'" value="'+esc(S.annotations[cueA.srcIdx]||'')+'" style="width:220px"></div>';
+    }
+    body+='<div class="spkfield"><span class="plabel">Speaker ID:</span>'+
+      '<select class="spk-select" data-ri="'+ri+'"><option value="">— choose speaker —</option>'+
+      S.speakerPool.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')+
+      '<option value="__new__">+ New name…</option></select>'+
+      '<input type="text" placeholder="new name" data-newspk="'+ri+'" style="display:none">'+
+      '<button class="pbtn small" data-act="apply-spk" data-ri="'+ri+'">Apply</button></div>';
+
+    el.innerHTML=body;
+    box.appendChild(el);
+  });
+
+  // Clicking anywhere in the card (except an interactive control) seeks to that event.
+  // Shift-click selects a range for bulk actions; Ctrl/Cmd-click toggles one row in/out
+  // of the selection without disturbing the rest — same convention as a file manager.
+  box.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('button,textarea,select,input'))return;
+    const ri=+el.dataset.select;
+    if(e.shiftKey && S.lastClickedRi!=null){
+      const [a,b]=[S.lastClickedRi,ri].sort((x,y)=>x-y);
+      for(let k=a;k<=b;k++){ if(S.currentVisible[k])S.selectedRows.add(S.currentVisible[k].key); }
+      render();
+      return;
+    }
+    if(e.ctrlKey||e.metaKey){
+      const key=S.currentVisible[ri].key;
+      if(S.selectedRows.has(key))S.selectedRows.delete(key); else S.selectedRows.add(key);
+      S.lastClickedRi=ri;
+      render();
+      return;
+    }
+    S.lastClickedRi=ri;
+    selectReportRow(ri);
+  }));
+  box.querySelectorAll('input.bulk-select').forEach(cb=>cb.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(e.target.checked)S.selectedRows.add(e.target.dataset.key);
+    else S.selectedRows.delete(e.target.dataset.key);
+    renderBulkBar();
+  }));
+  box.querySelectorAll('select.spk-select').forEach(sel=>sel.addEventListener('change',()=>{
+    const newInp=document.querySelector('[data-newspk="'+sel.dataset.ri+'"]');
+    newInp.style.display = sel.value==='__new__' ? 'inline-block' : 'none';
+  }));
+  renderTicks();
+  box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
+    ta.addEventListener('focus',()=>pushHistory());
+    ta.addEventListener('input',()=>{
+    const cue=S.cues[+ta.dataset.cue];
+    const maxLen=+document.getElementById('opt-len').value||32;
+    const pos=ta.selectionStart;
+    const {text,overflow}=enforceCaptionLimits(ta.value,maxLen);
+    if(text!==ta.value){ ta.value=text; const np=Math.min(pos,text.length); ta.setSelectionRange(np,np); }
+    cue.text=text;
+    recordOverride(cue);
+    refreshCaptionOverlay();
+    const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
+    if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
+    if(overflow)setProg('This event is capped at 3 lines / '+maxLen+' chars per line — extra text was trimmed. Split the dialogue into a new event if it needs more room.',true);
+  });});
+  box.querySelectorAll('[data-note-ri]').forEach(inp=>inp.addEventListener('input',()=>{
+    const r=S.currentVisible[+inp.dataset.noteRi];
+    const idx=r.stackStartA!=null?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
+    if(S.cues[idx])S.annotations[S.cues[idx].srcIdx]=inp.value;
+  }));
+  box.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const ri=+btn.dataset.ri, act=btn.dataset.act, r=S.currentVisible[ri];
+    pushHistory();
+    if(act==='merge-dash'||act==='merge-nodash'){
+      const a=findCueIdxByStart(r.stackStartA), b=findCueIdxByStart(r.stackStartB);
+      const lineA=S.cues[a].text.split('\n'), lineB=S.cues[b].text.split('\n');
+      const merged = act==='merge-dash'
+        ? [...lineA.map(l=>l.startsWith('-')?l:'- '+l), ...lineB.map(l=>l.startsWith('-')?l:'- '+l)]
+        : [...lineA, ...lineB];
+      S.cues[a]={...S.cues[a],text:merged.join('\n')};
+      S.cues.splice(b,1);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg('Merged — '+(act==='merge-dash'?'dash added to both speakers.':'no dash, same speaker.')+' Note: a merge does not survive clicking "Run full analysis" again — it rebuilds from the original file. Export before re-running if you want to keep it.');
+    } else if(act==='pos-top'||act==='pos-bottom'){
+      const cue=S.cues[findCueIdxByStart(r.startKey)];
+      cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
+      recordOverride(cue);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg('Position set to '+(act==='pos-top'?'TOP':'BOTTOM')+' for that cue — check the video preview, it updates immediately.');
+    } else if(act==='toggle-italic'||act==='toggle-bold'){
+      const cue=S.cues[findCueIdxByStart(r.startKey)];
+      toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
+      buildChecklist(); render(); refreshCaptionOverlay();
+    } else if(act==='word-next'||act==='word-prev'){
+      const idx=findCueIdxByStart(r.startKey);
+      const cue=S.cues[idx];
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+      const moved=moveWordBetweenLines(cue.text,ta?ta.selectionStart:0,act==='word-next'?'next':'prev');
+      if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
+      cue.text=moved; recordOverride(cue);
+      buildChecklist(); render(); refreshCaptionOverlay();
+    } else if(act==='linebreak'){
+      const idx=findCueIdxByStart(r.startKey);
+      const cue=S.cues[idx];
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+      const cursor=ta?ta.selectionStart:cue.text.length;
+      const maxLen=+document.getElementById('opt-len').value||32;
+      const withBreak=insertLineBreakAtCursor(cue.text,cursor);
+      const {text,overflow}=enforceCaptionLimits(withBreak,maxLen);
+      cue.text=text; recordOverride(cue);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
+    } else if(act==='split'){
+      const idx=findCueIdxByStart(r.startKey);
+      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+      const cue=S.cues[idx];
+      const cursor=ta?ta.selectionStart:Math.floor(cue.text.length/2);
+      const parts=splitCueAtCursor(idx,cursor);
+      if(!parts){setProg('Put the cursor where you want the split — not at the very start or end.',true);return;}
+      S.cues.splice(idx,1,parts[0],parts[1]);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
+    } else if(act==='apply-spk'){
+      const sel=document.querySelector('select[data-ri="'+ri+'"]');
+      const newInp=document.querySelector('[data-newspk="'+ri+'"]');
+      const name = sel.value==='__new__' ? (newInp.value||'').trim() : sel.value;
+      if(!name){setProg('Choose or type a speaker name first.',true);return;}
+      const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+      const cue=S.cues[idx];
+      setSpeakerId(cue,name);
+      addToPool(name.toUpperCase());
+      // propagate to every other cue the voice-fingerprint scan grouped with this one
+      const cl=S.speakerClusters[cue.srcIdx];
+      let propagated=0;
+      if(cl){
+        S.clusterNames[cl]=name;
+        S.cues.forEach(other=>{
+          if(other===cue)return;
+          if(S.speakerClusters[other.srcIdx]!==cl)return;
+          const placeholderRe=new RegExp('^\\s*'+cl+'\\s*:\\s*','i');
+          if(placeholderRe.test(other.text)){ other.text=other.text.replace(placeholderRe,''); setSpeakerId(other,name); propagated++; }
+          else if(!HAS_ID.test(other.text)){ setSpeakerId(other,name); propagated++; }
+        });
+      }
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg(cl
+        ? 'Speaker ID "'+name.toUpperCase()+'" applied here + propagated to '+propagated+' other cue(s) the voice scan grouped as the same speaker. Check the video preview — it\'s already updated.'
+        : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
+    } else if(act==='validate'){
+      S.validated.add(r.key);
+      logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
+      buildChecklist(); render();
+      setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
+    }
+  }));
+}
+
+/* =========================================================
+   PLAYBACK OVERLAY
+========================================================= */
+function refreshCaptionOverlay(){
+  if(S.scanning)return;
+  const t=video.currentTime-S.offset;
+  const c=S.cues.find(c=>t>=c.start&&t<c.end);
+  const ov=document.getElementById('capoverlay'),tx=document.getElementById('captext');
+  if(c){ tx.textContent=c.text; ov.style.display='block';
+    const lm=/line:\s*(\d+)/.exec(c.settings||''); ov.className='capoverlay '+((lm&&+lm[1]<50)?'pos-top':'pos-bottom');
+  } else ov.style.display='none';
+}
+video.addEventListener('timeupdate',()=>{
+  refreshCaptionOverlay(); updatePlayheadUI();
+  if(S.playBoundEnd!=null && video.currentTime>=S.playBoundEnd){ video.pause(); S.playBoundEnd=null; }
+});
+video.addEventListener('loadedmetadata',()=>{ document.getElementById('tcbar').style.display='block'; renderTicks(); });
+
+/* =========================================================
+   TIMECODE BAR — scrubber, flagged-event ticks, jump box,
+   and prev/next-flagged navigation shared with row clicks
+========================================================= */
+function selectReportRow(idx){
+  const visible=S.currentVisible||S.report;
+  if(!visible.length)return;
+  idx=Math.max(0,Math.min(idx,visible.length-1));
+  S.activeReportIdx=idx;
+  render();
+  const r=visible[idx]; const ref=rowRef(r);
+  if(S.videoURL){
+    video.currentTime=Math.max(0,ref.start+S.offset+0.01);
+    S.playBoundEnd=ref.end+S.offset;
+    video.pause();
+  }
+  document.getElementById('nav-pos').textContent=(idx+1)+'/'+visible.length;
+  const active=document.querySelector('.item.active');
+  if(active)active.scrollIntoView({behavior:'smooth',block:'center'});
+}
+document.getElementById('nav-prev').addEventListener('click',()=>{const v=S.currentVisible||S.report; selectReportRow(S.activeReportIdx<=0?v.length-1:S.activeReportIdx-1);});
+document.getElementById('nav-next').addEventListener('click',()=>{const v=S.currentVisible||S.report; selectReportRow(S.activeReportIdx<0?0:S.activeReportIdx+1);});
+
+function updatePlayheadUI(){
+  const track=document.getElementById('tcbarTrack');
+  if(!video.duration)return;
+  const pct=Math.min(1,Math.max(0,video.currentTime/video.duration));
+  document.getElementById('tcbarFill').style.width=(pct*100)+'%';
+  document.getElementById('tcbarPlayhead').style.left=(pct*100)+'%';
+  document.getElementById('tcbar-pos').textContent=fmtTime(video.currentTime).slice(0,11);
+}
+function renderTicks(){
+  const marks=document.getElementById('tcbarMarks');
+  if(!marks)return;
+  marks.innerHTML='';
+  const visible=S.currentVisible||S.report;
+  if(!video.duration||!visible.length)return;
+  visible.forEach(r=>{
+    if(r.issues.some(x=>x.id==='SYNC'))return;
+    const pct=Math.min(1,Math.max(0,rowRef(r).start/video.duration));
+    const m=document.createElement('div');
+    m.className='tcmark'+(r.issues.some(x=>x.tier==='complex')?' complex':'');
+    m.style.left=(pct*100)+'%';
+    marks.appendChild(m);
+  });
+}
+document.getElementById('tcbarTrack').addEventListener('click',e=>{
+  if(!video.duration)return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  const pct=Math.min(1,Math.max(0,(e.clientX-rect.left)/rect.width));
+  video.currentTime=pct*video.duration;
+});
+function parseJumpTimecode(str){
+  str=str.trim();
+  // SMPTE frame-based: HH:MM:SS:FF or HH:MM:SS;FF (semicolon = NTSC drop-frame convention).
+  // Uses S.meta.framerate if the loaded JSON metadata has one, otherwise a sensible default
+  // per convention. This is a "jump roughly there" approximation, not frame-exact drop-frame math.
+  const smpte=str.match(/^(\d{1,2}):(\d{2}):(\d{2})[:;](\d{1,3})$/);
+  if(smpte){
+    const[,hh,mm,ss,ff]=smpte;
+    const dropFrame=str.includes(';');
+    const fps=(S.meta&&S.meta.framerate)?S.meta.framerate:(dropFrame?29.97:23.976);
+    return (+hh)*3600+(+mm)*60+(+ss)+(+ff)/fps;
+  }
+  const t=parseTime(str.includes(':')?str:'00:00:'+str);
+  if(t!=null)return t;
+  const f=parseFloat(str);
+  return isNaN(f)?null:f;
+}
+document.getElementById('tc-jump-go').addEventListener('click',()=>{
+  const t=parseJumpTimecode(document.getElementById('tc-jump').value);
+  if(t==null){setProg('Enter a timecode like 00:12:34.500 or a plain seconds value.',true);return;}
+  if(!S.videoURL){setProg('Load a video to jump to a timecode.',true);return;}
+  video.currentTime=Math.max(0,t);
+});
+document.getElementById('tc-jump').addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('tc-jump-go').click(); });
+renderDictPanel();
+renderShortFormsPanel();
+</script>
+</body>
+</html>

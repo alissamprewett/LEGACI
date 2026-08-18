@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci — Translate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --accent:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(61,139,253,.06),transparent 55%)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--accent)}
+a.back{font-family:var(--mono);font-size:11px;color:var(--gray);text-decoration:none;margin-left:auto}
+a.back:hover{color:var(--accent)}
+.app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+.drop:hover{border-color:var(--accent);background:rgba(61,139,253,.06)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:2px 6px;font-weight:700}
+.drop.loaded .dk{background:var(--ok)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px}
+.langrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.langrow:last-child{border-bottom:0}
+.langrow input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.langrow label{font-size:13px;flex:1}
+.langrow .flag{font-size:16px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:12px 14px;font-size:12.5px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;width:100%}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:pre-wrap;line-height:1.6}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+.main{padding:24px 28px 60px}
+.empty{border:1px dashed var(--line2);border-radius:8px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px}
+.empty .big{font-size:26px;margin-bottom:12px}
+.hint{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:680px;margin-bottom:18px;line-height:1.6}
+.caveat{border:1px solid rgba(255,176,32,.35);background:rgba(255,176,32,.06);border-radius:8px;padding:12px 16px;max-width:680px;margin-bottom:18px;font-size:12.5px;color:var(--gray);line-height:1.6}
+.caveat b{color:var(--warn)}
+.results{display:flex;flex-direction:column;gap:16px;max-width:760px}
+.panel{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:var(--panel);display:none}
+.panel.show{display:block}
+.panel h3{font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.panel .sub{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:12px}
+.seglist{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.seg{padding:8px 10px;border-radius:4px;background:var(--panel2)}
+.seg .tc{font-family:var(--mono);font-size:9.5px;color:var(--accent)}
+.seg .orig{font-size:11px;color:var(--faint);margin-top:2px}
+.seg .txt{font-size:12.5px;color:var(--white);margin-top:2px}
+.panel .actions{display:flex;gap:8px;margin-top:12px}
+.panel .actions button{flex:1;font-family:var(--mono);font-size:10.5px;padding:8px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:5px}
+.panel .actions button:hover{border-color:var(--accent);color:var(--accent)}
+.statuschip{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;border-radius:10px;padding:2px 8px}
+.statuschip.pending{background:rgba(255,255,255,.06);color:var(--faint)}
+.statuschip.working{background:rgba(93,184,255,.15);color:var(--info)}
+.statuschip.done{background:rgba(61,220,132,.15);color:var(--ok)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <a class="back" href="index.html">← Back to hub</a>
+</header>
+<div class="app">
+<aside class="rail">
+  <div>
+    <h3>Source</h3>
+    <label class="drop" id="drop-caption">
+      <span class="dk">FILE</span>
+      <span><span>Caption file</span><span class="ds" id="caption-name">.vtt / .srt</span></span>
+      <input type="file" id="file-caption" accept=".vtt,.srt">
+    </label>
+  </div>
+  <div>
+    <h3>Translate to</h3>
+    <div class="langrow"><input type="checkbox" id="lang-es" checked><span class="flag">🇪🇸</span><label for="lang-es">Spanish (general)</label></div>
+    <div class="langrow"><input type="checkbox" id="lang-fr"><span class="flag">🇫🇷</span><label for="lang-fr">French</label></div>
+    <div class="langrow"><input type="checkbox" id="lang-it"><span class="flag">🇮🇹</span><label for="lang-it">Italian</label></div>
+    <div class="langrow"><input type="checkbox" id="lang-de"><span class="flag">🇩🇪</span><label for="lang-de">German</label></div>
+    <button class="btn" id="btn-translate" disabled style="margin-top:14px">Translate selected</button>
+  </div>
+  <div class="progress" id="progress"></div>
+</aside>
+<main class="main">
+  <div class="hint">Runs entirely in your browser using open Helsinki-NLP OPUS-MT models — nothing is uploaded except the one-time model download per language (cached after that, so later runs don't need it again).</div>
+  <div class="caveat"><b>Before you trust this for delivery:</b> these are general-purpose open translation models, not tuned for broadcast captioning or Latin-American-specific Spanish — expect real errors, especially with names, slang, and idioms. Treat the output as a first draft to review, the same way Transcribe's output is a draft. Timecodes and positioning are copied through untouched; only the dialogue text is translated, and any leading "NAME:" speaker ID is preserved as-is rather than translated.</div>
+  <div class="empty" id="empty">
+    <div class="big">🌐</div>
+    <p>Load a caption file, pick one or more languages, and translate. Each language gets its own downloadable file once it finishes.</p>
+  </div>
+  <div class="results" id="results"></div>
+</main>
+</div>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
+env.allowLocalModels = false;
+
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('translate', 'page_view', '');
+
+const LANGS = {
+  es: { label: 'Spanish (general)', flag: '🇪🇸', model: 'Xenova/opus-mt-en-es' },
+  fr: { label: 'French', flag: '🇫🇷', model: 'Xenova/opus-mt-en-fr' },
+  it: { label: 'Italian', flag: '🇮🇹', model: 'Xenova/opus-mt-en-it' },
+  de: { label: 'German', flag: '🇩🇪', model: 'Xenova/opus-mt-en-de' }
+};
+const S = { cues: [], results: {} };
+const translators = {};
+
+const progEl = document.getElementById('progress');
+const setProg = (t, cls) => { progEl.textContent = t; progEl.className = 'progress' + (cls ? ' ' + cls : ''); };
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function parseTime(t){
+  const m=t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
+  if(!m)return null;
+  return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
+}
+function fmtTime(s,sep){
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=Math.floor(s%60), ms=Math.round((s-Math.floor(s))*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+(sep||'.')+String(ms).padStart(3,'0');
+}
+function parseCaptions(text){
+  const cues=[];
+  text=text.replace(/^\uFEFF/,'');
+  for(const b of text.split(/\r?\n\r?\n+/)){
+    const lines=b.split(/\r?\n/).filter(l=>l!=='');
+    if(!lines.length)continue;
+    let i=0;
+    if(/^WEBVTT|^NOTE|^STYLE/.test(lines[0]))continue;
+    if(!lines[i].includes('-->'))i++;
+    if(i>=lines.length||!lines[i].includes('-->'))continue;
+    const[tpart,...rest]=lines[i].split('-->');
+    const endTok=rest.join('-->').trim().split(/\s+/);
+    const start=parseTime(tpart), end=parseTime(endTok[0]);
+    if(start==null||end==null)continue;
+    cues.push({start,end,settings:endTok.slice(1).join(' '),text:lines.slice(i+1).join('\n')});
+  }
+  cues.sort((a,b)=>a.start-b.start);
+  return cues;
+}
+
+document.getElementById('file-caption').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const isSrt=/\.srt$/i.test(f.name);
+  const reader=new FileReader();
+  reader.onload=()=>{
+    S.cues=parseCaptions(reader.result);
+    S.sourceFormat=isSrt?'srt':'vtt';
+    document.getElementById('drop-caption').classList.add('loaded');
+    document.getElementById('caption-name').textContent=f.name+' · '+S.cues.length+' cues';
+    document.getElementById('btn-translate').disabled=!S.cues.length;
+    setProg(S.cues.length?S.cues.length+' cues loaded. Pick language(s) and translate.':'No cues found — is this a valid .vtt/.srt?', !S.cues.length);
+  };
+  reader.readAsText(f);
+});
+
+const HAS_ID=/^\s*(\(|\[)?[A-Z][A-Z .'-]{1,20}(\)|\])?\s*:\s*/;
+async function translateLang(code){
+  const info=LANGS[code];
+  const panel=document.getElementById('panel-'+code);
+  const chip=document.getElementById('chip-'+code);
+  document.getElementById('empty').style.display='none';
+  panel.classList.add('show');
+  chip.textContent='WORKING'; chip.className='statuschip working';
+  try{
+    if(!translators[code]){
+      setProg('Loading '+info.label+' model (one-time download, then cached)…','info');
+      translators[code]=await pipeline('translation', info.model, {
+        progress_callback: p=>{ if(p.status==='progress')setProg('Downloading '+info.label+' model: '+(p.file||'')+' '+Math.round(p.progress||0)+'%','info'); }
+      });
+    }
+    const out=[];
+    for(let i=0;i<S.cues.length;i++){
+      setProg('Translating to '+info.label+' — cue '+(i+1)+'/'+S.cues.length+'…','info');
+      const c=S.cues[i];
+      const idMatch=c.text.match(HAS_ID);
+      const prefix=idMatch?idMatch[0]:'';
+      const body=idMatch?c.text.slice(idMatch[0].length):c.text;
+      // Translate each line on its own — flattening a two-line/two-speaker cue into one
+      // string was causing the model to silently drop the second line rather than
+      // translate it, since it read as one run-on compound sentence.
+      let translated=body;
+      if(body.trim()){
+        const lines=body.split('\n');
+        const translatedLines=[];
+        for(const line of lines){
+          if(!line.trim()){ translatedLines.push(line); continue; }
+          const result=await translators[code](line);
+          // One input line must always produce one output line — small models can
+          // occasionally hallucinate a stray line break (e.g. mid-way through an
+          // unfamiliar proper noun); collapse that back rather than let it split the cue.
+          const raw=(result[0]&&result[0].translation_text)||line;
+          translatedLines.push(raw.replace(/\s*\n+\s*/g,' ').trim());
+        }
+        translated=translatedLines.join('\n');
+        // Same rule as Legaci: two speaker-change dashes cannot share one physical line.
+        translated=translated.split('\n').map(l=>l.replace(/([.!?]\s+)(-\s*\S)/g,'$1\n$2')).join('\n');
+      }
+      out.push({start:c.start,end:c.end,settings:c.settings,text:prefix+translated,origText:c.text});
+    }
+    S.results[code]=out;
+    renderLangPanel(code);
+    chip.textContent='DONE'; chip.className='statuschip done';
+    setProg(info.label+' translation complete — '+out.length+' cue(s). Review before delivery — this is a draft.');
+  }catch(err){
+    chip.textContent='FAILED'; chip.className='statuschip pending';
+    setProg('Translation to '+info.label+' failed: '+err.message,'err');
+  }
+}
+function renderLangPanel(code){
+  const box=document.getElementById('seglist-'+code);
+  const out=S.results[code];
+  document.getElementById('sub-'+code).textContent=out.length+' segment(s) translated — showing first 8 as a preview';
+  box.innerHTML='';
+  out.slice(0,8).forEach(c=>{
+    const el=document.createElement('div'); el.className='seg';
+    el.innerHTML='<div class="tc">'+fmtTime(c.start).slice(0,11)+' → '+fmtTime(c.end).slice(0,11)+'</div>'+
+      '<div class="orig">'+esc(c.origText)+'</div><div class="txt">'+esc(c.text)+'</div>';
+    box.appendChild(el);
+  });
+}
+function toVTT(cues){
+  let out='WEBVTT\nNOTE Draft translation generated by Legaci Translate — review before use\n\n';
+  cues.forEach(c=>{ out+=fmtTime(c.start)+' --> '+fmtTime(c.end)+(c.settings?' '+c.settings:'')+'\n'+c.text+'\n\n'; });
+  return out;
+}
+function toSRT(cues){
+  let out='';
+  cues.forEach((c,i)=>{ out+=(i+1)+'\n'+fmtTime(c.start,',')+' --> '+fmtTime(c.end,',')+'\n'+c.text+'\n\n'; });
+  return out.trim()+'\n';
+}
+function download(content,name,mime){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+
+const resultsBox=document.getElementById('results');
+Object.keys(LANGS).forEach(code=>{
+  const info=LANGS[code];
+  const panel=document.createElement('div');
+  panel.className='panel'; panel.id='panel-'+code;
+  panel.innerHTML=
+    '<h3>'+info.flag+' '+info.label+' <span class="statuschip pending" id="chip-'+code+'">PENDING</span></h3>'+
+    '<div class="sub" id="sub-'+code+'"></div>'+
+    '<div class="seglist" id="seglist-'+code+'"></div>'+
+    '<div class="actions">'+
+    '<button data-code="'+code+'" data-fmt="vtt">Export .vtt</button>'+
+    '<button data-code="'+code+'" data-fmt="srt">Export .srt</button>'+
+    '</div>';
+  resultsBox.appendChild(panel);
+});
+resultsBox.addEventListener('click', e=>{
+  const btn=e.target.closest('button[data-code]'); if(!btn)return;
+  const code=btn.dataset.code, fmt=btn.dataset.fmt;
+  const out=S.results[code]; if(!out)return;
+  logEvent('translate', 'export', code+'_'+fmt);
+  const content=fmt==='srt'?toSRT(out):toVTT(out);
+  download(content,'translated_'+code+'.'+fmt, fmt==='srt'?'application/x-subrip':'text/vtt');
+});
+document.getElementById('btn-translate').addEventListener('click', async()=>{
+  const selected=Object.keys(LANGS).filter(code=>document.getElementById('lang-'+code).checked);
+  if(!selected.length){ setProg('Pick at least one language.', true); return; }
+  logEvent('translate', 'run_translate', selected.join(','));
+  document.getElementById('btn-translate').disabled=true;
+  for(const code of selected){ await translateLang(code); }
+  document.getElementById('btn-translate').disabled=false;
+  setProg('All selected translations complete.');
+});
+</script>
+</body>
+</html>

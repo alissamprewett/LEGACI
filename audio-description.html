@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci — Audio Description</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --accent:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(61,139,253,.06),transparent 55%)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--accent)}
+a.back{font-family:var(--mono);font-size:11px;color:var(--gray);text-decoration:none;margin-left:auto}
+a.back:hover{color:var(--accent)}
+.app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+.drop:hover{border-color:var(--accent);background:rgba(61,139,253,.06)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:2px 6px;font-weight:700}
+.drop.loaded .dk{background:var(--ok)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}
+.opt label{font-size:12.5px;color:var(--gray)}
+.opt input[type=number]{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11.5px;width:60px;text-align:right}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:12px 14px;font-size:12.5px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;width:100%}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:pre-wrap;line-height:1.6}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+.main{padding:24px 28px 60px}
+.videowrap{position:relative;background:#000;border:1px solid var(--line);border-radius:8px;max-width:640px;margin-bottom:16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.videowrap.show{display:block}
+video{width:100%;display:block;border-radius:7px}
+.hint{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:680px;margin-bottom:12px;line-height:1.6}
+.caveat{border:1px solid rgba(255,176,32,.35);background:rgba(255,176,32,.06);border-radius:8px;padding:12px 16px;max-width:680px;margin-bottom:18px;font-size:12.5px;color:var(--gray);line-height:1.6}
+.caveat b{color:var(--warn)}
+.empty{border:1px dashed var(--line2);border-radius:8px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px}
+.empty .big{font-size:26px;margin-bottom:12px}
+.summary{font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:14px}
+.eventlist{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.event{border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:var(--panel)}
+.event .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.event .tc{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:600}
+.event .dur{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.event .budget{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:10px}
+.event .budget.ok{background:rgba(61,220,132,.15);color:var(--ok)}
+.event .budget.over{background:rgba(255,77,77,.15);color:var(--err)}
+.event textarea{width:100%;background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:5px;padding:8px 10px;font-family:var(--sans);font-size:13px;resize:vertical;min-height:44px}
+.event textarea:focus{border-color:var(--accent);outline:none}
+.event .actions{display:flex;gap:8px;margin-top:8px}
+.event .actions button{font-family:var(--mono);font-size:10px;padding:6px 10px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:5px}
+.event .actions button:hover{border-color:var(--accent);color:var(--accent)}
+.panelfoot{display:flex;gap:10px;margin-top:18px;max-width:760px}
+.panelfoot button{flex:1;font-family:var(--mono);font-size:11px;padding:10px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:6px}
+.panelfoot button:hover{border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <a class="back" href="index.html">← Back to hub</a>
+</header>
+<div class="app">
+<aside class="rail">
+  <div>
+    <h3>Source</h3>
+    <label class="drop" id="drop-video">
+      <span class="dk">FILE</span>
+      <span><span>Video file</span><span class="ds" id="video-name">.mp4 / .mov / .webm…</span></span>
+      <input type="file" id="file-video" accept="video/*">
+    </label>
+  </div>
+  <div>
+    <h3>Detection settings</h3>
+    <div class="opt"><label>Min. gap to describe (s)</label><input type="number" id="opt-mingap" value="2.5" step="0.5" min="1"></div>
+    <div class="opt"><label>Speaking rate (words/min)</label><input type="number" id="opt-wpm" value="160" step="10" min="80"></div>
+    <button class="btn" id="btn-generate" disabled style="margin-top:14px">Find gaps &amp; generate descriptions</button>
+  </div>
+  <div class="progress" id="progress"></div>
+</aside>
+<main class="main">
+  <div class="hint">Runs entirely in your browser — silence detection uses the Web Audio API, scene descriptions use an open image-captioning model (one-time download, cached after). Nothing is uploaded anywhere.</div>
+  <div class="caveat"><b>Read this before you rely on it:</b> the description model was trained on generic photos, not film — it can't recognize characters by name, can't track action across time (it only sees one freeze-frame per gap), and has no sense of what's dramatically worth describing. Expect it to produce plain, sometimes-wrong photo captions ("a person standing in a room"), not professional audio description. Every line here needs a human rewrite — this tool exists to find *where* description is needed and give you a rough starting point, not to write the final script.</div>
+  <div class="videowrap" id="videowrap">
+    <video id="video" controls preload="metadata" playsinline></video>
+  </div>
+  <div class="empty" id="empty">
+    <div class="big">👁️‍🗨️</div>
+    <p>Load a video, then find the dialogue gaps and generate a first-pass description for each one.</p>
+  </div>
+  <div id="results" style="display:none">
+    <div class="summary" id="summary"></div>
+    <div class="eventlist" id="eventlist"></div>
+    <div class="panelfoot">
+      <button id="export-vtt">Export descriptions .vtt (kind="descriptions")</button>
+      <button id="export-txt">Export script .txt</button>
+    </div>
+  </div>
+</main>
+</div>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
+env.allowLocalModels = false;
+
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('audio-description', 'page_view', '');
+
+const S = { events: [] };
+const video = document.getElementById('video');
+const progEl = document.getElementById('progress');
+const setProg = (t, cls) => { progEl.textContent = t; progEl.className = 'progress' + (cls ? ' ' + cls : ''); };
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtTime(s){
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=Math.floor(s%60), ms=Math.round((s-Math.floor(s))*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+'.'+String(ms).padStart(3,'0');
+}
+
+document.getElementById('file-video').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f)return;
+  video.src = URL.createObjectURL(f);
+  document.getElementById('drop-video').classList.add('loaded');
+  document.getElementById('video-name').textContent = f.name;
+  document.getElementById('videowrap').classList.add('show');
+  document.getElementById('btn-generate').disabled = false;
+  setProg('Video loaded. Adjust settings if needed, then find gaps.');
+});
+
+function seekAndWait(t){
+  return new Promise((res,rej)=>{
+    const to=setTimeout(()=>rej(new Error('seek timeout')),4000);
+    const on=()=>{clearTimeout(to);video.removeEventListener('seeked',on);
+      requestAnimationFrame(()=>requestAnimationFrame(res));};
+    video.addEventListener('seeked',on);
+    video.currentTime=Math.max(0,Math.min(t,(video.duration||1e9)-0.05));
+  });
+}
+let audioCtx=null, analyserRef=null;
+function ensureAudioGraph(){
+  if(audioCtx)return;
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaElementSource(video);
+  const analyser=audioCtx.createAnalyser(); analyser.fftSize=2048;
+  src.connect(analyser); analyser.connect(audioCtx.destination);
+  analyserRef=analyser;
+}
+function sampleEnergy(){
+  const buf=new Float32Array(analyserRef.fftSize);
+  analyserRef.getFloatTimeDomainData(buf);
+  let sum=0; for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];
+  return Math.sqrt(sum/buf.length);
+}
+const captionCanvas=document.createElement('canvas');
+captionCanvas.width=224; captionCanvas.height=224;
+const cctx=captionCanvas.getContext('2d');
+function grabFrameDataURL(){
+  const vw=video.videoWidth||224, vh=video.videoHeight||224;
+  const scale=Math.min(224/vw,224/vh);
+  const dw=vw*scale, dh=vh*scale;
+  cctx.fillStyle='#000'; cctx.fillRect(0,0,224,224);
+  cctx.drawImage(video,(224-dw)/2,(224-dh)/2,dw,dh);
+  return captionCanvas.toDataURL('image/jpeg',0.85);
+}
+
+let captioner=null;
+async function ensureCaptioner(){
+  if(captioner)return captioner;
+  setProg('Loading scene-description model (one-time download, then cached)…','info');
+  captioner=await pipeline('image-to-text','Xenova/vit-gpt2-image-captioning',{
+    progress_callback:p=>{ if(p.status==='progress')setProg('Downloading model: '+(p.file||'')+' '+Math.round(p.progress||0)+'%','info'); }
+  });
+  return captioner;
+}
+
+document.getElementById('btn-generate').addEventListener('click', async()=>{
+  const btn=document.getElementById('btn-generate');
+  btn.disabled=true;
+  document.getElementById('empty').style.display='none';
+  const minGap=+document.getElementById('opt-mingap').value||2.5;
+  const wpm=+document.getElementById('opt-wpm').value||160;
+  logEvent('audio-description', 'generate', '');
+  const SPEECH_THRESH=0.03;
+  try{
+    ensureAudioGraph();
+    await ensureCaptioner();
+    if(!video.duration){ await new Promise(res=>video.addEventListener('loadedmetadata',res,{once:true})); }
+    const wasPaused=video.paused;
+    await video.play().catch(()=>{});
+
+    // Sample audio energy across the whole timeline to find silent (no-dialogue) stretches.
+    const STEP=1.0;
+    const timeline=[];
+    for(let t=0; t<video.duration; t+=STEP){
+      setProg('Scanning for dialogue gaps — '+fmtTime(t).slice(0,8)+' / '+fmtTime(video.duration).slice(0,8)+'…','info');
+      try{ await seekAndWait(t); timeline.push({t, speech: sampleEnergy()>SPEECH_THRESH}); }
+      catch(e){}
+    }
+    // Collapse into contiguous silent runs of at least minGap seconds.
+    const gaps=[];
+    let runStart=null;
+    for(let i=0;i<timeline.length;i++){
+      if(!timeline[i].speech){ if(runStart==null)runStart=timeline[i].t; }
+      else if(runStart!=null){
+        const end=timeline[i].t;
+        if(end-runStart>=minGap)gaps.push({start:runStart,end});
+        runStart=null;
+      }
+    }
+    if(runStart!=null && video.duration-runStart>=minGap)gaps.push({start:runStart,end:video.duration});
+
+    S.events=[];
+    for(let i=0;i<gaps.length;i++){
+      const g=gaps[i];
+      setProg('Describing gap '+(i+1)+'/'+gaps.length+' ('+fmtTime(g.start).slice(0,8)+')…','info');
+      try{
+        await seekAndWait(g.start+(g.end-g.start)/2);
+        const frame=grabFrameDataURL();
+        const out=await captioner(frame);
+        const desc=(out[0]&&out[0].generated_text)||'(no description generated)';
+        const dur=g.end-g.start;
+        const wordBudget=Math.max(1,Math.floor(wpm/60*dur));
+        S.events.push({start:g.start,end:g.end,text:capitalize(desc),wordBudget});
+      }catch(e){}
+    }
+    video.pause();
+    if(!wasPaused)video.play().catch(()=>{});
+    renderEvents();
+    setProg('Done — '+S.events.length+' describable gap(s) found. Review and rewrite every line before use.');
+  }catch(err){
+    setProg('Failed: '+err.message,'err');
+  }finally{
+    btn.disabled=false;
+  }
+});
+function capitalize(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+function wordCount(s){ return (s.trim().match(/\S+/g)||[]).length; }
+function renderEvents(){
+  document.getElementById('results').style.display='block';
+  document.getElementById('summary').textContent=S.events.length+' gap(s) found — each needs review, this is a rough first pass.';
+  const box=document.getElementById('eventlist');
+  box.innerHTML='';
+  S.events.forEach((ev,i)=>{
+    const wc=wordCount(ev.text);
+    const over=wc>ev.wordBudget;
+    const el=document.createElement('div'); el.className='event';
+    el.innerHTML=
+      '<div class="top"><span class="tc">'+fmtTime(ev.start).slice(0,11)+' → '+fmtTime(ev.end).slice(0,11)+'</span>'+
+      '<span class="dur">'+(ev.end-ev.start).toFixed(1)+'s gap</span>'+
+      '<span class="budget '+(over?'over':'ok')+'" id="budget-'+i+'">'+wc+' / '+ev.wordBudget+' words'+(over?' — too long for this gap':'')+'</span></div>'+
+      '<textarea data-idx="'+i+'">'+esc(ev.text)+'</textarea>'+
+      '<div class="actions">'+
+      '<button data-act="seek" data-idx="'+i+'">▶ Jump here</button>'+
+      '<button data-act="preview" data-idx="'+i+'">🔊 Preview (speak aloud)</button>'+
+      '</div>';
+    box.appendChild(el);
+  });
+  box.querySelectorAll('textarea').forEach(ta=>ta.addEventListener('input',()=>{
+    const i=+ta.dataset.idx;
+    S.events[i].text=ta.value;
+    const wc=wordCount(ta.value), over=wc>S.events[i].wordBudget;
+    const chip=document.getElementById('budget-'+i);
+    chip.textContent=wc+' / '+S.events[i].wordBudget+' words'+(over?' — too long for this gap':'');
+    chip.className='budget '+(over?'over':'ok');
+  }));
+  box.querySelectorAll('[data-act="seek"]').forEach(b=>b.addEventListener('click',()=>{
+    video.currentTime=S.events[+b.dataset.idx].start;
+  }));
+  box.querySelectorAll('[data-act="preview"]').forEach(b=>b.addEventListener('click',()=>{
+    const ev=S.events[+b.dataset.idx];
+    video.currentTime=ev.start;
+    video.play().catch(()=>{});
+    if('speechSynthesis' in window){
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(ev.text));
+    }
+  }));
+}
+
+function toVTT(){
+  let out='WEBVTT\nNOTE Draft audio-description script generated by Legaci — review and rewrite before use\nNOTE Intended for a <track kind="descriptions"> — not a caption track\n\n';
+  S.events.forEach(ev=>{ out+=fmtTime(ev.start)+' --> '+fmtTime(ev.end)+'\n'+ev.text+'\n\n'; });
+  return out;
+}
+function toTXT(){
+  return S.events.map(ev=>fmtTime(ev.start).slice(0,11)+' — '+fmtTime(ev.end).slice(0,11)+'\n'+ev.text).join('\n\n');
+}
+function download(content,name,mime){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+document.getElementById('export-vtt').addEventListener('click',()=>{ logEvent('audio-description','export','vtt'); download(toVTT(),'audio_description.vtt','text/vtt'); });
+document.getElementById('export-txt').addEventListener('click',()=>{ logEvent('audio-description','export','txt'); download(toTXT(),'audio_description_script.txt','text/plain'); });
+</script>
+</body>
+</html>

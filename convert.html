@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci — Convert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --accent:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(61,139,253,.06),transparent 55%)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--accent)}
+a.back{font-family:var(--mono);font-size:11px;color:var(--gray);text-decoration:none;margin-left:auto}
+a.back:hover{color:var(--accent)}
+.app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+.drop:hover{border-color:var(--accent);background:rgba(61,139,253,.06)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:2px 6px;font-weight:700}
+.drop.loaded .dk{background:var(--ok)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}
+.opt label{font-size:12.5px;color:var(--gray)}
+.opt select,.opt input[type=text]{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11.5px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:12px 14px;font-size:12.5px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;width:100%}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:pre-wrap;line-height:1.6}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+.main{padding:24px 28px 60px}
+.hint{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:680px;margin-bottom:12px;line-height:1.6}
+.caveat{border:1px solid rgba(255,176,32,.35);background:rgba(255,176,32,.06);border-radius:8px;padding:12px 16px;max-width:680px;margin-bottom:18px;font-size:12.5px;color:var(--gray);line-height:1.6}
+.caveat b{color:var(--warn)}
+.source{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:680px;margin-bottom:18px;line-height:1.6}
+.source a{color:var(--info)}
+.empty{border:1px dashed var(--line2);border-radius:8px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px}
+.empty .big{font-size:26px;margin-bottom:12px}
+.preview{max-width:800px;display:none}
+.preview.show{display:block}
+.preview h3{font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;color:var(--accent)}
+.resultrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.resultrow .fname{font-family:var(--mono);font-size:11.5px;color:var(--white);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resultrow .rstat{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:10px}
+.resultrow .rstat.ok{background:rgba(61,220,132,.15);color:var(--ok)}
+.resultrow .rstat.fail{background:rgba(255,77,77,.15);color:var(--err)}
+.resultrow .rmsg{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.resultrow button{font-family:var(--mono);font-size:10px;padding:5px 10px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:5px}
+.resultrow button:hover{border-color:var(--accent);color:var(--accent)}
+.preview pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:11px;color:var(--gray);max-height:400px;overflow:auto;white-space:pre-wrap;margin-bottom:16px}
+.preview .stats{font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:12px}
+.panelfoot{display:flex;gap:10px;max-width:800px}
+.panelfoot button{flex:1;font-family:var(--mono);font-size:11px;padding:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px}
+.panelfoot button:hover{filter:brightness(1.1)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <a class="back" href="index.html">← Back to hub</a>
+</header>
+<div class="app">
+<aside class="rail">
+  <div>
+    <h3>Source file(s)</h3>
+    <label class="drop" id="drop-file">
+      <span class="dk">FILE</span>
+      <span><span>Caption file(s)</span><span class="ds" id="file-name">.vtt / .srt / .scc — select multiple for bulk</span></span>
+      <input type="file" id="file-input" accept=".vtt,.srt,.scc" multiple>
+    </label>
+  </div>
+  <div>
+    <h3>Convert to</h3>
+    <div class="opt"><label>Output format</label>
+      <select id="opt-format">
+        <option value="scc">SCC</option>
+        <option value="vtt">VTT</option>
+        <option value="srt">SRT</option>
+      </select>
+    </div>
+    <div class="opt"><label>Frame rate</label>
+      <select id="opt-fps">
+        <option value="29.97">29.97</option>
+        <option value="23.976">23.976</option>
+        <option value="24">24</option>
+        <option value="25">25</option>
+        <option value="30">30</option>
+        <option value="59.94">59.94</option>
+        <option value="60">60</option>
+      </select>
+    </div>
+    <div class="opt"><label>Drop-frame</label><input type="checkbox" id="opt-dropframe" checked></div>
+    <div class="opt"><label>Channel</label>
+      <select id="opt-channel"><option value="1">CC1</option><option value="2">CC2</option></select>
+    </div>
+    <button class="btn" id="btn-convert" disabled style="margin-top:14px">Convert</button>
+  </div>
+  <div class="progress" id="progress"></div>
+</aside>
+<main class="main">
+  <div class="hint">Runs entirely in your browser — pure format conversion, no AI model, no upload, no network call at all once the page is loaded. Select multiple files at once to convert them all in one pass, with a single .zip download at the end.</div>
+  <div class="caveat"><b>Scope, read before trusting this for delivery:</b> supports <b>pop-on</b> captions only (the standard for pre-authored, non-live content) on a single channel (CC1/CC2). SCC's grid is a fixed 15 rows × 32 columns — VTT/SRT positioning and styling get quantized to fit it, so this is not a byte-identical round-trip in that direction. Roll-up and paint-on caption styles are not supported. Validate the output against a real decoder (Ooona, a broadcast QC tool) before delivery — this has not been tested against a hardware/broadcast decoder.</div>
+  <div class="source">Built from directly-verified logic in <a href="https://github.com/Eyevinn/go-608" target="_blank">Eyevinn/go-608</a> (MIT licensed) — character tables, control codes, and drop-frame timecode math ported from its source rather than reconstructed from memory.</div>
+  <div class="empty" id="empty">
+    <div class="big">⇄</div>
+    <p>Load one .vtt, .srt, or .scc file — or select several at once for bulk conversion — choose an output format and frame rate, then convert.</p>
+  </div>
+  <div class="results" id="results" style="display:none;max-width:800px">
+    <div class="bulkbar" id="bulkbar" style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div class="stats" id="stats" style="margin-bottom:0"></div>
+      <button id="btn-download-zip" style="margin-left:auto;font-family:var(--mono);font-size:11px;padding:9px 14px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;display:none">Download all as .zip</button>
+    </div>
+    <div id="resultlist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px"></div>
+    <div class="preview" id="preview">
+      <h3>Output preview</h3>
+      <pre id="output-text"></pre>
+    </div>
+  </div>
+</main>
+</div>
+
+<script>
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('convert', 'page_view', '');
+
+/* =========================================================
+   CTA-608 CORE — ported from Eyevinn/go-608 (MIT), cta608/*.go
+   Character tables, PAC/control-code tables, odd parity, and the
+   Serialize/Parse wire logic are direct ports of that verified source.
+========================================================= */
+const basicSubst = {0x2a:'á',0x5c:'é',0x5e:'í',0x5f:'ó',0x60:'ú',0x7b:'ç',0x7c:'÷',0x7d:'Ñ',0x7e:'ñ',0x7f:'█'};
+const specialChars = ['®','°','½','¿','™','¢','£','♪','à',' ','è','â','ê','î','ô','û'];
+const extCharsA = ['Á','É','Ó','Ú','Ü','ü','\u2018','¡','*','\u2019','━','©','℠','•','\u201c','\u201d','À','Â','Ç','È','Ê','Ë','ë','Î','Ï','ï','Ô','Ù','ù','Û','«','»'];
+const extCharsB = ['Ã','ã','Í','Ì','ì','Ò','ò','Õ','õ','{','}','\\','^','_','|','∼','Ä','ä','Ö','ö','ß','¥','¤','┃','Å','å','Ø','ø','┏','┓','┗','┛'];
+const extFallback = {0x90:'A',0x91:'E',0x92:'O',0x93:'U',0x94:'U',0x95:'u',0x96:"'",0x97:'!',0x98:'?',0x99:"'",0x9a:'-',0x9b:'C',0x9c:'S',0x9d:'?',0x9e:'"',0x9f:'"',
+  0xa0:'A',0xa1:'A',0xa2:'C',0xa3:'E',0xa4:'E',0xa5:'E',0xa6:'e',0xa7:'I',0xa8:'I',0xa9:'i',0xaa:'O',0xab:'U',0xac:'u',0xad:'U',0xae:'<',0xaf:'>',
+  0xb0:'A',0xb1:'a',0xb2:'I',0xb3:'I',0xb4:'i',0xb5:'O',0xb6:'o',0xb7:'O',0xb8:'o',0xb9:'(',0xba:')',0xbb:'/',0xbc:'?',0xbd:'?',0xbe:'?',0xbf:'-',
+  0xc0:'A',0xc1:'a',0xc2:'O',0xc3:'o',0xc4:'s',0xc5:'Y',0xc6:'?',0xc7:'?',0xc8:'A',0xc9:'a',0xca:'O',0xcb:'o',0xcc:'?',0xcd:'?',0xce:'?',0xcf:'?'};
+
+function buildCharTables(){
+  const fwd={}, rev={};
+  const put=(code,r)=>{ fwd[code]=r; if(!(r in rev))rev[r]=code; };
+  for(let code=0x20;code<=0x7f;code++) put(code, basicSubst[code]||String.fromCharCode(code));
+  specialChars.forEach((r,i)=>put(0x80+i,r));
+  extCharsA.forEach((r,i)=>put(0x90+i,r));
+  extCharsB.forEach((r,i)=>put(0xb0+i,r));
+  return {fwd,rev};
+}
+const {fwd:internalToRune, rev:runeToInternal} = buildCharTables();
+
+const wireColors=['white','green','blue','cyan','red','yellow','magenta'];
+function wireColorIndex(c){ const i=wireColors.indexOf(c); return i<0?0:i; }
+function clamp(v,lo,hi){ return v<lo?lo:(v>hi?hi:v); }
+function underlineBit(u){ return u?1:0; }
+
+const pacRowEncode = {1:{b:0x11,u:false},2:{b:0x11,u:true},3:{b:0x12,u:false},4:{b:0x12,u:true},
+  5:{b:0x15,u:false},6:{b:0x15,u:true},7:{b:0x16,u:false},8:{b:0x16,u:true},9:{b:0x17,u:false},10:{b:0x17,u:true},
+  11:{b:0x10,u:false},12:{b:0x13,u:false},13:{b:0x13,u:true},14:{b:0x14,u:false},15:{b:0x14,u:true}};
+const pacRowDecode = {};
+for(const row in pacRowEncode){ const e=pacRowEncode[row]; pacRowDecode[e.b+'_'+e.u]=+row; }
+
+function oddParity(b){
+  const v=b&0x7f;
+  let ones=0,x=v; while(x){ones+=x&1;x>>=1;}
+  return ones%2===0 ? (v|0x80) : v;
+}
+function encodePAC(p){
+  const row=clamp(p.row,1,15);
+  const rc=pacRowEncode[row];
+  const base = rc.u ? 0x60 : 0x40;
+  let b1;
+  if(p.indent==null){
+    const colorPart = p.italic ? 0x0e : (2*wireColorIndex(p.color||'white'));
+    b1 = base+colorPart+underlineBit(p.underline);
+  } else {
+    const indent = Math.floor(clamp(p.indent,0,28)/4)*2;
+    b1 = base+0x10+indent+underlineBit(p.underline);
+  }
+  return [rc.b, b1];
+}
+function encodeOp(op){
+  const m={EOC:0x2f,EDM:0x2c,ENM:0x2e,CR:0x2d,BS:0x21,DER:0x24,TR:0x2a,RTD:0x2b,FON:0x28,AOF:0x22,AON:0x23};
+  return m[op]!=null?m[op]:0x2f;
+}
+function encodeSetMode(mode,rollUpRows){
+  if(mode==='rollup')return 0x23+clamp(rollUpRows||2,2,4);
+  if(mode==='painton')return 0x29;
+  return 0x20; // popon (RCL)
+}
+
+function serialize(tokens, opts){
+  opts=opts||{};
+  const channelOffset = opts.channel===2 ? 8 : 0;
+  const doubleControl = opts.doubling==='off' ? false : (opts.doubling==='on' ? true : (opts.field!==2));
+  let out=[], pending=-1;
+  function charByte(b){
+    if(pending<0){ pending=b; return; }
+    out.push(oddParity(pending), oddParity(b)); pending=-1;
+  }
+  function flush(){
+    if(pending<0)return;
+    out.push(oddParity(pending), oddParity(0x00)); pending=-1;
+  }
+  function ctrl(b0,b1,double){
+    flush();
+    const p0=oddParity(b0+channelOffset), p1=oddParity(b1);
+    out.push(p0,p1);
+    if(double)out.push(p0,p1);
+  }
+  function emitChars(text){
+    for(const r of text){
+      let ic = runeToInternal[r];
+      if(ic==null) ic = 0x3f;
+      if(ic<=0x7f) charByte(ic);
+      else if(ic<=0x8f) ctrl(0x11, ic-0x50, false);
+      else if(ic<=0xaf){
+        const fb=extFallback[ic]; const fbCode = fb!=null && runeToInternal[fb]!=null ? runeToInternal[fb] : 0x3f;
+        charByte(fbCode); ctrl(0x12, ic-0x70, false);
+      } else {
+        const fb=extFallback[ic]; const fbCode = fb!=null && runeToInternal[fb]!=null ? runeToInternal[fb] : 0x3f;
+        charByte(fbCode); ctrl(0x13, ic-0x90, false);
+      }
+    }
+  }
+  tokens.forEach(tok=>{
+    if(tok.type==='chars') emitChars(tok.text);
+    else if(tok.type==='pac'){ const [b0,b1]=encodePAC(tok); ctrl(b0,b1,doubleControl); }
+    else if(tok.type==='setmode'){ ctrl(0x14, encodeSetMode(tok.mode,tok.rollUpRows), doubleControl); }
+    else if(tok.type==='command'){ ctrl(0x14, encodeOp(tok.op), doubleControl); }
+  });
+  flush();
+  return out;
+}
+function decodePAC(c0n,c1){
+  const upper = c1>=0x60;
+  const row = pacRowDecode[c0n+'_'+upper];
+  if(row==null) return null;
+  const idx = upper ? c1-0x60 : c1-0x40;
+  const underline = (idx&1)===1;
+  if(idx<=0x0d) return {type:'pac',row,indent:null,color:wireColors[idx>>1],underline};
+  if(idx<=0x0f) return {type:'pac',row,indent:null,color:'white',italic:true,underline};
+  const indent = ((idx-0x10)>>1)*4;
+  return {type:'pac',row,indent,color:'white',underline};
+}
+function decodeCmd(c1){
+  const m={0x20:{type:'setmode',mode:'popon'},0x25:{type:'setmode',mode:'rollup',rollUpRows:2},
+    0x26:{type:'setmode',mode:'rollup',rollUpRows:3},0x27:{type:'setmode',mode:'rollup',rollUpRows:4},
+    0x29:{type:'setmode',mode:'painton'},0x21:{type:'command',op:'BS'},0x22:{type:'command',op:'AOF'},
+    0x23:{type:'command',op:'AON'},0x24:{type:'command',op:'DER'},0x28:{type:'command',op:'FON'},
+    0x2a:{type:'command',op:'TR'},0x2b:{type:'command',op:'RTD'},0x2c:{type:'command',op:'EDM'},
+    0x2d:{type:'command',op:'CR'},0x2e:{type:'command',op:'ENM'},0x2f:{type:'command',op:'EOC'}};
+  return m[c1]||null;
+}
+function decodeMidRowPen(c1){
+  const underline=(c1&1)===1;
+  if(c1>=0x2e) return {color:'white',italic:true,underline};
+  return {color:wireColors[(c1-0x20)>>1],underline};
+}
+function decodeControl(c0n,c1){
+  if(c0n===0x11 || c0n===0x12 || c0n===0x13 || c0n===0x16){
+    if(c1>=0x40 && c1<=0x7f) return decodePAC(c0n,c1);
+    if(c0n===0x11 && c1>=0x20 && c1<=0x2f) return {type:'midrow', pen:decodeMidRowPen(c1)};
+  }
+  if(c0n===0x14 || c0n===0x15){
+    if(c1>=0x20 && c1<=0x2f) return decodeCmd(c1);
+    if(c1>=0x40 && c1<=0x7f) return decodePAC(c0n,c1);
+  }
+  if(c0n===0x17){
+    if(c1>=0x21 && c1<=0x23) return {type:'tab',columns:c1-0x20};
+    if(c1>=0x40 && c1<=0x7f) return decodePAC(c0n,c1);
+  }
+  return null;
+}
+function parseBytes(data){
+  const tokens=[]; let run=[]; let prevC0=null,prevC1=null,prevCollapse=false;
+  function flushRun(){ if(run.length){ tokens.push({type:'chars',text:run.join('')}); run=[]; } }
+  for(let i=0;i<data.length;i+=2){
+    let c0=data[i]&0x7f, c1=(i+1<data.length?data[i+1]:0)&0x7f;
+    if(c0===0 && c1===0){ prevCollapse=false; continue; }
+    if(c0>=0x10 && c0<=0x1f){
+      const c0n = c0>=0x18 ? c0-8 : c0;
+      if(c0n===0x11 && c1>=0x30 && c1<=0x3f){ const r=internalToRune[c1+0x50]; if(r!=null)run.push(r); prevCollapse=false; continue; }
+      if((c0n===0x12||c0n===0x13) && c1>=0x20 && c1<=0x3f){
+        if(run.length)run.pop();
+        const ic = c0n===0x12 ? c1+0x70 : c1+0x90;
+        const r=internalToRune[ic]; if(r!=null)run.push(r);
+        prevCollapse=false; continue;
+      }
+      if(prevCollapse && prevC0===c0 && prevC1===c1){ prevCollapse=false; continue; }
+      const tok=decodeControl(c0n,c1);
+      if(tok){ flushRun(); tokens.push(tok); prevC0=c0; prevC1=c1; prevCollapse=true; }
+      else prevCollapse=false;
+    } else if(c0>=0x20 && c0<=0x7f){
+      run.push(internalToRune[c0]!=null?internalToRune[c0]:'?');
+      if(c1>=0x20 && c1<=0x7f) run.push(internalToRune[c1]!=null?internalToRune[c1]:'?');
+      prevCollapse=false;
+    } else prevCollapse=false;
+  }
+  flushRun();
+  return tokens;
+}
+
+/* =========================================================
+   SCC TIMECODE — ported from Eyevinn/go-608 scc/timecode.go
+========================================================= */
+function nominalRate(fps){ return Math.round(fps); }
+function supportsDropFrame(fps){
+  const n=nominalRate(fps);
+  if(n!==30 && n!==60) return false;
+  return Math.abs(fps-n) > 1e-6;
+}
+function dropFramesPerMinute(fps){ return Math.round(nominalRate(fps)*0.066666); }
+function formatTimecode(label,nominal,drop){
+  const ff=label%nominal;
+  const totalSeconds=Math.floor(label/nominal);
+  const ss=totalSeconds%60, mm=Math.floor(totalSeconds/60)%60, hh=Math.floor(totalSeconds/3600);
+  const sep=drop?';':':';
+  const pad=n=>String(n).padStart(2,'0');
+  return pad(hh)+':'+pad(mm)+':'+pad(ss)+sep+pad(ff);
+}
+function frameToTimecode(frame,fps,drop){
+  const nominal=nominalRate(fps);
+  if(!drop || !supportsDropFrame(fps)) return formatTimecode(frame,nominal,false);
+  const dropFrames=dropFramesPerMinute(fps);
+  const framesPer10Min=nominal*600-dropFrames*9;
+  const framesPerMin=nominal*60-dropFrames;
+  const blocks=Math.floor(frame/framesPer10Min), rem=frame%framesPer10Min;
+  let labelsAdded=blocks*9*dropFrames;
+  if(rem>=nominal*60) labelsAdded += dropFrames*(1+Math.floor((rem-nominal*60)/framesPerMin));
+  return formatTimecode(frame+labelsAdded, nominal, true);
+}
+function timecodeToFrame(tc,fps){
+  const sepDrop = tc.includes(';');
+  const fields = tc.trim().split(/[:;]/).map(Number);
+  if(fields.length!==4) throw new Error('malformed timecode: '+tc);
+  const [hh,mm,ss,ff]=fields;
+  const nominal=nominalRate(fps);
+  const label=((hh*60+mm)*60+ss)*nominal+ff;
+  const drop = sepDrop && supportsDropFrame(fps);
+  if(!drop) return {frame:label,drop};
+  const dropFrames=dropFramesPerMinute(fps);
+  const totalMinutes=hh*60+mm;
+  const skipped=dropFrames*(totalMinutes-Math.floor(totalMinutes/10));
+  return {frame:label-skipped, drop};
+}
+function secondsToFrame(sec,fps){ return Math.round(sec*fps); }
+function frameToSeconds(frame,fps){ return frame/fps; }
+
+/* =========================================================
+   SCC FILE FORMAT — ported from Eyevinn/go-608 scc/read.go, write.go
+========================================================= */
+function formatPairs(bytes){
+  const parts=[];
+  for(let i=0;i<bytes.length;i+=2){
+    if(i+1<bytes.length) parts.push(bytes[i].toString(16).padStart(2,'0')+bytes[i+1].toString(16).padStart(2,'0'));
+    else parts.push(bytes[i].toString(16).padStart(2,'0'));
+  }
+  return parts.join(' ');
+}
+function writeSCC(entries, fps, dropFrame){
+  let out='Scenarist_SCC V1.0\n';
+  entries.forEach(e=>{
+    const tc=frameToTimecode(e.frame, fps, dropFrame);
+    out += '\n'+tc+'\t'+formatPairs(e.pairs)+'\n';
+  });
+  return out;
+}
+function readSCC(text, fpsOverride){
+  const lines = text.split(/\r?\n/);
+  let headerSeen=false; const raws=[]; let maxFF=-1, hasSemi=false;
+  for(const raw of lines){
+    const line=raw.trimEnd();
+    const trimmed=line.trim();
+    if(!trimmed) continue;
+    if(!headerSeen){
+      if(trimmed.startsWith('Scenarist_SCC')){ headerSeen=true; continue; }
+      throw new Error('missing Scenarist_SCC header');
+    }
+    const m=trimmed.match(/^(\S+)\s+(.*)$/);
+    if(!m) throw new Error('malformed entry line: '+trimmed);
+    const tc=m[1], pairStr=m[2];
+    const bytes=[];
+    pairStr.split(/\s+/).filter(Boolean).forEach(tok=>{
+      if(tok.length!==4) throw new Error('bad byte-pair group: '+tok);
+      bytes.push(parseInt(tok.slice(0,2),16), parseInt(tok.slice(2,4),16));
+    });
+    const sepDrop=tc.includes(';');
+    const ffField = tc.trim().split(/[:;]/).map(Number)[3];
+    if(sepDrop)hasSemi=true;
+    if(ffField>maxFF)maxFF=ffField;
+    raws.push({tc,bytes});
+  }
+  if(!headerSeen) throw new Error('empty input or missing Scenarist_SCC header');
+  let fps=fpsOverride;
+  if(!fps){
+    if(hasSemi) fps = maxFF>=30 ? 60000/1001 : 30000/1001;
+    else if(maxFF>=50) fps=60000/1001;
+    else if(maxFF>=30) fps=50;
+    else fps=30000/1001;
+  }
+  const drop = hasSemi && supportsDropFrame(fps);
+  const entries = raws.map(r=>({frame:timecodeToFrame(r.tc,fps).frame, pairs:r.bytes}));
+  return {fps, dropFrame:drop, entries};
+}
+
+/* =========================================================
+   VTT/SRT <-> cue model
+========================================================= */
+function parseTimeVTT(t){
+  const m=t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
+  if(!m)return null;
+  return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
+}
+function fmtTimeVTT(s,sep){
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=Math.floor(s%60), ms=Math.round((s-Math.floor(s))*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+(sep||'.')+String(ms).padStart(3,'0');
+}
+function parseCaptionFile(text){
+  const cues=[];
+  text=text.replace(/^\uFEFF/,'');
+  for(const b of text.split(/\r?\n\r?\n+/)){
+    const lines=b.split(/\r?\n/).filter(l=>l!=='');
+    if(!lines.length)continue;
+    let i=0;
+    if(/^WEBVTT|^NOTE|^STYLE/.test(lines[0]))continue;
+    if(!lines[i].includes('-->'))i++;
+    if(i>=lines.length||!lines[i].includes('-->'))continue;
+    const[tpart,...rest]=lines[i].split('-->');
+    const endTok=rest.join('-->').trim().split(/\s+/);
+    const start=parseTimeVTT(tpart), end=parseTimeVTT(endTok[0]);
+    if(start==null||end==null)continue;
+    cues.push({start,end,settings:endTok.slice(1).join(' '),text:lines.slice(i+1).join('\n')});
+  }
+  cues.sort((a,b)=>a.start-b.start);
+  return cues;
+}
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toVTT(cues){
+  let out='WEBVTT\nNOTE Converted by Legaci Convert\n\n';
+  cues.forEach(c=>{ out+=fmtTimeVTT(c.start)+' --> '+fmtTimeVTT(c.end)+(c.settings?' '+c.settings:'')+'\n'+c.text+'\n\n'; });
+  return out;
+}
+function toSRT(cues){
+  let out='';
+  cues.forEach((c,i)=>{ out+=(i+1)+'\n'+fmtTimeVTT(c.start,',')+' --> '+fmtTimeVTT(c.end,',')+'\n'+c.text+'\n\n'; });
+  return out.trim()+'\n';
+}
+
+/* =========================================================
+   VTT/SRT cue -> SCC entries (pop-on only)
+========================================================= */
+function cueToSCCEntries(cue, fps, dropFrame, channel){
+  const lines = cue.text.split('\n').filter(l=>l.trim()!=='').slice(0,3);
+  const isTop = /line:\s*0%|align:middle line:0%/.test(cue.settings||'');
+  const startRow = isTop ? 1 : (15 - lines.length + 1);
+  // One shared indent for the whole block, based on its LONGEST line — this is what
+  // "centered" means for a multi-line caption. Centering each line independently by its
+  // own length instead produces a different indent per line within the same cue, which
+  // reads as inconsistent/left-drifting rather than a single centered block.
+  const maxLen = Math.min(32, Math.max(...lines.map(l=>l.length)));
+  const indent = clamp(Math.round((32-maxLen)/2/4)*4, 0, 28);
+  const tokens=[{type:'setmode',mode:'popon'},{type:'command',op:'ENM'}];
+  lines.forEach((line,li)=>{
+    const row = startRow+li;
+    tokens.push({type:'pac',row,indent,color:'white'});
+    tokens.push({type:'chars',text:line});
+  });
+  tokens.push({type:'command',op:'EDM'});
+  tokens.push({type:'command',op:'EOC'});
+  const buildPairs = serialize(tokens, {channel, field:1});
+  const startFrame = secondsToFrame(cue.start, fps);
+  const endFrame = secondsToFrame(cue.end, fps);
+  const entries = [{frame:startFrame, pairs:buildPairs}];
+  entries.push({frame:endFrame, pairs: serialize([{type:'command',op:'EDM'}], {channel, field:1})});
+  return entries;
+}
+function vttToSCC(cues, fps, dropFrame, channel){
+  let entries=[];
+  cues.forEach((cue,i)=>{
+    const next=cues[i+1];
+    const e=cueToSCCEntries(cue, fps, dropFrame, channel);
+    if(next && secondsToFrame(next.start,fps) <= secondsToFrame(cue.end,fps)) entries.push(e[0]);
+    else entries=entries.concat(e);
+  });
+  entries.sort((a,b)=>a.frame-b.frame);
+  return writeSCC(entries, fps, dropFrame);
+}
+
+/* =========================================================
+   SCC entries -> cues (pop-on decode, simplified)
+========================================================= */
+function sccToCues(sccText, fpsOverride){
+  const file = readSCC(sccText, fpsOverride);
+  const cues=[];
+  let building=null;
+  let displayedStart=null, displayedRows=null;
+  file.entries.forEach(entry=>{
+    const tokens=parseBytes(entry.pairs);
+    let curRow=null;
+    tokens.forEach(tok=>{
+      if(tok.type==='setmode' && tok.mode==='popon'){ building={rows:{}}; }
+      else if(tok.type==='pac'){ curRow=tok.row; if(building)building.rows[curRow]=''; }
+      else if(tok.type==='tab' && building && curRow!=null){ building.rows[curRow]+=' '.repeat(tok.columns); }
+      else if(tok.type==='midrow' && building && curRow!=null){ building.rows[curRow]+=' '; }
+      else if(tok.type==='chars' && building && curRow!=null){ building.rows[curRow]+=tok.text; }
+      else if(tok.type==='command' && tok.op==='EOC'){
+        if(displayedStart!=null && displayedRows){
+          cues.push({start:frameToSeconds(displayedStart,file.fps), end:frameToSeconds(entry.frame,file.fps),
+            settings: Object.keys(displayedRows).some(r=>+r<=7) ? 'align:middle line:0%' : 'line:90%',
+            text: Object.keys(displayedRows).sort((a,b)=>a-b).map(r=>displayedRows[r]).join('\n')});
+        }
+        displayedStart=entry.frame; displayedRows=building?building.rows:null; building=null;
+      } else if(tok.type==='command' && tok.op==='EDM'){
+        if(displayedStart!=null && displayedRows){
+          cues.push({start:frameToSeconds(displayedStart,file.fps), end:frameToSeconds(entry.frame,file.fps),
+            settings: Object.keys(displayedRows).some(r=>+r<=7) ? 'align:middle line:0%' : 'line:90%',
+            text: Object.keys(displayedRows).sort((a,b)=>a-b).map(r=>displayedRows[r]).join('\n')});
+        }
+        displayedStart=null; displayedRows=null;
+      }
+    });
+  });
+  return cues;
+}
+
+/* =========================================================
+   ZIP BUILDER — minimal store-only (uncompressed) ZIP writer, tested
+   independently against Python's zipfile and command-line unzip
+   before shipping. No external library, no network dependency.
+========================================================= */
+function crc32(bytes){
+  let crc = ~0;
+  for(let i=0;i<bytes.length;i++){
+    crc ^= bytes[i];
+    for(let j=0;j<8;j++) crc = (crc>>>1) ^ (0xEDB88320 & -(crc & 1));
+  }
+  return (~crc) >>> 0;
+}
+function makeZip(files){ // files: [{name, content(string)}]
+  const encoder=new TextEncoder();
+  const localParts=[], centralParts=[];
+  let offset=0;
+  files.forEach(f=>{
+    const nameBytes=encoder.encode(f.name);
+    const dataBytes=encoder.encode(f.content);
+    const crc=crc32(dataBytes), size=dataBytes.length;
+    const local=new Uint8Array(30+nameBytes.length+size);
+    const dv=new DataView(local.buffer);
+    dv.setUint32(0,0x04034b50,true); dv.setUint16(4,20,true); dv.setUint16(6,0,true);
+    dv.setUint16(8,0,true); dv.setUint16(10,0,true); dv.setUint16(12,0,true);
+    dv.setUint32(14,crc,true); dv.setUint32(18,size,true); dv.setUint32(22,size,true);
+    dv.setUint16(26,nameBytes.length,true); dv.setUint16(28,0,true);
+    local.set(nameBytes,30); local.set(dataBytes,30+nameBytes.length);
+    localParts.push(local);
+    const central=new Uint8Array(46+nameBytes.length);
+    const cdv=new DataView(central.buffer);
+    cdv.setUint32(0,0x02014b50,true); cdv.setUint16(4,20,true); cdv.setUint16(6,20,true);
+    cdv.setUint16(8,0,true); cdv.setUint16(10,0,true); cdv.setUint16(12,0,true); cdv.setUint16(14,0,true);
+    cdv.setUint32(16,crc,true); cdv.setUint32(20,size,true); cdv.setUint32(24,size,true);
+    cdv.setUint16(28,nameBytes.length,true); cdv.setUint16(30,0,true); cdv.setUint16(32,0,true);
+    cdv.setUint16(34,0,true); cdv.setUint16(36,0,true); cdv.setUint32(38,0,true); cdv.setUint32(42,offset,true);
+    central.set(nameBytes,46);
+    centralParts.push(central);
+    offset += local.length;
+  });
+  const centralStart=offset;
+  let centralSize=0; centralParts.forEach(c=>centralSize+=c.length);
+  const eocd=new Uint8Array(22);
+  const edv=new DataView(eocd.buffer);
+  edv.setUint32(0,0x06054b50,true); edv.setUint16(4,0,true); edv.setUint16(6,0,true);
+  edv.setUint16(8,files.length,true); edv.setUint16(10,files.length,true);
+  edv.setUint32(12,centralSize,true); edv.setUint32(16,centralStart,true); edv.setUint16(20,0,true);
+  const out=new Uint8Array(offset+centralSize+22);
+  let p=0;
+  localParts.forEach(l=>{ out.set(l,p); p+=l.length; });
+  centralParts.forEach(c=>{ out.set(c,p); p+=c.length; });
+  out.set(eocd,p);
+  return out;
+}
+
+/* =========================================================
+   UI WIRING — supports one file or a bulk batch
+========================================================= */
+const S={sourceFiles:[], results:[]};
+const progEl=document.getElementById('progress');
+const setProg=(t,cls)=>{ progEl.textContent=t; progEl.className='progress'+(cls?' '+cls:''); };
+
+document.getElementById('file-input').addEventListener('change', e=>{
+  const files=Array.from(e.target.files); if(!files.length)return;
+  S.sourceFiles=[];
+  let loaded=0;
+  files.forEach(f=>{
+    const ext=f.name.split('.').pop().toLowerCase();
+    const reader=new FileReader();
+    reader.onload=()=>{
+      S.sourceFiles.push({name:f.name, ext, text:reader.result});
+      loaded++;
+      if(loaded===files.length){
+        document.getElementById('drop-file').classList.add('loaded');
+        document.getElementById('file-name').textContent = files.length===1 ? files[0].name : files.length+' files selected';
+        document.getElementById('btn-convert').disabled=false;
+        const fmtSel=document.getElementById('opt-format');
+        const allSCC = S.sourceFiles.every(sf=>sf.ext==='scc');
+        fmtSel.value = allSCC ? 'vtt' : 'scc';
+        setProg('Loaded '+files.length+' file(s). Set options and convert.');
+      }
+    };
+    reader.readAsText(f);
+  });
+});
+
+function convertOne(sourceFile, fmt, fps, dropFrame, channel){
+  let outputText, outputExt, cueCount;
+  if(sourceFile.ext==='scc'){
+    const cues=sccToCues(sourceFile.text, fps);
+    cueCount=cues.length;
+    outputText = fmt==='srt' ? toSRT(cues) : toVTT(cues);
+    outputExt = fmt==='srt' ? 'srt' : 'vtt';
+  } else {
+    const cues=parseCaptionFile(sourceFile.text);
+    cueCount=cues.length;
+    if(fmt==='scc'){ outputText=vttToSCC(cues,fps,dropFrame,channel); outputExt='scc'; }
+    else if(fmt==='srt'){ outputText=toSRT(cues); outputExt='srt'; }
+    else { outputText=toVTT(cues); outputExt='vtt'; }
+  }
+  const baseName = sourceFile.name.replace(/\.[^.]+$/,'');
+  return {name: baseName+'.'+outputExt, outputText, outputExt, cueCount};
+}
+
+document.getElementById('btn-convert').addEventListener('click', ()=>{
+  const fmt=document.getElementById('opt-format').value;
+  const fps=+document.getElementById('opt-fps').value;
+  const dropFrame=document.getElementById('opt-dropframe').checked;
+  const channel=+document.getElementById('opt-channel').value;
+  logEvent('convert', 'convert', fmt+'_'+S.sourceFiles.length+'files');
+  S.results=[];
+  let okCount=0, failCount=0;
+  S.sourceFiles.forEach(sf=>{
+    try{
+      const r=convertOne(sf, fmt, fps, dropFrame, channel);
+      S.results.push({source:sf.name, ok:true, ...r});
+      okCount++;
+    }catch(err){
+      S.results.push({source:sf.name, ok:false, error:err.message});
+      failCount++;
+    }
+  });
+  renderResults(okCount, failCount);
+  setProg('Converted '+okCount+' file(s)'+(failCount?' · '+failCount+' failed':'')+'. '+
+    (fmt==='scc'?'Validate SCC output against a real decoder before delivery.':'Review before delivery.'));
+});
+
+function renderResults(okCount, failCount){
+  document.getElementById('empty').style.display='none';
+  document.getElementById('results').style.display='block';
+  document.getElementById('stats').textContent=okCount+' converted'+(failCount?' · '+failCount+' failed':'');
+  const zipBtn=document.getElementById('btn-download-zip');
+  zipBtn.style.display = okCount>1 ? 'inline-block' : 'none';
+  const list=document.getElementById('resultlist');
+  list.innerHTML='';
+  S.results.forEach((r,i)=>{
+    const el=document.createElement('div'); el.className='resultrow';
+    if(r.ok){
+      el.innerHTML='<span class="fname">'+esc(r.source)+' → '+esc(r.name)+'</span>'+
+        '<span class="rmsg">'+r.cueCount+' cue(s)</span>'+
+        '<span class="rstat ok">OK</span>'+
+        '<button data-i="'+i+'">Download</button>';
+    } else {
+      el.innerHTML='<span class="fname">'+esc(r.source)+'</span>'+
+        '<span class="rmsg">'+esc(r.error)+'</span>'+
+        '<span class="rstat fail">FAILED</span>';
+    }
+    list.appendChild(el);
+  });
+  list.querySelectorAll('button[data-i]').forEach(btn=>btn.addEventListener('click',()=>{
+    const r=S.results[+btn.dataset.i];
+    downloadOne(r);
+  }));
+  // Single-file case: also show the text preview for convenience.
+  const preview=document.getElementById('preview');
+  if(S.results.length===1 && S.results[0].ok){
+    preview.classList.add('show');
+    const r=S.results[0];
+    document.getElementById('output-text').textContent = r.outputText.length>6000 ? r.outputText.slice(0,6000)+'\n… (truncated preview — full file downloads complete)' : r.outputText;
+  } else {
+    preview.classList.remove('show');
+  }
+}
+function downloadOne(r){
+  const mime = r.outputExt==='scc' ? 'text/plain' : (r.outputExt==='srt'?'application/x-subrip':'text/vtt');
+  const blob=new Blob([r.outputText],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=r.name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+document.getElementById('btn-download-zip').addEventListener('click', ()=>{
+  const okResults=S.results.filter(r=>r.ok);
+  if(!okResults.length)return;
+  const zipBytes=makeZip(okResults.map(r=>({name:r.name, content:r.outputText})));
+  const blob=new Blob([zipBytes],{type:'application/zip'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='converted_captions.zip'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+</script>
+
+</body>
+</html>

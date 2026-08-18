@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legaci — Markups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
+  --accent:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --err:#ff4d4d; --info:#5db8ff;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(ellipse at 80% -10%,rgba(61,139,253,.06),transparent 55%)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase}
+.brand em{font-style:normal;color:var(--accent)}
+a.back{font-family:var(--mono);font-size:11px;color:var(--gray);text-decoration:none;margin-left:auto}
+a.back:hover{color:var(--accent)}
+.app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);padding:20px 18px 40px;display:flex;flex-direction:column;gap:20px}
+.rail h3{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:10px}
+.drop{border:1px dashed var(--line2);border-radius:6px;padding:12px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+.drop:hover{border-color:var(--accent);background:rgba(61,139,253,.06)}
+.drop.loaded{border-style:solid;border-color:rgba(61,220,132,.5)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop .dk{font-family:var(--mono);font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:2px 6px;font-weight:700}
+.drop.loaded .dk{background:var(--ok)}
+.drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}
+.opt label{font-size:12.5px;color:var(--gray)}
+.opt select,.opt input[type=number]{background:var(--panel2);border:1px solid var(--line2);color:var(--white);border-radius:3px;padding:5px 7px;font-family:var(--mono);font-size:11.5px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:12px 14px;font-size:12.5px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;width:100%}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.3;cursor:not-allowed}
+.progress{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:pre-wrap;line-height:1.6}
+.progress.err{color:var(--err)}
+.progress.info{color:var(--info)}
+.main{padding:24px 28px 60px}
+.videowrap{position:relative;background:#000;border:1px solid var(--line);border-radius:8px;max-width:640px;margin-bottom:16px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.videowrap.show{display:block}
+video{width:100%;display:block;border-radius:7px}
+.hint{font-family:var(--mono);font-size:10px;color:var(--faint);max-width:680px;margin-bottom:12px;line-height:1.6}
+.caveat{border:1px solid rgba(255,176,32,.35);background:rgba(255,176,32,.06);border-radius:8px;padding:12px 16px;max-width:680px;margin-bottom:18px;font-size:12.5px;color:var(--gray);line-height:1.6}
+.caveat b{color:var(--warn)}
+.empty{border:1px dashed var(--line2);border-radius:8px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px}
+.empty .big{font-size:26px;margin-bottom:12px}
+.summary{font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:14px}
+.bplist{display:flex;flex-direction:column;gap:8px;max-width:760px;margin-bottom:18px}
+.bprow{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.bprow .tc{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:600}
+.bprow .conf{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:10px}
+.bprow .conf.high{background:rgba(61,220,132,.15);color:var(--ok)}
+.bprow .conf.med{background:rgba(255,176,32,.15);color:var(--warn)}
+.bprow .conf.low{background:rgba(255,77,77,.15);color:var(--err)}
+.bprow .win{font-family:var(--mono);font-size:10px;color:var(--faint);flex:1}
+.bprow button{font-family:var(--mono);font-size:10px;padding:6px 10px;border:1px solid var(--line2);background:transparent;color:var(--gray);border-radius:5px}
+.bprow button:hover{border-color:var(--accent);color:var(--accent)}
+.panelfoot{display:flex;gap:10px;max-width:760px}
+.panelfoot button{flex:1;font-family:var(--mono);font-size:11px;padding:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px}
+.panelfoot button:hover{filter:brightness(1.1)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Leg<em>aci</em></div>
+  <a class="back" href="index.html">← Back to hub</a>
+</header>
+<div class="app">
+<aside class="rail">
+  <div>
+    <h3>Source</h3>
+    <label class="drop" id="drop-video">
+      <span class="dk">FILE</span>
+      <span><span>Video file</span><span class="ds" id="video-name">.mp4 / .mov / .webm…</span></span>
+      <input type="file" id="file-video" accept="video/*">
+    </label>
+  </div>
+  <div>
+    <h3>Region / rule set</h3>
+    <div class="opt"><label>Ruleset</label>
+      <select id="opt-ruleset">
+        <option value="us-film">US — Feature Film</option>
+        <option value="us-tv30">US — TV (30 min show)</option>
+        <option value="us-tv60">US — TV (60 min show)</option>
+        <option value="generic">Generic (custom spacing)</option>
+      </select>
+    </div>
+    <div class="opt" id="row-generic" style="display:none"><label>Target spacing (min)</label><input type="number" id="opt-spacing" value="12" min="5" max="40"></div>
+    <div class="opt"><label>Min. gap between (min)</label><input type="number" id="opt-mingap" value="7" min="1" max="20"></div>
+    <button class="btn" id="btn-scan" disabled style="margin-top:14px">Scan for breakpoints</button>
+  </div>
+  <div class="progress" id="progress"></div>
+</aside>
+<main class="main">
+  <div class="hint">Runs entirely in your browser — scene-cut and fade detection is deterministic frame-difference analysis (not AI), cross-referenced with quiet audio moments. No upload, no network call.</div>
+  <div class="caveat"><b>What this actually does:</b> finds real scene cuts and fades, then picks the best-scoring one inside each target time window from the Delivery Guide's spacing rules. It won't know a cut is mid-dialogue-continuation vs. a true scene change — quiet-audio cross-referencing helps but isn't perfect. Every suggestion needs a human check before it's treated as final, same as every other flagged item in this tool set. Only US Film and US TV (30/60 min) rules are fully encoded from the Delivery Guide; other regions use the Generic custom-spacing mode — reference the guide's own table for your region's target segment length and enter it there.</div>
+  <div class="videowrap" id="videowrap">
+    <video id="video" controls preload="metadata" playsinline></video>
+  </div>
+  <div class="empty" id="empty">
+    <div class="big">▮▮</div>
+    <p>Load a video, choose a ruleset, and scan. Suggested breakpoints appear below, each jumpable and adjustable before export.</p>
+  </div>
+  <div id="results" style="display:none">
+    <div class="summary" id="summary"></div>
+    <div class="bplist" id="bplist"></div>
+    <div class="panelfoot">
+      <button id="btn-export-csv">Export breakpoints .csv</button>
+      <button id="btn-export-list">Copy comma-delimited SMPTE list</button>
+    </div>
+  </div>
+</main>
+</div>
+
+<script>
+/* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
+const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('markups', 'page_view', '');
+
+const S={ candidates:[], breakpoints:[], fps:29.97, dropFrame:true };
+const video=document.getElementById('video');
+const progEl=document.getElementById('progress');
+const setProg=(t,cls)=>{ progEl.textContent=t; progEl.className='progress'+(cls?' '+cls:''); };
+
+document.getElementById('opt-ruleset').addEventListener('change', e=>{
+  document.getElementById('row-generic').style.display = e.target.value==='generic' ? 'flex' : 'none';
+});
+
+document.getElementById('file-video').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f)return;
+  video.src=URL.createObjectURL(f);
+  document.getElementById('drop-video').classList.add('loaded');
+  document.getElementById('video-name').textContent=f.name;
+  document.getElementById('videowrap').classList.add('show');
+  document.getElementById('btn-scan').disabled=false;
+  setProg('Video loaded. Pick a ruleset and scan.');
+});
+
+function nominalRate(fps){ return Math.round(fps); }
+function supportsDropFrame(fps){ const n=nominalRate(fps); if(n!==30&&n!==60)return false; return Math.abs(fps-n)>1e-6; }
+function dropFramesPerMinute(fps){ return Math.round(nominalRate(fps)*0.066666); }
+function secToSMPTE(sec, fps, drop){
+  const nominal=nominalRate(fps);
+  const frame=Math.round(sec*fps);
+  if(!drop || !supportsDropFrame(fps)){
+    const ff=frame%nominal, totalSeconds=Math.floor(frame/nominal);
+    const ss=totalSeconds%60, mm=Math.floor(totalSeconds/60)%60, hh=Math.floor(totalSeconds/3600);
+    const pad=n=>String(n).padStart(2,'0');
+    return pad(hh)+':'+pad(mm)+':'+pad(ss)+':'+pad(ff);
+  }
+  const dropFrames=dropFramesPerMinute(fps);
+  const framesPer10Min=nominal*600-dropFrames*9, framesPerMin=nominal*60-dropFrames;
+  const blocks=Math.floor(frame/framesPer10Min), rem=frame%framesPer10Min;
+  let labelsAdded=blocks*9*dropFrames;
+  if(rem>=nominal*60) labelsAdded += dropFrames*(1+Math.floor((rem-nominal*60)/framesPerMin));
+  const label=frame+labelsAdded;
+  const ff=label%nominal, totalSeconds=Math.floor(label/nominal);
+  const ss=totalSeconds%60, mm=Math.floor(totalSeconds/60)%60, hh=Math.floor(totalSeconds/3600);
+  const pad=n=>String(n).padStart(2,'0');
+  return pad(hh)+':'+pad(mm)+':'+pad(ss)+';'+pad(ff);
+}
+
+function seekAndWait(t){
+  return new Promise((res,rej)=>{
+    const to=setTimeout(()=>rej(new Error('seek timeout')),4000);
+    const on=()=>{clearTimeout(to);video.removeEventListener('seeked',on);
+      requestAnimationFrame(()=>requestAnimationFrame(res));};
+    video.addEventListener('seeked',on);
+    video.currentTime=Math.max(0,Math.min(t,(video.duration||1e9)-0.05));
+  });
+}
+const AW=64, AH=36;
+const canvas=document.createElement('canvas'); canvas.width=AW; canvas.height=AH;
+const cctx=canvas.getContext('2d',{willReadFrequently:true});
+function sampleFrame(){
+  cctx.drawImage(video,0,0,AW,AH);
+  const d=cctx.getImageData(0,0,AW,AH).data;
+  const gray=new Float32Array(AW*AH);
+  let sum=0;
+  for(let i=0;i<AW*AH;i++){ const p=i*4; const g=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2]; gray[i]=g; sum+=g; }
+  return {gray, luminance: sum/(AW*AH)/255};
+}
+function frameDiff(a,b){
+  let diff=0; for(let i=0;i<a.length;i++)diff+=Math.abs(a[i]-b[i]);
+  return diff/a.length/255;
+}
+let audioCtx=null, analyserRef=null;
+function ensureAudioGraph(){
+  if(audioCtx)return;
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaElementSource(video);
+  const analyser=audioCtx.createAnalyser(); analyser.fftSize=2048;
+  src.connect(analyser); analyser.connect(audioCtx.destination);
+  analyserRef=analyser;
+}
+function sampleEnergy(){
+  const buf=new Float32Array(analyserRef.fftSize);
+  analyserRef.getFloatTimeDomainData(buf);
+  let sum=0; for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];
+  return Math.sqrt(sum/buf.length);
+}
+
+function usFilmBreakpointCount(durMin){
+  if(durMin<12) return 0; // general rule: content below 12 min needs no ad breakpoints
+  if(durMin<22) return 1; // below the table's first tier — conservative single breakpoint
+  // Table has gaps between tiers (e.g. 49-53 min isn't listed) — the guide's own
+  // rule: round UP to the next tier. Its own worked example: 50 min -> 54-60 tier -> 6.
+  const table=[[22,24,3],[33,36,4],[44,48,5],[54,60,6],[65,72,7],[76,84,8],[87,96,9],[98,107,10],[108,119,11],
+    [120,131,12],[132,144,13],[152,168,15],[169,180,16],[181,192,17]];
+  for(const row of table){ if(durMin<=row[1]) return row[2]; }
+  return table[table.length-1][2]; // longer than any tier — use the highest defined count
+}
+function computeTargetWindows(durationSec, ruleset, spacingMin, minGapMin){
+  const durMin=durationSec/60;
+  const windows=[];
+  if(ruleset==='us-tv30'){
+    windows.push({label:'Beginning (after intro)', start:60, end:180});
+    windows.push({label:'Middle', start:durationSec*0.45, end:durationSec*0.55});
+    windows.push({label:'End (pre-credit)', start:durationSec-180, end:durationSec-30});
+  } else if(ruleset==='us-tv60'){
+    windows.push({label:'Beginning (after intro)', start:60, end:240});
+    windows.push({label:'10-12 min', start:600, end:720});
+    windows.push({label:'19-22 min', start:1140, end:1320});
+    windows.push({label:'29-32 min', start:1740, end:1920});
+    windows.push({label:'End (pre-credit)', start:durationSec-180, end:durationSec-30});
+  } else if(ruleset==='us-film'){
+    const count=usFilmBreakpointCount(durMin);
+    const minGapSec=minGapMin*60;
+    const step=durationSec/(count+1);
+    for(let i=1;i<=count;i++){
+      const center=step*i;
+      windows.push({label:'Breakpoint '+i+' of '+count, start:Math.max(0,center-minGapSec/2), end:Math.min(durationSec,center+minGapSec/2)});
+    }
+  } else {
+    const step=spacingMin*60;
+    const count=Math.max(1,Math.floor(durationSec/step));
+    for(let i=1;i<=count;i++){
+      const center=step*i;
+      if(center>durationSec-60)break;
+      windows.push({label:'Breakpoint '+i, start:Math.max(0,center-step*0.3), end:Math.min(durationSec,center+step*0.3)});
+    }
+  }
+  return windows.filter(w=>w.end>w.start && w.start<durationSec);
+}
+
+document.getElementById('btn-scan').addEventListener('click', async()=>{
+  const btn=document.getElementById('btn-scan');
+  btn.disabled=true;
+  document.getElementById('empty').style.display='none';
+  const ruleset=document.getElementById('opt-ruleset').value;
+  const spacingMin=+document.getElementById('opt-spacing').value||12;
+  const minGapMin=+document.getElementById('opt-mingap').value||7;
+  logEvent('markups', 'scan', ruleset);
+  const SPEECH_THRESH=0.03;
+  try{
+    ensureAudioGraph();
+    if(!video.duration){ await new Promise(res=>video.addEventListener('loadedmetadata',res,{once:true})); }
+    const wasPaused=video.paused;
+    await video.play().catch(()=>{});
+    const STEP=1.0;
+    const samples=[];
+    let prevGray=null;
+    for(let t=0; t<video.duration; t+=STEP){
+      setProg('Scanning - '+Math.round(t)+'s / '+Math.round(video.duration)+'s...','info');
+      try{
+        await seekAndWait(t);
+        const frameData=sampleFrame();
+        const diff = prevGray ? frameDiff(frameData.gray,prevGray) : 0;
+        const energy=sampleEnergy();
+        samples.push({t, diff, luminance:frameData.luminance, energy});
+        prevGray=frameData.gray;
+      }catch(e){}
+    }
+    video.pause();
+    if(!wasPaused)video.play().catch(()=>{});
+
+    const scored=samples.map((s,i)=>{
+      const cutScore = Math.min(1, s.diff*6);
+      const fadeScore = s.luminance<0.06 ? 1 : 0;
+      let quietNearby=false;
+      for(let k=Math.max(0,i-2); k<=Math.min(samples.length-1,i+2); k++){ if(samples[k].energy<SPEECH_THRESH){quietNearby=true;break;} }
+      const base=Math.max(cutScore,fadeScore);
+      const score = base * (quietNearby?1:0.55);
+      return {t:s.t, score, isFade:fadeScore>0, quiet:quietNearby};
+    });
+
+    const windows=computeTargetWindows(video.duration, ruleset, spacingMin, minGapMin);
+    S.breakpoints = windows.map(w=>{
+      const inWindow=scored.filter(c=>c.t>=w.start && c.t<=w.end);
+      inWindow.sort((a,b)=>b.score-a.score);
+      const best=inWindow[0];
+      if(!best || best.score<0.15) return {label:w.label, t:(w.start+w.end)/2, confidence:'low', note:'no clear cut found - placed at window center, adjust manually'};
+      const confidence = best.score>0.6 ? 'high' : (best.score>0.3 ? 'med' : 'low');
+      return {label:w.label, t:best.t, confidence, note: best.isFade?'fade-to-black detected':(best.quiet?'scene cut, quiet audio nearby':'scene cut detected, audio was not quiet nearby')};
+    });
+    renderResults();
+    setProg('Found '+S.breakpoints.length+' suggested breakpoint(s). Review each - jump to it, adjust, or remove before exporting.');
+  }catch(err){
+    setProg('Scan failed: '+err.message,true);
+  }finally{
+    btn.disabled=false;
+  }
+});
+
+function fmtClock(sec){
+  const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=Math.floor(sec%60);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function renderResults(){
+  document.getElementById('results').style.display='block';
+  document.getElementById('summary').textContent=S.breakpoints.length+' suggested breakpoint(s) - review before treating as final.';
+  const box=document.getElementById('bplist');
+  box.innerHTML='';
+  S.breakpoints.forEach((bp,i)=>{
+    const el=document.createElement('div'); el.className='bprow';
+    el.innerHTML=
+      '<span class="tc">'+secToSMPTE(bp.t,S.fps,S.dropFrame)+'</span>'+
+      '<span class="conf '+bp.confidence+'">'+bp.confidence+'</span>'+
+      '<span class="win">'+bp.label+' - '+fmtClock(bp.t)+' - '+bp.note+'</span>'+
+      '<button data-act="jump" data-i="'+i+'">Jump</button>'+
+      '<button data-act="back" data-i="'+i+'">-5s</button>'+
+      '<button data-act="fwd" data-i="'+i+'">+5s</button>'+
+      '<button data-act="remove" data-i="'+i+'">Remove</button>';
+    box.appendChild(el);
+  });
+  box.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    const i=+b.dataset.i, act=b.dataset.act;
+    if(act==='jump'){ video.currentTime=S.breakpoints[i].t; video.pause(); }
+    else if(act==='back'){ S.breakpoints[i].t=Math.max(0,S.breakpoints[i].t-5); S.breakpoints[i].confidence='low'; S.breakpoints[i].note='manually adjusted'; renderResults(); }
+    else if(act==='fwd'){ S.breakpoints[i].t=Math.min(video.duration,S.breakpoints[i].t+5); S.breakpoints[i].confidence='low'; S.breakpoints[i].note='manually adjusted'; renderResults(); }
+    else if(act==='remove'){ S.breakpoints.splice(i,1); renderResults(); }
+  }));
+}
+function download(content,name,mime){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+document.getElementById('btn-export-csv').addEventListener('click', ()=>{
+  let csv='timecode,confidence,note\n';
+  S.breakpoints.forEach(bp=>{ csv+=secToSMPTE(bp.t,S.fps,S.dropFrame)+','+bp.confidence+',"'+bp.note+'"\n'; });
+  download(csv,'ad_breakpoints.csv','text/csv');
+});
+document.getElementById('btn-export-list').addEventListener('click', async()=>{
+  const list=S.breakpoints.map(bp=>secToSMPTE(bp.t,S.fps,S.dropFrame)).join(',');
+  try{ await navigator.clipboard.writeText(list); setProg('Copied to clipboard: '+list); }
+  catch(e){ setProg(list,'info'); }
+});
+</script>
+</body>
+</html>
