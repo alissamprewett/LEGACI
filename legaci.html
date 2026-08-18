@@ -292,6 +292,10 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="substep">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
     <div class="opt"><label>Convert ALL CAPS to mixed case</label><input type="checkbox" id="opt-mixedcase"></div>
     <div class="substep" id="mixedcase-hint" style="display:none;color:var(--warn)">This file looks like it's written in ALL CAPS — check the box above to convert dialogue to mixed case (known character names get re-capitalized properly).</div>
+    <div class="opt"><label>Auto-fix common misspellings</label><input type="checkbox" id="opt-spelling" checked></div>
+    <div class="substep">catches unambiguous typos only ("happend" → "happened", "aggresive" → "aggressive") — never homophones like your/you're or word-choice calls, since those need sentence context a script can't safely judge. Add a term to the Personal Dictionary below to exclude it from this pass.</div>
+    <div class="opt"><label>Flag grammar &amp; spelling for review</label><input type="checkbox" id="opt-grammar"></div>
+    <div class="substep">off by default — flags exactly the stuff the auto-fix above won't touch: homophones (its/it's, their/they're), missing apostrophes, duplicated or clashing words, and stray punctuation, each with a suggested fix in the message. Never rewrites anything itself — it's a NEEDS REVIEW row like any other, because dialogue transcripts are full of intentional fragments, dropped g's, and stutters that a script can't tell apart from a real mistake. Add a term to the Personal Dictionary to exclude it from this pass.</div>
     <div class="opt"><label>Flag captions crossing a shot change</label><input type="checkbox" id="opt-shotchange"></div>
     <div class="substep">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
     <button class="btn" id="btn-run" disabled style="margin-top:8px">Run full analysis</button>
@@ -503,7 +507,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
   <div class="collapsehead" data-toggle="dictpanel">▸ PERSONAL DICTIONARY</div>
   <div class="panelbox" id="dictpanel">
-    <div class="oh info">A list of proper nouns (character names, places, show-specific terms) that get protected from the ALL CAPS → mixed case conversion, so they come out correctly capitalized instead of just title-cased. Export/import as a plain text file — one term per line — to reuse across episodes of the same show.</div>
+    <div class="oh info">A list of proper nouns (character names, places, show-specific terms) that get protected from the ALL CAPS → mixed case conversion, so they come out correctly capitalized instead of just title-cased. Also excluded from the common-misspellings auto-fix, in case a name or invented term happens to look like one. Export/import as a plain text file — one term per line — to reuse across episodes of the same show.</div>
     <div class="prow">
       <input type="text" class="wide" id="dict-add-term" placeholder="Add a term (e.g. a character or place name)">
       <button class="pbtn small primary" id="dict-add-btn">Add</button>
@@ -1238,6 +1242,86 @@ function convertToMixedCase(text){
   });
   return prefix+out;
 }
+// SPELLING — deliberately conservative. Every key below is a pure transcription/typing
+// error with NO legitimate alternate meaning in English (unlike e.g. "aright", a real if
+// archaic word, or homophone pairs like your/you're and it's/its, which need sentence-level
+// context to resolve safely and are NOT included here). Add show-specific overrides via the
+// Personal Dictionary (exclude a term entirely) or the Short Forms panel (force a specific
+// replacement) rather than editing this list.
+const SPELLING_FIXES={
+  happend:'happened',aggresive:'aggressive',wildebeast:'wildebeest',noncommital:'non-committal',
+  'non-commital':'non-committal',underware:'underwear',
+  seperate:'separate',seperated:'separated',seperately:'separately',seperating:'separating',
+  recieve:'receive',recieved:'received',recieving:'receiving',
+  definately:'definitely',definitly:'definitely',definate:'definite',
+  occured:'occurred',occuring:'occurring',occurence:'occurrence',occurrance:'occurrence',occurr:'occur',
+  untill:'until',teh:'the',beleive:'believe',beleived:'believed',becuase:'because',
+  goverment:'government',neccessary:'necessary',neccesary:'necessary',neccessarily:'necessarily',
+  accomodate:'accommodate',accomodation:'accommodation',
+  arguement:'argument',embarass:'embarrass',embarassed:'embarrassed',embarassing:'embarrassing',
+  embarrasment:'embarrassment',existance:'existence',priviledge:'privilege',
+  wierd:'weird',thier:'their',freind:'friend',freinds:'friends',greatful:'grateful',
+  knowlege:'knowledge',knowledgable:'knowledgeable',liason:'liaison',
+  maintainance:'maintenance',maintenence:'maintenance',noticable:'noticeable',
+  occassion:'occasion',occassionally:'occasionally',persistant:'persistent',posession:'possession',
+  recomend:'recommend',recomended:'recommended',reccomend:'recommend',
+  refered:'referred',referal:'referral',relevent:'relevant',
+  succesful:'successful',successfull:'successful',succes:'success',succesfully:'successfully',
+  tommorow:'tomorrow',tomorow:'tomorrow',tommorrow:'tomorrow',
+  truely:'truly',unfortunatly:'unfortunately',unsuccessfull:'unsuccessful',
+  amung:'among',athelete:'athlete',camoflage:'camouflage',cemetary:'cemetery',
+  collegue:'colleague',collegues:'colleagues',comming:'coming',commited:'committed',commitee:'committee',
+  concious:'conscious',conciousness:'consciousness',curiousity:'curiosity',
+  desparate:'desperate',dilema:'dilemma',disapoint:'disappoint',disapointed:'disappointed',
+  dissapear:'disappear',dissapoint:'disappoint',
+  enviroment:'environment',enviromental:'environmental',exagerate:'exaggerate',
+  excelent:'excellent',excellant:'excellent',exersize:'exercise',extremly:'extremely',
+  familar:'familiar',finaly:'finally',flourescent:'fluorescent',foriegn:'foreign',fourty:'forty',
+  gaurd:'guard',gaurentee:'guarantee',garantee:'guarantee',grammer:'grammar',
+  harrass:'harass',harrassment:'harassment',humerous:'humorous',hygeine:'hygiene',
+  imediately:'immediately',immediatly:'immediately',independant:'independent',
+  inteligent:'intelligent',intelligance:'intelligence',intrest:'interest',interupt:'interrupt',
+  irrelevent:'irrelevant',mispell:'misspell',mispelled:'misspelled',miscelaneous:'miscellaneous',
+  oppurtunity:'opportunity',paralel:'parallel',paralell:'parallel',
+  particurly:'particularly',peculier:'peculiar',peice:'piece',percieve:'perceive',
+  performence:'performance',personel:'personnel',playwrite:'playwright',
+  prefered:'preferred',presance:'presence',probaly:'probably',
+  proffesional:'professional',proceedure:'procedure',
+  promiss:'promise',pronounciation:'pronunciation',questionaire:'questionnaire',
+  realy:'really',religous:'religious',remeber:'remember',repitition:'repetition',
+  resistence:'resistance',responsability:'responsibility',restarant:'restaurant',
+  rythm:'rhythm',sacrafice:'sacrifice',seige:'siege',similer:'similar',sincerly:'sincerely',
+  speach:'speech',supress:'suppress',suprise:'surprise',suprised:'surprised',suprisingly:'surprisingly',
+  supercede:'supersede',suround:'surround',temperture:'temperature',tendancy:'tendency',
+  threshhold:'threshold',tounge:'tongue',transfered:'transferred',tyrany:'tyranny',
+  unnecesary:'unnecessary',upholstry:'upholstery',usualy:'usually',
+  vaccuum:'vacuum',vaccum:'vacuum',vegetarain:'vegetarian',
+  withdrawl:'withdrawal',writen:'written',writting:'writing',yeild:'yield',yatch:'yacht',
+  begining:'beginning',appearence:'appearance',apparant:'apparent',apparantly:'apparently',
+  buisness:'business',catagory:'category',changable:'changeable',cheif:'chief',
+  condem:'condemn',convienient:'convenient',decieve:'deceive',experiance:'experience',
+  firey:'fiery',fullfil:'fulfill',hienous:'heinous',hypocrit:'hypocrite',
+  imaginery:'imaginary',innoculate:'inoculate',mischevious:'mischievous',
+  parliment:'parliament',pharoah:'pharaoh',wich:'which',
+  alot:'a lot',incase:'in case',atleast:'at least',infact:'in fact',noone:'no one',
+  everytime:'every time',infront:'in front',eachother:'each other',aswell:'as well'
+};
+function fixCommonMisspellings(text){
+  const protectedTerms=new Set((S.personalDictionary||[]).map(t=>t.toLowerCase()));
+  let changed=false;
+  const out=text.replace(/[A-Za-z]+(?:-[A-Za-z]+)*/g,word=>{
+    const lower=word.toLowerCase();
+    if(protectedTerms.has(lower))return word;
+    const fix=SPELLING_FIXES[lower];
+    if(!fix)return word;
+    changed=true;
+    if(word===word.toUpperCase())return fix.toUpperCase();
+    if(word[0]===word[0].toUpperCase())return fix.charAt(0).toUpperCase()+fix.slice(1);
+    return fix;
+  });
+  return {text:out,changed};
+}
+
 function buildFixedCues(counts){
   const maxLen=+document.getElementById('opt-len').value;
   const useMixedCase=document.getElementById('opt-mixedcase').checked;
@@ -1264,6 +1348,11 @@ function buildFixedCues(counts){
     } else {
       text=autoFixText(c.origText,counts);
       if(useMixedCase){ const before=text; text=convertToMixedCase(text); if(text!==before)counts.mixedCase=(counts.mixedCase||0)+1; }
+      if(document.getElementById('opt-spelling').checked){
+        const spellResult=fixCommonMisspellings(text);
+        text=spellResult.text;
+        if(spellResult.changed)counts.spelling=(counts.spelling||0)+1;
+      }
       if(!text.trim()){ counts.removed++; return; }
       const autoZone=S.detected[srcIdx]?S.detected[srcIdx].zone:null;
       const manualHitObj=S.ost.find(o=>Math.max(0,Math.min(c.end,o.end)-Math.max(c.start,o.start))>0.15);
@@ -1953,11 +2042,106 @@ const CTA_WORDS=/\b(donate|buy now|order now|visit our website|call now|text\s+\
 function findCueIdxByStart(t){
   return S.cues.findIndex(c=>Math.abs(c.start-t)<0.0005);
 }
+/* =========================================================
+   GRAMMAR / SPELLING — FLAG ONLY, NEVER AUTO-FIXED
+   Distinct from fixCommonMisspellings() above, which only touches unambiguous
+   typos. Everything here needs sentence context a script can't safely judge —
+   homophones, dropped/duplicated words, stray punctuation that could be a real
+   stutter — so it always comes out as a 'difficult'-tier NEEDS REVIEW row with
+   a suggested fix in the message. The editor decides in the textarea; nothing
+   here rewrites cue text on its own.
+========================================================= */
+const GRAMMAR_SKIP_DUPES=new Set(['no','yeah','yes','ha','la','oh','ok','okay','go','way','so','very',
+  'right','come','now','well','more','again','really','out','away','down','up','round','na','uh','um',
+  'huh','whoa','ow','woo','ho','had']);
+const MISSING_APOSTROPHE_FIX={
+  dont:"don't",cant:"can't",wont:"won't",im:"I'm",youre:"you're",theyre:"they're",
+  isnt:"isn't",wasnt:"wasn't",werent:"weren't",didnt:"didn't",doesnt:"doesn't",
+  couldnt:"couldn't",shouldnt:"shouldn't",wouldnt:"wouldn't",ive:"I've",
+  youve:"you've",theyve:"they've",weve:"we've",id:"I'd",youd:"you'd",hes:"he's",
+  shes:"she's",whats:"what's",thats:"that's",lets:"let's",arent:"aren't",
+  havent:"haven't",hasnt:"hasn't",hadnt:"hadn't",wouldve:"would've",
+  couldve:"could've",shouldve:"should've",aint:"ain't"
+};
+// Ordinary words that are essentially never proper nouns — catches over-capitalization
+// right after an abbreviation period, e.g. "N.O.R.E. Pair of sneakers" (should be "pair").
+const GRAMMAR_COMMON_WORDS=new Set(['pair','pairs','thing','things','way','ways','man','guy','guys',
+  'kind','sort','lot','lots','time','times','place','person','people','part','parts','side','sides',
+  'type','types','deal','deals','stuff','bit','bits','piece','pieces','idea','ideas','plan','plans',
+  'job','jobs','word','words','line','lines','shot','shots','move','moves','game','games','story',
+  'stories','point','points']);
+const GRAMMAR_HOMOPHONE_PATTERNS=[
+  {re:/\bits\b(?=\s+(?:is|was|been|gonna|going|really|not|only|about)\b)/gi,
+    suggest:"it's",why:"followed by a verb — did you mean the contraction \"it's\"?"},
+  {re:/\bit's\b(?=\s+own\b)/gi,
+    suggest:'its',why:'followed by a possessive noun — did you mean "its"?'},
+  {re:/\btheir\b(?=\s+(?:is|are|was|were|gonna|going|really|not)\b)/gi,
+    suggest:"they're",why:"followed by a verb — did you mean the contraction \"they're\"?"},
+  {re:/\byour\s+welcome\b(?!\s+\w)/gi,
+    suggest:"you're welcome",why:'standalone phrase — did you mean "you\'re welcome"?'},
+  {re:/\bwhose\b(?=\s+(?:is|are|was|were|going|gonna)\b)/gi,
+    suggest:"who's",why:"followed by a verb — did you mean the contraction \"who's\"?"}
+];
+function checkGrammarSpelling(text,protectedTerms){
+  const findings=[];
+  // 1. Duplicate consecutive word (e.g. "we we", "that that") — skipped list covers
+  // interjections/emphasis that are usually intentional in spoken dialogue.
+  text.replace(/\b([A-Za-z']+)\b(\s+)\b\1\b/gi,(m,w)=>{
+    const lower=w.toLowerCase();
+    if(!GRAMMAR_SKIP_DUPES.has(lower)&&!protectedTerms.has(lower))
+      findings.push({id:'DUPLICATE_WORD',message:'Possible duplicated word: "'+w+' '+w+'". Suggest: "'+w+'".'});
+    return m;
+  });
+  // 2. Missing apostrophe in a common contraction (dont, im, thats, etc.)
+  text.replace(/\b([A-Za-z]+)\b/g,(m,w)=>{
+    const lower=w.toLowerCase();
+    if(MISSING_APOSTROPHE_FIX[lower]&&!protectedTerms.has(lower)){
+      let fix=MISSING_APOSTROPHE_FIX[lower];
+      if(w===w.toUpperCase())fix=fix.toUpperCase();
+      else if(w[0]===w[0].toUpperCase())fix=fix.charAt(0).toUpperCase()+fix.slice(1);
+      findings.push({id:'MISSING_APOSTROPHE',message:'"'+w+'" looks like a missing apostrophe. Suggest: "'+fix+'".'});
+    }
+    return m;
+  });
+  // 3. Stray space before a closing quotation mark, e.g. `you. "` — offer the cleaned text.
+  if(/[.!?,]\s+"/.test(text)){
+    const cleaned=text.replace(/([.!?,])\s+"/g,'$1"');
+    findings.push({id:'STRAY_QUOTE_SPACE',message:'Stray space before a closing quotation mark. Suggest: "'+cleaned.replace(/"/g,'\\"')+'".'});
+  }
+  // 4. Narrow, high-precision homophone-in-context checks — deliberately not a blanket
+  // its/your/there scan (that's noisy: most occurrences of those words are correct).
+  GRAMMAR_HOMOPHONE_PATTERNS.forEach(p=>{
+    const matches=text.match(p.re);
+    if(matches)[...new Set(matches.map(x=>x.toLowerCase()))].forEach(w=>{
+      findings.push({id:'HOMOPHONE',message:'"'+w+'" '+p.why+' Suggest checking against "'+p.suggest+'".'});
+    });
+  });
+  // 5. Common word capitalized right after an abbreviation, e.g. "N.O.R.E. Pair of sneakers".
+  text.replace(/\b(?:[A-Z]\.){2,}\s+([A-Z][a-z]+)\b/g,(m,w)=>{
+    const lower=w.toLowerCase();
+    if(GRAMMAR_COMMON_WORDS.has(lower)&&!protectedTerms.has(lower))
+      findings.push({id:'CAP_AFTER_ABBREV',message:'"'+w+'" is capitalized right after an abbreviation — likely should be lowercase "'+lower+'".'});
+    return m;
+  });
+  // 6. Clashing adjacent finite verbs — usually a dropped or duplicated word ("was is", "would would").
+  text.replace(/\b(is|was|were|are)\s+(is|was|were|are)\b/gi,(m,a,b)=>{
+    findings.push({id:'CLASHING_VERBS',message:'"'+a+' '+b+'" — two verb forms back to back. Likely a dropped or duplicated word; check against the audio.'});
+    return m;
+  });
+  text.replace(/\b(would|will|could|should)\s+\1\b/gi,(m,w)=>{
+    findings.push({id:'CLASHING_VERBS',message:'"'+w+' '+w+'" repeated. Likely a duplicated word; check against the audio.'});
+    return m;
+  });
+  return findings;
+}
+
 function buildChecklist(){
   const kidvidOn=document.getElementById('opt-kidvid').checked;
   const extraDashOn=document.getElementById('opt-extradash').checked;
   const compareOn=document.getElementById('opt-compare-enabled').checked && S.refTranscript;
   const compareThreshold=+document.getElementById('opt-compare-threshold').value||0.5;
+  const grammarOn=document.getElementById('opt-grammar').checked;
+  const grammarProtected=new Set((S.personalDictionary||[]).map(t=>t.toLowerCase()));
   const freshByKey={}; // groupKey -> {startKey?/stackStartA+B?/gap?, issues:[{id,tier,message}]}
   const add=(groupKey,ref,id,tier,message)=>{
     if(!freshByKey[groupKey])freshByKey[groupKey]={...ref,issues:[]};
@@ -1973,6 +2157,10 @@ function buildChecklist(){
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
     if(extraDashOn && lines.length===1 && /^\s*-\s*\S/.test(lines[0]))
       add(gk,ref,'EXTRA_DASH','difficult','Single-line cue starts with a dash — confirm this is really a second speaker and not a leftover/extra dash.');
+    if(grammarOn){
+      const bodyText=cue.text.replace(HAS_ID,'');
+      checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
+    }
     if(compareOn){
       const refText=referenceTextForWindow(cue.start,cue.end);
       if(refText.trim()){
@@ -2094,13 +2282,13 @@ async function runFullAnalysis(){
   S.scanning=true;
   logEvent('legaci', 'run_analysis', S.videoURL ? 'with_video' : 'no_video');
   document.getElementById('btn-run').disabled=true;
-  const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0};
+  const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0};
   try{
     if(S.videoURL){
       await waitForScanVideoReady();
       // build a provisional cue set first so combined pass has correct source alignment,
       // then rebuild once more after detection so positions reflect what was found.
-      S.cues=buildFixedCues({tags:0,space:0,caseFix:0,punct:0,mixedCase:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0});
+      S.cues=buildFixedCues({tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0});
       await runCombinedVideoPass();
       S.cues=buildFixedCues(counts);
       setProg('Scanning gaps between captions for missed dialogue/sound…','info');
@@ -2131,6 +2319,7 @@ function renderSummary(counts){
     counts.caseFix+' capitalization fixes · '+(counts.punct||0)+' redundant punctuation fixes · '+
     (counts.dashLine?counts.dashLine+' same-line speaker dash(es) split onto their own line · ':'')+
     (counts.mixedCase?counts.mixedCase+' cue(s) converted from ALL CAPS to mixed case · ':'')+
+    (counts.spelling?counts.spelling+' cue(s) with common misspelling(s) fixed · ':'')+
     counts.wrapped+' line(s) rewrapped · '+counts.split+' event(s) split for &gt;3 lines · '+
     counts.duration+' duration(s) clamped to 1–6.99s · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
 }
