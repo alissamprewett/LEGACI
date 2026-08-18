@@ -122,7 +122,7 @@ a.back:hover{color:var(--accent)}
 
 <script>
 /* ===== LEGACI ANALYTICS -- structure/behavior only, never content. See README. ===== */
-const LEGACI_ANALYTICS_ENDPOINT = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const LEGACI_ANALYTICS_ENDPOINT = 'https://script.google.com/a/macros/pluto.tv/s/AKfycbzZSoN81BCDsDrfA1G-KMbqn7iyk4fyAV4X6yn0VPtzbTXdheHr-nZ9Y0xYJTKDnnfU/exec';
 const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
 function logEvent(tool, event, detail){
   if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;

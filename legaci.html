@@ -589,6 +589,23 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 <footer>LEGACI · TEXT + VIDEO/AUDIO ANALYSIS RUNS LOCALLY IN BROWSER · NO NETWORK CALLS</footer>
 
 <script>
+/* =========================================================
+   LEGACI ANALYTICS — structure/behavior only, never content.
+   See index.html / README for the full explanation. Fully self-contained,
+   safe to sit at the top of the script before anything else is declared.
+========================================================= */
+const LEGACI_ANALYTICS_ENDPOINT = 'https://script.google.com/a/macros/pluto.tv/s/AKfycbzZSoN81BCDsDrfA1G-KMbqn7iyk4fyAV4X6yn0VPtzbTXdheHr-nZ9Y0xYJTKDnnfU/exec';
+const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
+function logEvent(tool, event, detail){
+  if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
+  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  try{
+    if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
+    fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
+  }catch(e){}
+}
+logEvent('legaci', 'page_view', '');
+
 function expandAndScrollTo(id){
   const el=document.getElementById(id);
   if(!el)return;
@@ -2075,6 +2092,7 @@ async function runFullAnalysis(){
   if(!S.src.length){setProg('Load a caption file first.',true);return;}
   if(S.scanning)return;
   S.scanning=true;
+  logEvent('legaci', 'run_analysis', S.videoURL ? 'with_video' : 'no_video');
   document.getElementById('btn-run').disabled=true;
   const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0};
   try{
@@ -2220,6 +2238,7 @@ document.getElementById('stretch-apply').addEventListener('click',()=>{
 function performExport(waiverText){
   const fmt=document.getElementById('opt-exportformat').value;
   const name=(document.getElementById('opt-exportname').value||'corrected').trim().replace(/[^A-Za-z0-9_-]/g,'_');
+  logEvent('legaci', 'export', fmt+(waiverText?'_with_waiver':''));
   let content = fmt==='srt' ? serializeSRT(S.cues) : serializeVTT(S.cues);
   if(waiverText && fmt==='vtt'){
     content=content.replace(/^WEBVTT\n/,'WEBVTT\n\nNOTE Export waiver — exported with unresolved complex-tier issue(s).\nReason: '+waiverText.replace(/\n/g,' ')+'\n\n');
@@ -2889,6 +2908,7 @@ function render(){
         : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
     } else if(act==='validate'){
       S.validated.add(r.key);
+      logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
       buildChecklist(); render();
       setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
     }
