@@ -173,11 +173,12 @@ button.stop{border-color:var(--warn);color:var(--warn)}
 <div class="toolbar">
   <div class="brand"><b>ROSTER</b> · cast-matched speaker ID<small>standalone companion for LEGACI · v1.3</small></div>
   <div class="tsep"></div>
-  <div class="netpill"><span class="dot"></span>Uses network — TVMaze/Wikidata lookup + face-model CDN · media never leaves this machine</div>
+  <div class="netpill"><span class="dot"></span>Uses network — TVMaze/Wikidata/Wikipedia lookup + face-model CDN · media never leaves this machine</div>
   <div class="spacer"></div>
   <button id="btn-export-vtt" disabled>Export captions</button>
   <button id="btn-export-csv" disabled>Export CSV for LEGACI</button>
   <button id="btn-export-ooona" disabled>Export OOONA project</button>
+  <button id="btn-export-xlsx" disabled title="Cast roster with photos, plus a worksheet of every off-screen speaking cue to dash in by hand">Export cast worksheet (.xlsx)</button>
   <div class="tsep"></div>
   <button id="btn-session-save" class="ghost" title="Save pool, reference faces and every resolved cue to a file">Save session</button>
   <label class="ghost" id="btn-session-load" title="Restore a saved session" style="border:1px solid var(--line2);border-radius:5px;font-size:11.5px;font-weight:700;padding:8px 12px;cursor:pointer;background:transparent">Load session<input type="file" id="file-session" accept=".json" style="display:none"></label>
@@ -203,21 +204,28 @@ button.stop{border-color:var(--warn);color:var(--warn)}
   </div>
 
   <div class="mod">
-    <h3><span class="ix">2</span>Cast search <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— free, no account</span></h3>
+    <h3><span class="ix">2</span>Cast &amp; company search <span style="color:var(--faint);font-weight:600;text-transform:none;letter-spacing:0">— free, no account</span></h3>
     <div class="body">
       <div class="row">
-        <select id="tmdb-type" class="small" style="flex:none;width:78px">
+        <select id="tmdb-type" class="small" style="flex:none;width:88px">
           <option value="tv">TV</option>
           <option value="movie">Movie</option>
+          <option value="company">Company</option>
         </select>
-        <input type="text" id="tmdb-title" placeholder="Title…">
+        <input type="text" id="tmdb-title" placeholder="Title, or company/network/studio name…">
       </div>
       <div class="row" style="margin-top:7px" id="tmdb-eprow">
         <input type="number" id="tmdb-season" class="small" placeholder="S#" min="1">
-        <input type="number" id="tmdb-ep" class="small" placeholder="E#" min="1">
+        <input type="number" id="tmdb-ep" class="small" placeholder="E# (blank = whole season)" min="1" style="flex:1.4">
         <button id="btn-tmdb-search" style="flex:1">Search</button>
       </div>
-      <div class="msg" id="tmdb-msg">TV shows search TVMaze (full cast + real per-episode guest stars, with photos). Movies search Wikidata (cast + character + actor photo via Wikimedia Commons). Neither needs a key or sign-up.</div>
+      <div class="msg" id="tmdb-msg">TV shows search TVMaze (full cast + real per-episode guest stars, with photos), falling back to Wikidata, then a Wikipedia infobox read for names only. This also covers webisode-style talk shows and interview podcasts now on streaming (Drink Champs, Truth or Drink, and the like) — hosts and guests appear under their own name since there's no fictional character to list. Give a season number with no episode number to pull per-episode guest tracking for a whole season at once. Movies search Wikidata (cast + character + actor photo), with the same Wikipedia fallback for titles too obscure to have structured cast data. Company/network/studio adds a production company, distributor, or channel — e.g. "Filmrise" — so a logo bumper or ident is identifiable in the pool too. Free one-click manual search links (Google included) appear below for anything none of these turn up. None of this needs a key or sign-up.</div>
+      <div class="hint" id="quick-links" style="margin-top:7px"></div>
+      <div class="row" style="margin-top:9px">
+        <input type="text" id="manual-lookup" placeholder="Still stuck? Type anything to identify it — a name, a line, a logo…">
+        <button id="btn-manual-lookup" style="flex:none">Search Google</button>
+      </div>
+      <div class="hint" id="manual-quick-links" style="margin-top:5px"></div>
       <div class="tmdbresults" id="tmdb-results"></div>
     </div>
   </div>
@@ -230,7 +238,13 @@ button.stop{border-color:var(--warn);color:var(--warn)}
         <input type="text" id="pool-add" placeholder="Add a name manually…">
         <button id="btn-pool-add" style="flex:none">Add</button>
       </div>
-      <div class="hint">Each card is a reference face from TVMaze or Wikidata — or a photo you attach yourself. On-screen matches populate the filmstrip underneath and feed the voice map automatically.</div>
+      <button class="ghost block" id="btn-find-photos" title="Look up a photo on Wikidata for every pool member that doesn't have one yet — this is what a name-only Wikipedia result needs before the cast pass can use it">Find photos for names without one</button>
+      <button class="ghost block" id="btn-export-roster-now" title="Downloads just the Cast Roster sheet from whatever is in the pool right now — no video, captions, or analysis pass required">Export roster now (.xlsx)</button>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--faint);margin-top:8px;cursor:pointer">
+        <input type="checkbox" id="chk-auto-roster" style="width:auto;flex:none">
+        Auto-download the roster every time someone's added to the pool
+      </label>
+      <div class="hint">Each card is a reference face — or logo — from TVMaze, Wikidata, or a photo you attach yourself. Add a production company, network, or distributor here too (e.g. "Filmrise") to help identify a bumper or ident on screen; a logo won't get face-matched automatically, but it's there for a human to recognize while scrubbing. On-screen matches populate the filmstrip underneath and feed the voice map automatically. A name added with no photo (e.g. from the Wikipedia fallback) can't be face-matched until one is found — use "Find photos" above, or attach one by hand on the card.</div>
     </div>
   </div>
 
@@ -413,47 +427,93 @@ async function tvmazeCast(title,season,ep){
   const show=await r.json();
   const label=show.name+(show.premiered?' ('+show.premiered.slice(0,4)+')':'')+' · TVMaze';
   let cast=[];
+  const epFor={}; // name (lowercased) -> Set of "S#E#" strings this person actually appears in
+
   const cr=await fetch('https://api.tvmaze.com/shows/'+show.id+'/cast');
   if(cr.ok){ (await cr.json()).forEach(c=>{ if(c.character&&c.character.name) cast.push(castRow(c)); }); }
+
   if(season&&ep){
+    // one specific episode
     const er=await fetch('https://api.tvmaze.com/shows/'+show.id+'/episodebynumber?season='+encodeURIComponent(season)+'&number='+encodeURIComponent(ep));
     if(er.ok){
       const e2=await er.json();
       const gr=await fetch('https://api.tvmaze.com/episodes/'+e2.id+'/guestcast');
-      if(gr.ok){ (await gr.json()).forEach(c=>{ if(c.character&&c.character.name) cast.push(castRow(c)); }); }
+      if(gr.ok){
+        (await gr.json()).forEach(c=>{
+          if(c.character&&c.character.name){
+            cast.push(castRow(c));
+            (epFor[c.character.name.toLowerCase()]=epFor[c.character.name.toLowerCase()]||new Set()).add('S'+season+'E'+ep);
+          }
+        });
+      }
+    }
+  } else if(season){
+    // whole season — guests differ per episode (talk shows, interview podcasts, anthologies…),
+    // so this is what actually answers "what episodes are they in." Capped at 60 episodes per
+    // season so a long-running show can't turn one search into hundreds of requests.
+    const epr=await fetch('https://api.tvmaze.com/shows/'+show.id+'/episodes');
+    if(epr.ok){
+      const seasonEps=(await epr.json()).filter(e=>String(e.season)===String(season)).slice(0,60);
+      for(const e of seasonEps){
+        const gr=await fetch('https://api.tvmaze.com/episodes/'+e.id+'/guestcast');
+        if(gr.ok){
+          (await gr.json()).forEach(c=>{
+            if(c.character&&c.character.name){
+              cast.push(castRow(c));
+              (epFor[c.character.name.toLowerCase()]=epFor[c.character.name.toLowerCase()]||new Set()).add('S'+e.season+'E'+e.number);
+            }
+          });
+        }
+      }
     }
   }
   cast=dedupe(cast);
+  cast.forEach(c=>{ const set=epFor[c.name.toLowerCase()]; if(set&&set.size) c.episodes=[...set].sort(); });
   return cast.length ? {label,cast} : null;
 }
 
 const COMMONS_FILEPATH='https://commons.wikimedia.org/wiki/Special:FilePath/';
+/* Scripted movies/TV have characters (P453 qualifiers on a P161 cast-member
+   claim), but a talk show, interview podcast, or other webisode-turned-
+   streaming-show — Drink Champs, Truth or Drink, and the like — has hosts and
+   guests who just appear as themselves. Requiring a character qualifier used
+   to make this function return nothing for exactly that kind of show; now
+   anyone without one is kept under their own name instead of being dropped,
+   and P1811 (presenter) is checked too, since some talk shows record the host
+   there rather than as a plain cast member. */
 async function wikidataCast(title){
   const sr=await fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&limit=7&origin=*&search='+encodeURIComponent(title));
   const sj=await sr.json();
-  const hit=(sj.search||[]).find(x=>/film|movie/i.test(x.description||''))||(sj.search||[])[0];
-  if(!hit) return null;
+  const hits=sj.search||[];
+  if(!hits.length) return null;
+  const hit=hits.find(x=>/film|movie|series|show|podcast|talk/i.test(x.description||''))||hits[0];
   const label=hit.label+(hit.description?' — '+hit.description:'')+' · Wikidata';
-  const cl=await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&origin=*&entity='+hit.id+'&property=P161');
+  const cl=await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&origin=*&entity='+hit.id+'&property=P161|P1811');
   const cj=await cl.json();
-  const claims=(cj.claims&&cj.claims.P161)||[];
-  const actorIds=[], charIds=[], actorForChar=new Map();
-  claims.forEach(c=>{
+  const castClaims=(cj.claims&&cj.claims.P161)||[];
+  const presenterClaims=(cj.claims&&cj.claims.P1811)||[];
+  const actorIds=[], charIds=[], actorForChar=new Map(), selfPlayIds=new Set();
+  castClaims.forEach(c=>{
     const actorId=c.mainsnak&&c.mainsnak.datavalue&&c.mainsnak.datavalue.value&&c.mainsnak.datavalue.value.id;
     if(!actorId) return;
     actorIds.push(actorId);
     const q=c.qualifiers&&c.qualifiers.P453;
-    if(q) q.forEach(x=>{ const cid=x.datavalue&&x.datavalue.value&&x.datavalue.value.id; if(cid){ charIds.push(cid); actorForChar.set(cid,actorId); } });
+    if(q&&q.length) q.forEach(x=>{ const cid=x.datavalue&&x.datavalue.value&&x.datavalue.value.id; if(cid){ charIds.push(cid); actorForChar.set(cid,actorId); } });
+    else selfPlayIds.add(actorId); // no character — appears as themselves (host, guest, panelist…)
   });
-  if(!charIds.length) return null;
-  // batch-fetch character labels
+  presenterClaims.forEach(c=>{
+    const id=c.mainsnak&&c.mainsnak.datavalue&&c.mainsnak.datavalue.value&&c.mainsnak.datavalue.value.id;
+    if(id){ actorIds.push(id); selfPlayIds.add(id); }
+  });
+  if(!charIds.length && !selfPlayIds.size) return null;
+  // batch-fetch character (fictional-role) labels
   const charLabel={};
   for(let i=0;i<charIds.length;i+=50){
     const lr=await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=labels&languages=en&ids='+charIds.slice(i,i+50).join('|'));
     const lj=await lr.json();
     for(const id in (lj.entities||{})){ const l=lj.entities[id].labels&&lj.entities[id].labels.en; if(l) charLabel[id]=l.value; }
   }
-  // batch-fetch actor labels + photo (P18)
+  // batch-fetch every real person's label + photo (P18) — covers both characters' actors and self-playing hosts/guests
   const uniqueActors=[...new Set(actorIds)];
   const actorInfo={};
   for(let i=0;i<uniqueActors.length;i+=50){
@@ -472,15 +532,173 @@ async function wikidataCast(title){
     const a=actorInfo[aid]||{};
     if(charLabel[cid]) cast.push({ name:charLabel[cid], actor:a.name, img:a.img||null });
   }
+  for(const aid of selfPlayIds){
+    const a=actorInfo[aid]||{};
+    if(a.name) cast.push({ name:a.name, actor:'', img:a.img||null });
+  }
   cast=dedupe(cast);
   return cast.length ? {label,cast} : null;
 }
 
+/* Wikidata only has structured cast statements (P161) for titles someone has
+   bothered to enter that way — a lot of made-for-TV and streaming-exclusive
+   movies have a Wikipedia article but no such statements, so they'd come back
+   empty even though a human finds them in one search. Wikipedia's own API is
+   free and CORS-enabled (origin=*, same as Wikidata above); this pulls the
+   infobox wikitext of the best-matching article and reads the "Starring" line
+   directly, which is the same data a human reads off the page by eye. No
+   individual actor photos come out of this — just names — but that's enough
+   to seed the pool and confirm the right title, and a photo can be attached
+   by hand or found via a per-actor Wikidata search afterward. */
+/* A name pulled from a Wikipedia infobox is just text — no photo, so nothing
+   can be face-matched against it yet. Wikidata frequently has a person's photo
+   (P18) even for someone Wikidata never linked to this particular film's cast
+   statements, so a plain per-name search there recovers a lot of these. Same
+   free, keyless, origin=* pattern as everywhere else in this file. */
+async function personPhotoLookup(name){
+  try{
+    const sr=await fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&limit=5&origin=*&search='+encodeURIComponent(name));
+    const sj=await sr.json();
+    const hits=sj.search||[];
+    if(!hits.length) return null;
+    const hit=hits.find(h=>/actor|actress|performer|comedian|film|television|born/i.test(h.description||''))||hits[0];
+    const cl=await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&origin=*&entity='+hit.id+'&property=P18');
+    const cj=await cl.json();
+    const claim=cj.claims&&cj.claims.P18&&cj.claims.P18[0];
+    const v=claim&&claim.mainsnak&&claim.mainsnak.datavalue&&claim.mainsnak.datavalue.value;
+    return v ? COMMONS_FILEPATH+encodeURIComponent(String(v).replace(/ /g,'_'))+'?width=300' : null;
+  }catch(e){ return null; }
+}
+async function wikipediaCast(title){
+  const sr=await fetch('https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=5&srsearch='+encodeURIComponent(title+' film'));
+  const sj=await sr.json();
+  const hits=(sj.query&&sj.query.search)||[];
+  if(!hits.length) return null;
+  const hit=hits.find(h=>/film|movie|television/i.test(h.snippet||''))||hits[0];
+  const pageTitle=hit.title;
+  const pr=await fetch('https://en.wikipedia.org/w/api.php?action=parse&format=json&origin=*&prop=wikitext&page='+encodeURIComponent(pageTitle));
+  const pj=await pr.json();
+  const wt=pj.parse&&pj.parse.wikitext&&pj.parse.wikitext['*'];
+  if(!wt) return null;
+  const m=wt.match(/\|\s*starring\s*=\s*([\s\S]*?)\n\s*\|/i);
+  if(!m) return null;
+  const raw=m[1];
+  const names=[];
+  const linkRe=/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+  let mm; while((mm=linkRe.exec(raw))) names.push((mm[2]||mm[1]).trim());
+  if(!names.length){
+    raw.replace(/'''?/g,'').split(/\n|\{\{plainlist\}\}|\{\{end\}\}|,|<br\s*\/?>/i)
+      .map(s=>s.replace(/^[*\s]+/,'').trim()).filter(Boolean).forEach(s=>names.push(s));
+  }
+  const cast=[...new Set(names)].filter(n=>n.length<60).slice(0,20).map(n=>({name:n,actor:'',img:null}));
+  if(cast.length){
+    setTmdb('Found "'+pageTitle+'" on Wikipedia — looking up actor photos on Wikidata…');
+    for(const c of cast) c.img=await personPhotoLookup(c.name);
+  }
+  return cast.length ? {label:pageTitle+' · Wikipedia', cast} : null;
+}
+
+/* Production companies, distributors, and networks — e.g. "Filmrise" — aren't
+   people, so they don't fit the actor/character shape above, but a logo bumper
+   or ident is exactly the kind of thing that helps a human confirm what they're
+   watching. Wikidata carries a proper logo image (P154) for most media
+   companies; when it doesn't, an official-site domain (P856) makes a Clearbit
+   logo guess free and keyless, and a Wikipedia page thumbnail is the last resort. */
+const ORG_DESC_RE=/\b(compan(y|ies)|studio|network|distributor|distribution|production|broadcast|broadcaster|media|television|film|entertainment|corporation|label|channel|publisher)\b/i;
+async function logoForEntity(id,label){
+  const cl=await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&origin=*&entity='+id+'&property=P154|P18|P856');
+  const cj=await cl.json();
+  const claims=cj.claims||{};
+  const pick=prop=>{ const c=claims[prop]&&claims[prop][0]; const v=c&&c.mainsnak&&c.mainsnak.datavalue&&c.mainsnak.datavalue.value; return v; };
+  const logo=pick('P154'), photo=pick('P18'), site=pick('P856');
+  if(logo) return COMMONS_FILEPATH+encodeURIComponent(String(logo).replace(/ /g,'_'))+'?width=300';
+  if(photo) return COMMONS_FILEPATH+encodeURIComponent(String(photo).replace(/ /g,'_'))+'?width=300';
+  if(site){ try{ return 'https://logo.clearbit.com/'+new URL(String(site)).hostname.replace(/^www\./,''); }catch(e){} }
+  try{
+    const wr=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(label));
+    if(wr.ok){ const wj=await wr.json(); if(wj.thumbnail&&wj.thumbnail.source) return wj.thumbnail.source; }
+  }catch(e){}
+  return null;
+}
+async function wikidataCompany(title){
+  const sr=await fetch('https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&limit=8&origin=*&search='+encodeURIComponent(title));
+  const sj=await sr.json();
+  let hits=sj.search||[];
+  if(!hits.length) return null;
+  const orgHits=hits.filter(x=>ORG_DESC_RE.test(x.description||''));
+  hits=(orgHits.length?orgHits:hits).slice(0,6);
+  const cast=[];
+  for(const hit of hits) cast.push({ name:hit.label, actor:hit.description||'', img:await logoForEntity(hit.id,hit.label) });
+  return cast.length ? {label:'Company/network search — "'+title+'" · Wikidata', cast} : null;
+}
+
 $('tmdb-type').addEventListener('change',()=>{
   $('tmdb-eprow').style.display = $('tmdb-type').value==='tv' ? 'flex' : 'none';
+  updateQuickLinks();
 });
+$('tmdb-title').addEventListener('input',updateQuickLinks);
+/* However many free sources this tool tries automatically, none of them will
+   ever cover everything — an obscure made-for-TV movie is exactly the case
+   that slips through Wikidata/Wikipedia but turns up in one plain web search.
+   These are pre-filled, one-click links to the same free, keyless engines a
+   human would reach for by hand — nothing is fetched or scraped here, so
+   there's no key, no quota, and no risk of the search itself breaking. */
+function quickLinks(type,title){
+  const q=encodeURIComponent(title);
+  if(type==='company'){
+    const domainGuess=title.toLowerCase().replace(/[^a-z0-9]+/g,'')+'.com';
+    return [
+      ['Google','https://www.google.com/search?q='+q+'+logo'],
+      ['Wikipedia','https://en.wikipedia.org/w/index.php?search='+q],
+      ['Wikimedia Commons','https://commons.wikimedia.org/w/index.php?search='+q+'+logo'],
+      ['Clearbit logo guess','https://logo.clearbit.com/'+domainGuess],
+      ['DuckDuckGo','https://duckduckgo.com/?q='+q+'+logo'],
+      ['Brandfetch','https://brandfetch.com/search?query='+q]
+    ];
+  }
+  const kind=type==='tv'?'tv show':'movie';
+  return [
+    ['Google','https://www.google.com/search?q='+q+'+'+encodeURIComponent(kind)+'+cast'],
+    ['Bing','https://www.bing.com/search?q='+q+'+'+encodeURIComponent(kind)+'+cast'],
+    ['DuckDuckGo','https://duckduckgo.com/?q='+q+'+'+encodeURIComponent(kind)+'+cast'],
+    ['Wikipedia','https://en.wikipedia.org/w/index.php?search='+q],
+    ['IMDb','https://www.imdb.com/find/?q='+q],
+    ['JustWatch','https://www.justwatch.com/us/search?q='+q]
+  ];
+}
+function updateQuickLinks(){
+  const type=$('tmdb-type').value;
+  const box=$('quick-links');
+  const title=$('tmdb-title').value.trim()||(type==='company'?'company name':'title');
+  box.innerHTML='Free manual lookups: '+quickLinks(type,title)
+    .map(([l,u])=>`<a href="${escT(u)}" target="_blank" rel="noopener">${escT(l)}</a>`).join(' · ');
+}
 $('btn-tmdb-search').addEventListener('click',searchCast);
 $('tmdb-title').addEventListener('keydown',e=>{ if(e.key==='Enter') searchCast(); });
+
+/* Manual lookup — for anything the automated passes above can't name: a
+   distinctive line of dialogue, a half-remembered name, a logo description.
+   This fires an actual Google search the moment it's submitted (Enter or the
+   button), rather than rendering a link that still needs a second click —
+   that's the whole point of it. It has to run directly inside the keydown/
+   click handler (not after a delay or inside a promise) or the browser's
+   popup blocker would treat it as an unrequested pop-up instead of something
+   the person just asked for. The other free engines are offered right after,
+   in case Google isn't the one that turns it up. */
+function openGoogleSearch(q){
+  if(!q) return;
+  window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank','noopener');
+}
+function fireManualLookup(){
+  const q=$('manual-lookup').value.trim();
+  if(!q){ $('manual-quick-links').textContent='Type something first — a name, a line, anything identifying.'; return; }
+  openGoogleSearch(q);
+  const others=quickLinks('movie',q).filter(([l])=>l!=='Google');
+  $('manual-quick-links').innerHTML='Opened Google for "'+escT(q)+'" — also try: '
+    +others.map(([l,u])=>`<a href="${escT(u)}" target="_blank" rel="noopener">${escT(l)}</a>`).join(' · ');
+}
+$('btn-manual-lookup').addEventListener('click',fireManualLookup);
+$('manual-lookup').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); fireManualLookup(); } });
 
 async function searchCast(){
   const title=$('tmdb-title').value.trim();
@@ -488,21 +706,29 @@ async function searchCast(){
   const type=$('tmdb-type').value;
   $('btn-tmdb-search').disabled=true; $('tmdb-results').innerHTML='';
   try{
-    setTmdb('Searching '+(type==='tv'?'TVMaze':'Wikidata')+'…');
+    setTmdb('Searching '+(type==='tv'?'TVMaze':type==='company'?'Wikidata for a company/network':'Wikidata')+'…');
     let found=null;
     if(type==='tv'){
       found=await tvmazeCast(title,$('tmdb-season').value,$('tmdb-ep').value);
       if(!found){ setTmdb('Not on TVMaze — trying Wikidata…'); found=await wikidataCast(title); }
+      if(!found){ setTmdb('Not on Wikidata either — trying Wikipedia…'); found=await wikipediaCast(title); }
+    } else if(type==='company'){
+      found=await wikidataCompany(title);
     } else {
       found=await wikidataCast(title);
+      if(!found){ setTmdb('No structured cast on Wikidata — trying Wikipedia…'); found=await wikipediaCast(title); }
     }
-    if(!found){ setTmdb('No cast data found for "'+title+'". Try adding the year, or add speakers manually below.','warn'); return; }
+    if(!found){
+      setTmdb('No '+(type==='company'?'company/network':'cast')+' data found for "'+title+'" on any free source tried. '
+        +'Use the manual lookup links below to confirm the title by eye, then add speakers manually.','warn');
+      return;
+    }
     renderCastResults(found.label, found.cast);
     const withPhoto=found.cast.filter(c=>c.img).length;
-    setTmdb('Found '+found.cast.length+' character(s) for '+found.label+' — '+withPhoto+' with a photo. Tap to add, or Add all.');
+    setTmdb('Found '+found.cast.length+' '+(type==='company'?'match(es)':'name(s)')+' for '+found.label+' — '+withPhoto+' with a photo. Tap to add'+(type==='company'?'.':', or Add all.'));
   }catch(err){
     console.error(err);
-    setTmdb('Lookup failed: '+err.message+' — if this page is open from a file:// path or offline, the cast APIs are unreachable. Add speakers manually below.','warn');
+    setTmdb('Lookup failed: '+err.message+' — if this page is open from a file:// path or offline, the lookup APIs are unreachable. Add speakers manually below.','warn');
   }
   $('btn-tmdb-search').disabled=false;
 }
@@ -510,13 +736,13 @@ function renderCastResults(label,cast){
   const el=$('tmdb-results'); el.innerHTML='';
   const h=document.createElement('div'); h.className='hint'; h.textContent='Results — '+label; el.appendChild(h);
   const all=document.createElement('button'); all.className='addall'; all.textContent='Add all to pool';
-  all.onclick=()=>{ cast.forEach(c=>addPoolMember(c.name,c.img,'auto')); setTmdb(cast.length+' added — computing reference faces…'); computeAllReferenceDescriptors(); };
+  all.onclick=()=>{ cast.forEach(c=>addPoolMember(c.name,c.img,'auto',c.episodes)); setTmdb(cast.length+' added — computing reference faces…'); computeAllReferenceDescriptors(); maybeAutoExportRoster(); };
   el.appendChild(all);
   cast.forEach(c=>{
     const row=document.createElement('div'); row.className='tr';
     row.innerHTML=`<img src="${c.img||''}" onerror="this.style.visibility='hidden'">
-      <div class="n"><b>${escT(c.name)}</b><span>${escT(c.actor||'')}</span></div>`;
-    row.onclick=()=>{ addPoolMember(c.name,c.img,'auto'); computeAllReferenceDescriptors(); };
+      <div class="n"><b>${escT(c.name)}</b><span>${escT(c.actor||'')}${c.episodes&&c.episodes.length?' · '+escT(c.episodes.join(', ')):''}</span></div>`;
+    row.onclick=()=>{ addPoolMember(c.name,c.img,'auto',c.episodes); computeAllReferenceDescriptors(); maybeAutoExportRoster(); };
     el.appendChild(row);
   });
 }
@@ -524,10 +750,10 @@ function renderCastResults(label,cast){
 /* =========================================================
    SPEAKER POOL — cast lineup
 ========================================================= */
-function addPoolMember(name,img,source){
+function addPoolMember(name,img,source,episodes){
   name=(name||'').trim(); if(!name) return;
   if(S.pool.some(p=>p.name.toLowerCase()===name.toLowerCase())) return;
-  S.pool.push({name,img:img||null,refDescriptor:null,source:source||'manual',instances:[]});
+  S.pool.push({name,img:img||null,refDescriptor:null,source:source||'manual',instances:[],episodes:episodes&&episodes.length?[...episodes]:[]});
   renderPool();
 }
 /* Coverage backstop: TVMaze/Wikidata won't have a photo for every character
@@ -539,8 +765,30 @@ function attachPhoto(i,src){
   renderPool();
   computeAllReferenceDescriptors();
 }
-$('btn-pool-add').addEventListener('click',()=>{ addPoolMember($('pool-add').value,null,'manual'); $('pool-add').value=''; });
+$('btn-pool-add').addEventListener('click',()=>{ addPoolMember($('pool-add').value,null,'manual'); $('pool-add').value=''; maybeAutoExportRoster(); });
 $('pool-add').addEventListener('keydown',e=>{ if(e.key==='Enter') $('btn-pool-add').click(); });
+
+/* Recovery path for exactly the "0 of N resolved — no pool member has a usable
+   reference face" situation: a name-only pool (from the Wikipedia fallback, or
+   typed in manually) has nothing for the cast pass to match against until each
+   name has an actual photo. This retries the per-name Wikidata photo lookup
+   for whatever's still missing one, without needing to re-run the search. */
+$('btn-find-photos').addEventListener('click',async()=>{
+  const todo=S.pool.filter(p=>!p.img);
+  if(!todo.length){ setTmdb('Every pool member already has a photo attached.'); return; }
+  $('btn-find-photos').disabled=true;
+  setTmdb('Looking up photos for '+todo.length+' pool member(s) without one…');
+  let found=0;
+  for(const p of todo){
+    const img=await personPhotoLookup(p.name);
+    if(img){ p.img=img; p.refDescriptor=null; found++; renderPool(); }
+  }
+  $('btn-find-photos').disabled=false;
+  setTmdb(found+' of '+todo.length+' pool member(s) got a photo from Wikidata'
+    +(found?' — computing reference faces…':'. Try attaching one by hand on the card, or the manual lookup box above.'),
+    found?'ok':'warn');
+  if(found) computeAllReferenceDescriptors();
+});
 
 function renderPool(){
   const el=$('pool'); el.innerHTML='';
@@ -563,6 +811,7 @@ function renderPool(){
       <div class="cardbody">
         <div class="cardname">${escT(p.name)}</div>
         <div class="cardmeta">${srcLabel} ${status} ${p.instances.length?'· '+p.instances.length+' on-screen':''}</div>
+        ${p.episodes&&p.episodes.length?`<div class="cardmeta" style="color:var(--face)">Appears in: ${escT(p.episodes.join(', '))}</div>`:''}
         ${p.instances.length?`<div class="strip">${stripHtml}</div>`:''}
         ${needsPhoto?`<div class="row" style="margin-top:6px;gap:5px">
           <input type="text" placeholder="${p.img?'replace with an image URL…':'paste an image URL…'}" class="photourl" style="font-size:11px;padding:5px 7px">
@@ -664,6 +913,50 @@ async function loadRefImage(url){
   if(/^data:/.test(url)) return loadImgEl(url,false);
   try{ return await loadImgEl(url,true); }
   catch(e){ return await loadImgEl(IMG_PROXY(url),true); }
+}
+
+/* =========================================================
+   SPREADSHEET LIBRARY — ExcelJS, loaded from CDN on demand
+   (same on-demand, try-every-mirror pattern as face-api.js above —
+   this feature is used far less often than the core passes, so it
+   isn't worth the page weight until an export is actually requested)
+========================================================= */
+const EXCELJS_JS=[
+  'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+  'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js'
+];
+let exceljsLoading=null;
+function ensureExcelJS(){
+  if(window.ExcelJS) return Promise.resolve();
+  if(exceljsLoading) return exceljsLoading;
+  exceljsLoading=(async()=>{
+    let last=null;
+    for(const url of EXCELJS_JS){
+      try{ await loadScript(url); if(window.ExcelJS) return; }catch(e){ last=e; }
+    }
+    exceljsLoading=null;
+    throw new Error('Could not load the spreadsheet library from any CDN'+(last?' ('+last.message+')':'')+'. The worksheet needs network access for this one export.');
+  })();
+  return exceljsLoading;
+}
+/* Reference photos come from TMDB/TVMaze URLs, a pasted URL, or a data: URL from
+   a manually-attached file — three different shapes that all need to end up as
+   plain pixel bytes to embed in a cell. Route through the same CORS-safe loader
+   the face pass already uses, then re-encode via canvas so every source photo
+   becomes one consistent, safely-sized PNG regardless of where it came from. */
+async function imageToEmbeddable(url,maxDim){
+  if(!url) return null;
+  maxDim=maxDim||160;
+  try{
+    const img=await loadRefImage(url);
+    const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+    if(!iw||!ih) return null;
+    const scale=Math.min(1,maxDim/Math.max(iw,ih));
+    const w=Math.max(1,Math.round(iw*scale)), h=Math.max(1,Math.round(ih*scale));
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    return { dataUrl:cv.toDataURL('image/png'), width:w, height:h };
+  }catch(e){ return null; } // unreachable photo — the row still exports, just without a thumbnail
 }
 const REF_OPTS=()=>new faceapi.TinyFaceDetectorOptions({inputSize:512,scoreThreshold:0.35});
 
@@ -937,7 +1230,6 @@ async function runAnalysis(only){
   if(!S.videoURL){ setProg('Load a video proxy first.','warn'); return; }
   const M = only ? {cast:only==='cast',voice:only==='voice',ost:only==='ost'} : MOD();
   if(!M.cast&&!M.voice&&!M.ost){ setProg('Select at least one analyzer.','warn'); return; }
-  logEvent('roster', 'run_analysis', only||'all');
   S.abort=false; setRunning(true); setBar(0);
   const notes=[];
   try{
@@ -1344,6 +1636,7 @@ function updateExportButtons(){
   $('btn-export-csv').disabled=!has;
   $('btn-export-ooona').disabled=!(S.cues.length>0);
   $('btn-export-vtt').disabled=!(S.cues.length>0 && has);
+  $('btn-export-xlsx').disabled=!(S.pool.length>0 || has);
 }
 function applySpeakerIds(maxLen,maxLines){
   maxLines=maxLines||3;
@@ -1386,7 +1679,6 @@ function applySpeakerIds(maxLen,maxLines){
   return {cues, tagged, overflow, onscreen, noaudio, unverified};
 }
 $('btn-export-vtt').addEventListener('click',()=>{
-  logEvent('roster', 'export', S.fmt||'vtt');
   const maxLen=32;
   const R=applySpeakerIds(maxLen,3);
   const blob=new Blob([serialize(R.cues)],{type:'text/plain'});
@@ -1406,7 +1698,6 @@ function exportReport(R,maxLen){
 
 function csvEscape(v){ v=String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 $('btn-export-csv').addEventListener('click',()=>{
-  logEvent('roster', 'export', 'csv');
   // Same header LEGACI's issues report uses, so this file drops straight into
   // LEGACI's CSV re-import slot with no translation step.
   const header=['start','end','rule','tier','message','text','note','ACTION','SPEAKER','POSITION'];
@@ -1438,13 +1729,128 @@ $('btn-export-csv').addEventListener('click',()=>{
   setProg('CSV exported — '+(rows.length-1)+' resolved cue(s), '+acted+' marked ACTION=fix under the current ID rule.','ok');
 });
 
+/* Cast roster + off-screen speaking worksheet. Two different jobs, one file:
+   the roster sheet is a photo reference so a human can eyeball "who is who"
+   before touching anything, and the off-screen sheet is exactly the list of
+   cues the current ID policy would tag — i.e. the ones that actually need a
+   "(NAME):" dash typed in by hand, in the order they occur in the video. */
+async function buildRosterSheet(wb){
+  const roster=wb.addWorksheet('Cast Roster');
+  roster.columns=[
+    {header:'Photo', key:'photo', width:14},
+    {header:'Name', key:'name', width:26},
+    {header:'Source', key:'source', width:20},
+    {header:'Reference Face', key:'face', width:16},
+    {header:'Episodes', key:'episodes', width:24},
+    {header:'On-Screen Samples', key:'instances', width:18},
+  ];
+  roster.getRow(1).font={bold:true}; roster.getRow(1).height=20;
+  roster.views=[{state:'frozen',ySplit:1}];
+
+  let rn=2;
+  for(const p of S.pool){
+    const row=roster.addRow({
+      name:p.name,
+      source: p.source==='auto' ? 'Auto (TMDB/TVMaze/Wikidata)' : p.source==='auto+manual photo' ? 'Auto + manual photo' : 'Manual',
+      face: p.refDescriptor ? 'Ready' : (p.img ? 'No face detected in photo' : 'No photo'),
+      episodes: p.episodes&&p.episodes.length ? p.episodes.join(', ') : (p.source&&p.source.startsWith('auto') ? 'Full series / unspecified' : '—'),
+      instances: p.instances.length
+    });
+    row.height=64;
+    if(p.img){
+      const img=await imageToEmbeddable(p.img,160);
+      if(img){
+        const box=76, scale=Math.min(box/img.width, box/img.height, 1);
+        const imgId=wb.addImage({base64:img.dataUrl, extension:'png'});
+        roster.addImage(imgId,{ tl:{col:0,row:rn-1}, ext:{width:img.width*scale, height:img.height*scale} });
+      }
+    }
+    rn++;
+  }
+  roster.autoFilter={from:{row:1,column:1},to:{row:1,column:6}};
+  return roster;
+}
+
+/* The roster sheet only ever needs S.pool — it has never actually required
+   the video/captions/analysis pipeline to have run. This is the same sheet on
+   its own, either on demand or automatically the moment someone's added. */
+async function exportRosterOnly(auto){
+  if(!S.pool.length){ if(!auto) setTmdb('Add someone to the pool first.','warn'); return; }
+  try{ await ensureExcelJS(); }
+  catch(err){ if(!auto) setTmdb(err.message,'warn'); else console.warn(err); return; }
+  const wb=new ExcelJS.Workbook(); wb.creator='ROSTER'; wb.created=new Date();
+  await buildRosterSheet(wb);
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='cast_roster.xlsx'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  if(!auto) setTmdb('Cast roster downloaded — '+S.pool.length+' member(s), no need to run the rest of the tool.','ok');
+}
+function maybeAutoExportRoster(){
+  const chk=$('chk-auto-roster');
+  if(chk&&chk.checked) exportRosterOnly(true);
+}
+$('btn-export-roster-now').addEventListener('click',()=>exportRosterOnly(false));
+
+$('btn-export-xlsx').addEventListener('click',async()=>{
+  const btn=$('btn-export-xlsx'); btn.disabled=true;
+  setProg('Loading spreadsheet library…');
+  try{ await ensureExcelJS(); }
+  catch(err){ setProg(err.message,'warn'); btn.disabled=false; return; }
+
+  const wb=new ExcelJS.Workbook();
+  wb.creator='ROSTER'; wb.created=new Date();
+
+  setProg('Building cast roster — fetching photos…');
+  await buildRosterSheet(wb);
+
+  // ---- Sheet 2: every cue the current ID policy would tag as off-screen ----
+  const P=idPolicy();
+  const off=wb.addWorksheet('Off-Screen Speaking');
+  off.columns=[
+    {header:'Timecode In', key:'tin', width:15},
+    {header:'Timecode Out', key:'tout', width:15},
+    {header:'Character', key:'name', width:24},
+    {header:'Caption Text', key:'text', width:55},
+    {header:'Status', key:'status', width:42},
+  ];
+  off.getRow(1).font={bold:true}; off.getRow(1).height=20;
+  off.views=[{state:'frozen',ySplit:1}];
+
+  const toDash=ROWS.filter(r=>r.name).map(r=>({r,d:tagDecision(r,P)})).filter(x=>x.d.tag);
+  toDash.sort((a,b)=>a.r.t-b.r.t);
+  toDash.forEach(({r,d})=>{
+    const end=r.end!=null ? r.end : (S.cues[+r.key] ? S.cues[+r.key].end : r.t+2);
+    const row=off.addRow({
+      tin:s2vtt(r.t).slice(0,11),
+      tout:s2vtt(end).slice(0,11),
+      name:displayName(r.name,P),
+      text:r.txt||'(no caption loaded)',
+      status: d.why==='unverified'
+        ? 'Not verified — cast pass never sampled this cue, check by eye'
+        : 'Speaker off screen — add "(NAME):" manually'
+    });
+    if(d.why==='unverified') row.font={color:{argb:'FFB35A00'}};
+  });
+  off.autoFilter={from:{row:1,column:1},to:{row:1,column:5}};
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='roster_speaker_worksheet.xlsx'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+
+  setProg('Excel worksheet exported — '+S.pool.length+' cast member(s) with photos, '+toDash.length+' off-screen line(s) to dash in by hand.','ok');
+  btn.disabled=false;
+});
+
 function uuid(){
   if(crypto&&crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
     const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8); return v.toString(16); });
 }
 $('btn-export-ooona').addEventListener('click',()=>{
-  logEvent('roster', 'export', 'ooona_project');
   const maxLen=32;
   const RP=applySpeakerIds(maxLen,3);
   const out=RP.cues;
@@ -1586,7 +1992,7 @@ video.addEventListener('error',()=>{
   if(video.src) setProg('The player could not decode this file. Scanning may still work, but an H.264/AAC MP4 proxy is the safe format.','warn');
 });
 window.addEventListener('beforeunload',e=>{ if(S.running){ e.preventDefault(); e.returnValue=''; } });
-renderPool(); render(); updateExportButtons();
+renderPool(); render(); updateExportButtons(); updateQuickLinks();
 </script>
 </body>
 </html>
