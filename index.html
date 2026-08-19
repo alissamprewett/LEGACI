@@ -8,109 +8,121 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0b0b0f; --panel:#15151c; --panel2:#1d1d26;
-  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
-  --white:#f4f4f6; --gray:rgba(244,244,246,.6); --faint:rgba(244,244,246,.32);
-  --yellow:#3d8bfd; --ok:#3ddc84; --warn:#ffb020; --info:#5db8ff;
+  --bg:#f5f4fb; --card:#ffffff; --card-border:#e9e6f5;
+  --ink:#1a1625; --ink-soft:#6b6478; --ink-faint:#a7a2b8;
+  --purple:#9b5cf6; --blue:#3d8bfd;
+  --accent-grad:linear-gradient(90deg,var(--purple),var(--blue));
+  --ok-bg:#e2f8ec; --ok-text:#0f8a52;
+  --beta-bg:#f2ebff; --beta-text:#7c3aed;
   --mono:'IBM Plex Mono',ui-monospace,monospace;
   --sans:'Archivo',system-ui,sans-serif;
+  --shadow-sm:0 1px 2px rgba(26,22,37,.05);
+  --shadow-md:0 14px 34px rgba(26,22,37,.10), 0 2px 8px rgba(26,22,37,.06);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{background:var(--bg);color:var(--white);font-family:var(--sans);
-  background-image:radial-gradient(ellipse at 80% -10%,rgba(255,229,0,.06),transparent 55%);
-  min-height:100vh;display:flex;flex-direction:column}
-header{padding:24px 32px;border-bottom:1px solid var(--line)}
-.brand{font-stretch:112%;font-weight:800;font-size:22px;letter-spacing:.1em;text-transform:uppercase}
-.brand em{font-style:normal;color:var(--yellow)}
-.tag{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.05em;margin-top:4px}
-main{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 24px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;max-width:1400px;width:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column}
+
+header{background:var(--accent-grad);padding:20px 32px}
+.headerrow{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;font-stretch:112%;font-weight:800;font-size:20px;letter-spacing:.08em;text-transform:uppercase;color:#fff}
+.brand .logomark{width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+.brand em{font-style:normal}
+
+.tagbar{background:#fff;border-bottom:1px solid var(--card-border);padding:9px 32px;text-align:center}
+.tagbar span{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-soft)}
+
+main{flex:1;padding:34px 24px 56px}
+.pagehead{max-width:1200px;margin:0 auto 22px}
+.pagehead h1{font-size:25px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.pagehead p{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:5px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:18px;max-width:1200px;margin:0 auto;width:100%}
 @media(max-width:860px){.grid{grid-template-columns:1fr}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 24px;
-  text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:14px;
-  transition:border-color .15s,transform .15s,box-shadow .15s;position:relative;overflow:hidden}
-.card:hover{border-color:var(--yellow);transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.4)}
-.card .icon{font-size:30px}
-.card h2{font-size:18px;font-weight:700;letter-spacing:.02em}
-.card p{font-size:13px;color:var(--gray);line-height:1.55;flex:1}
-.card .status{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
-  border-radius:12px;padding:4px 10px;display:inline-block;width:fit-content}
-.status.ready{background:rgba(61,220,132,.15);color:var(--ok)}
-.status.beta{background:rgba(255,229,0,.15);color:var(--yellow)}
-.status.soon{background:rgba(255,255,255,.06);color:var(--faint)}
-.card .go{font-family:var(--mono);font-size:11px;color:var(--yellow);letter-spacing:.06em}
-.card.disabled{cursor:default;opacity:.7}
-.card.disabled:hover{border-color:var(--line);transform:none;box-shadow:none}
-footer{padding:18px 32px;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em;text-align:center;border-top:1px solid var(--line)}
+
+.card{background:var(--card);border:1px solid var(--card-border);border-radius:18px;padding:22px;
+  text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:12px;
+  box-shadow:var(--shadow-sm);transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease}
+.card:hover{box-shadow:var(--shadow-md);transform:translateY(-3px);border-color:#d8d2ef}
+.card:focus-visible{outline:2px solid var(--purple);outline-offset:3px}
+.cardtop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.card .icon{font-size:22px;width:44px;height:44px;border-radius:12px;background:#f6f4fd;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card h2{font-size:17px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.card p{font-size:13px;color:var(--ink-soft);line-height:1.55;flex:1}
+.card .status{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border-radius:20px;padding:4px 11px;display:inline-block;width:fit-content;font-weight:600;white-space:nowrap}
+.status.ready{background:var(--ok-bg);color:var(--ok-text)}
+.status.beta{background:var(--beta-bg);color:var(--beta-text)}
+.card .go{font-family:var(--mono);font-size:11px;color:#fff;letter-spacing:.03em;background:var(--accent-grad);
+  padding:9px 14px;border-radius:20px;text-align:center;font-weight:700;margin-top:2px}
+
+footer{padding:16px 32px;font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);letter-spacing:.05em;text-align:center;border-top:1px solid var(--card-border);background:#fff}
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">Leg<em>aci</em></div>
-  <div class="tag">caption tools, run locally in your browser</div>
+  <div class="headerrow">
+    <div class="brand"><span class="logomark">L</span>Leg<em>aci</em></div>
+  </div>
 </header>
+<div class="tagbar"><span>ALL PROCESSING RUNS LOCALLY IN YOUR BROWSER · NO CAPTION OR VIDEO DATA IS UPLOADED ANYWHERE</span></div>
 <main>
+  <div class="pagehead">
+    <h1>Tools</h1>
+    <p>PICK ONE TO GET STARTED · EACH RUNS ENTIRELY ON THIS MACHINE</p>
+  </div>
   <div class="grid">
     <a class="card" href="transcribe.html" data-tool="transcribe">
-      <span class="icon">🎙</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">🎙</span><span class="status beta">Beta</span></div>
       <h2>Transcribe</h2>
       <p>Generate a first-draft caption file straight from a video's audio, using a speech model that runs entirely in your browser. Choose speed or accuracy, then hand the draft to Analyze to clean it up.</p>
       <span class="go">Open Transcribe →</span>
     </a>
     <a class="card" href="translate.html" data-tool="translate">
-      <span class="icon">🌐</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">🌐</span><span class="status beta">Beta</span></div>
       <h2>Translate</h2>
       <p>Open Helsinki-NLP translation models running in your browser — Spanish, French, Italian, and German, downloaded once and reused offline after that. Treat output as a first draft, same as Transcribe.</p>
       <span class="go">Open Translate →</span>
     </a>
     <a class="card" href="legaci.html" data-tool="legaci">
-      <span class="icon">🛠</span>
-      <span class="status ready">Ready</span>
+      <div class="cardtop"><span class="icon">🛠</span><span class="status ready">Ready</span></div>
       <h2>Analyze</h2>
       <p>The full caption QC tool — auto-fixes formatting, flags speaker IDs, on-screen text, sync, and more, with an editable checklist and video preview.</p>
       <span class="go">Open Analyze →</span>
     </a>
     <a class="card" href="audio-description.html" data-tool="audio-description">
-      <span class="icon">👁️‍🗨️</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">👁️‍🗨️</span><span class="status beta">Beta</span></div>
       <h2>Audio Description</h2>
       <p>Finds dialogue gaps and drafts a rough scene description for each one using an in-browser image-captioning model — a starting point for a human describer, not a finished script.</p>
       <span class="go">Open Audio Description →</span>
     </a>
     <a class="card" href="convert.html" data-tool="convert">
-      <span class="icon">⇄</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">⇄</span><span class="status beta">Beta</span></div>
       <h2>Convert</h2>
       <p>VTT ⇄ SCC ⇄ SRT conversion — pop-on captions only, built from directly-verified open-source CEA-608 logic rather than reconstructed from memory. Pure format conversion, no AI, no upload.</p>
       <span class="go">Open Convert →</span>
     </a>
     <a class="card" href="markups.html" data-tool="markups">
-      <span class="icon">▮▮</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">▮▮</span><span class="status beta">Beta</span></div>
       <h2>Markups</h2>
       <p>Scans for scene cuts and fades, cross-referenced with quiet audio, and suggests ad breakpoints against the Delivery Guide's spacing rules. US Film and TV rules built in — every suggestion needs a human check.</p>
       <span class="go">Open Markups →</span>
     </a>
     <a class="card" href="artwork.html" data-tool="artwork">
-      <span class="icon">🖼</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">🖼</span><span class="status beta">Beta</span></div>
       <h2>Artwork</h2>
       <p>Batch resize, center-crop, and compress screenshots to the Delivery Guide's exact specs — the same job as the internal ResizeIt extension, done here with real batch processing and one .zip download.</p>
       <span class="go">Open Artwork →</span>
     </a>
     <a class="card" href="roster.html" data-tool="roster">
-      <span class="icon">🎭</span>
-      <span class="status beta">Beta</span>
+      <div class="cardtop"><span class="icon">🎭</span><span class="status beta">Beta</span></div>
       <h2>Roster</h2>
       <p>Standalone companion for cast-matched speaker ID — TVMaze/Wikidata cast search, face and voice matching, session save/restore, and export straight to a LEGACI-ready CSV or an OOONA project file.</p>
       <span class="go">Open Roster →</span>
     </a>
   </div>
 </main>
-<footer>ALL PROCESSING RUNS LOCALLY IN YOUR BROWSER · NO CAPTION OR VIDEO DATA IS UPLOADED ANYWHERE · usage patterns only (never content) may be logged — see README</footer>
+<footer>LEGACI · INTERNAL CAPTION TOOLING</footer>
 <script>
 /* =========================================================
    LEGACI ANALYTICS — structure/behavior only, never content.
