@@ -19,13 +19,22 @@
  * Sheet, not a data leak. If that becomes a real problem, add a simple shared
  * secret check (see the commented-out block below) and update the client
  * snippet to send it.
+ *
+ * v1.1 CHANGES:
+ * - Every day gets its own tab (e.g. "Events_2026-08-19"), created automatically
+ *   the first time an event comes in that day, and placed as the leftmost tab —
+ *   applies going forward only; the original all-in-one "Events" tab from before
+ *   this change is left exactly as it was, as a historical record. If you want
+ *   that older data split retroactively into daily tabs too, that's a separate,
+ *   one-time migration script, not something this file does automatically.
+ * - New rows land at the top (row 2, right under the header) instead of the
+ *   bottom, so the most recent activity is always visible without scrolling.
+ *   The day-tab's date reflects the spreadsheet's own timezone setting (File ->
+ *   Settings in the Sheet), not the visitor's browser, so the day boundary is
+ *   consistent no matter who's using it or where from.
  */
 function doPost(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Events') || ss.insertSheet('Events');
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Timestamp', 'Tool', 'Event', 'Detail', 'Session']);
-  }
 
   let data;
   try {
@@ -41,13 +50,25 @@ function doPost(e) {
   //     .setMimeType(ContentService.MimeType.JSON);
   // }
 
-  sheet.appendRow([
+  const tz = ss.getSpreadsheetTimeZone();
+  const dayTabName = 'Events_' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  let sheet = ss.getSheetByName(dayTabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(dayTabName, 0); // index 0 = leftmost tab, so today's is always easiest to find
+    sheet.appendRow(['Timestamp', 'Tool', 'Event', 'Detail', 'Session']);
+    sheet.setFrozenRows(1);
+  }
+
+  const row = [
     new Date(),
     String(data.tool || '').slice(0, 60),
     String(data.event || '').slice(0, 60),
     String(data.detail || '').slice(0, 300),
     String(data.session || '').slice(0, 60)
-  ]);
+  ];
+
+  sheet.insertRowBefore(2);
+  sheet.getRange(2, 1, 1, row.length).setValues([row]);
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);

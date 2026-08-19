@@ -334,6 +334,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
     <div class="opt"><label>Flag single-line leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
     <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
+    <div class="opt"><label>Flag missing dash on multi-sentence cues</label><button class="infobtn" data-infofor="missingdash-hint">i</button><input type="checkbox" id="opt-missingdash"></div>
+    <div class="substep infotext" id="missingdash-hint">off by default as of this build — found from real usage data that this fired constantly on completely ordinary single-speaker dialogue (e.g. "That's not what I meant." / "I was talking about the movie.") any time two short sentences from ONE speaker happened to wrap across lines, since a sentence-ending line followed by a new sentence looks identical whether it's one speaker or two. Turn on if you'd rather have the extra (currently noisy) flag than miss a real one.</div>
     <div class="opt"><label>Convert ALL CAPS to mixed case</label><input type="checkbox" id="opt-mixedcase"></div>
     <div class="substep" id="mixedcase-hint" style="display:none;color:var(--warn)">This file looks like it's written in ALL CAPS — check the box above to convert dialogue to mixed case (known character names get re-capitalized properly).</div>
     <div class="opt"><label>Auto-fix common misspellings</label><button class="infobtn" data-infofor="spelling-hint">i</button><input type="checkbox" id="opt-spelling" checked></div>
@@ -614,6 +616,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <span style="flex:1"></span>
       <button class="pbtn small" id="bulk-top">Move selected to TOP</button>
       <button class="pbtn small" id="bulk-bottom">Move selected to BOTTOM</button>
+      <button class="pbtn small" id="bulk-add-dash">+ Add leading dash</button>
+      <button class="pbtn small" id="bulk-remove-dash">− Remove leading dash</button>
       <button class="pbtn small" id="bulk-apply-suggested">Apply each row's own OST suggestion</button>
       <button class="pbtn small validate" id="bulk-validate">✓ Validate selected</button>
     </div>
@@ -632,6 +636,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <span style="flex:1"></span>
     <button class="pbtn small" id="bulk-top-all-events">Move selected to TOP</button>
     <button class="pbtn small" id="bulk-bottom-all-events">Move selected to BOTTOM</button>
+    <button class="pbtn small" id="bulk-add-dash-all-events">+ Add leading dash</button>
+    <button class="pbtn small" id="bulk-remove-dash-all-events">− Remove leading dash</button>
   </div>
 
   <div class="empty" id="empty">
@@ -751,7 +757,7 @@ document.addEventListener('mousedown',e=>{
    Export/Import as a file lets a profile move to another machine or get
    shared with a teammate.
 ========================================================= */
-const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
+const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
 function buildProfile(){
   const settings={};
   PROFILE_SETTINGS_IDS.forEach(id=>{
@@ -2565,7 +2571,7 @@ function buildChecklist(){
       return /[.!?]["'\u2019)\]]?\s*$/.test(t);
     };
     const sentenceBreakBetweenLines = lines.slice(0,-1).some(endsWithRealSentenceBreak);
-    if(lines.length>1 && sentenceBreakBetweenLines && lines.every(l=>!/^\s*-/.test(l)) && !HAS_ID.test(cue.text) && !cue.narratorContext)
+    if(lines.length>1 && sentenceBreakBetweenLines && lines.every(l=>!/^\s*-/.test(l)) && !HAS_ID.test(cue.text) && !cue.narratorContext && document.getElementById('opt-missingdash').checked)
       add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — confirm whether two people are speaking here.');
     if(/\*/.test(cue.text))
       add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
@@ -3316,6 +3322,52 @@ function bulkMove(zone){
 }
 document.getElementById('bulk-top').addEventListener('click',()=>bulkMove('top'));
 document.getElementById('bulk-bottom').addEventListener('click',()=>bulkMove('bottom'));
+
+// Works from whichever selection is active for the current view — S.selectedRows (report
+// row keys) in the issues checklist, S.selectedCueIndices (direct cue indices) in All
+// Events — so the same bulk action is available from either view's own selection.
+function resolveSelectedCueIndices(){
+  const indices=new Set();
+  if(S.viewMode==='all'){
+    S.selectedCueIndices.forEach(i=>{ if(S.cues[i])indices.add(i); });
+  } else {
+    S.report.forEach(r=>{
+      if(!S.selectedRows.has(r.key)||r.gap)return;
+      const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+      if(idx>=0)indices.add(idx);
+    });
+  }
+  return indices;
+}
+function bulkToggleDash(action){
+  const targets=resolveSelectedCueIndices();
+  if(!targets.size){ setProg('Nothing selected.',true); return; }
+  pushHistory();
+  let changed=0;
+  targets.forEach(i=>{
+    const cue=S.cues[i]; if(!cue)return;
+    const lines=cue.text.split('\n');
+    if(action==='remove'){
+      // Strips a leading dash from every line — handles both a single stray dash and a
+      // whole cue where every line was given one it doesn't need.
+      const newLines=lines.map(l=>l.replace(/^(\s*)-\s*/,'$1'));
+      if(newLines.join('\n')!==cue.text){ cue.text=newLines.join('\n'); recordOverride(cue); changed++; }
+    } else {
+      // Only the first line gets the dash — a single-speaker cue that wraps across lines
+      // shouldn't get a dash on every continuation line, only real speaker changes.
+      if(!/^\s*-/.test(lines[0])){ lines[0]='- '+lines[0]; cue.text=lines.join('\n'); recordOverride(cue); changed++; }
+    }
+  });
+  if(S.viewMode==='all')S.selectedCueIndices.clear(); else S.selectedRows.clear();
+  buildChecklist(); render(); refreshCaptionOverlay();
+  const skipped=targets.size-changed;
+  setProg((action==='add'?'Added':'Removed')+' a leading dash on '+changed+' selected cue(s)'+(skipped?' · '+skipped+' already '+(action==='add'?'had one, left unchanged':'had none, nothing to remove'):'')+'.');
+  logEvent('legaci','bulk_dash_'+action,changed+'_changed_'+skipped+'_skipped');
+}
+document.getElementById('bulk-add-dash').addEventListener('click',()=>bulkToggleDash('add'));
+document.getElementById('bulk-remove-dash').addEventListener('click',()=>bulkToggleDash('remove'));
+document.getElementById('bulk-add-dash-all-events').addEventListener('click',()=>bulkToggleDash('add'));
+document.getElementById('bulk-remove-dash-all-events').addEventListener('click',()=>bulkToggleDash('remove'));
 document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   pushHistory();
   let applied=0,skipped=0,middleSkipped=0;
