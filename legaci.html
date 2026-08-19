@@ -133,6 +133,24 @@ video{width:100%;display:block;border-radius:13px}
 .ctxbox b{color:var(--white)}
 
 .panelbox{position:relative;max-width:720px;margin:0 0 12px;border:1px solid var(--line);border-radius:16px;padding:12px 14px 12px 18px;display:none;background:var(--panel);box-shadow:var(--shadow-sm)}
+/* Floating windows — Hotkeys, Character Search, Personal Dictionary, Short Forms,
+   Character Library, Sync, Run Settings, Script Reference, and Transcript Compare all
+   live here instead of permanently taking up sidebar space. Opened from the menu bar,
+   closed with the × or Esc, draggable by the header. */
+.floatwin{position:fixed;top:90px;left:340px;width:420px;max-width:calc(100vw - 40px);max-height:calc(100vh - 120px);
+  z-index:200;background:var(--panel);border:1px solid var(--line2);border-radius:16px;box-shadow:var(--shadow-md);
+  display:none;flex-direction:column;overflow:hidden;padding:0 !important;margin:0 !important}
+.floatwin.show{display:flex}
+.floatwin.dragging{opacity:.92}
+.floatwin-head{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--accent-grad);cursor:move;flex-shrink:0;user-select:none}
+.floatwin-head .t{color:#fff;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;flex:1}
+.floatwin-head button{background:rgba(255,255,255,.2);border:0;color:#fff;width:22px;height:22px;border-radius:50%;font-size:13px;line-height:1;flex-shrink:0}
+.floatwin-head button:hover{background:rgba(255,255,255,.35)}
+.floatwin-body{padding:14px 16px 16px;overflow-y:auto;flex:1;min-height:0}
+.floatwin-body .oh{position:static !important}
+.floatwin .panelbox{border:0 !important;box-shadow:none !important;padding:0 !important;margin:0 !important;max-width:none !important;display:block !important}
+.floatwin .panelbox::before{display:none !important}
+@media(max-width:760px){.floatwin{left:16px;right:16px;width:auto;top:80px}}
 .panelbox.show::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--accent-grad)}
 .panelbox.show{display:block}
 .panelbox .oh{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--yellow);margin-bottom:8px}
@@ -212,8 +230,12 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <div class="menudivider"></div>
       <button data-act="export-file">Export corrected file</button>
       <button data-act="export-csv">Export issues report .csv</button>
+      <div class="menudivider"></div>
+      <button data-act="export-profile">Export my profile…</button>
+      <button data-act="import-profile">Import a profile…</button>
     </div>
   </div>
+  <input type="file" id="file-profile" accept=".json" style="display:none">
   <div class="menuwrap">
     <button class="menuitem" data-menu="edit">EDIT <span id="undo-count" style="color:var(--faint)"></span></button>
     <div class="menudrop" id="menudrop-edit">
@@ -227,6 +249,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <button data-act="jump" data-target="clusterpanel">Voice-based speaker labels</button>
       <button data-act="jump" data-target="castpanel">Character search</button>
       <button data-act="jump" data-target="scriptpanel">Script &amp; transcript reference</button>
+      <button data-act="jump" data-target="charlibpanel">Character library</button>
+      <button data-act="jump" data-target="comparepanel">Transcript compare</button>
     </div>
   </div>
   <div class="menuwrap">
@@ -242,6 +266,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="menudrop" id="menudrop-settings">
       <button data-act="jump" data-target="settingsSection">Run settings</button>
       <button data-act="jump" data-target="hotkeypanel">Hotkeys</button>
+      <button data-act="jump" data-target="dictpanel">Personal dictionary</button>
+      <button data-act="jump" data-target="shortformspanel">Short forms &amp; autocorrect</button>
     </div>
   </div>
   <div class="menuwrap">
@@ -278,9 +304,13 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
-  <div id="settingsSection">
-    <h3>Run</h3>
+  <div class="stack">
     <div class="substep">with just a VTT: text fixes only. With video too: OST + off-screen-speaker + voice-fingerprint checks run in the same pass, automatically.</div>
+    <button class="btn" id="btn-run" disabled>Run full analysis</button>
+  </div>
+
+  <div id="settingsSection">
+    <h3>Run settings</h3>
     <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
     <div class="opt"><label>Flag single-line leading dashes</label><input type="checkbox" id="opt-extradash"></div>
@@ -293,10 +323,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="substep">off by default — flags exactly the stuff the auto-fix above won't touch: homophones (its/it's, their/they're), missing apostrophes, duplicated or clashing words, and stray punctuation, each with a suggested fix in the message. Never rewrites anything itself — it's a NEEDS REVIEW row like any other, because dialogue transcripts are full of intentional fragments, dropped g's, and stutters that a script can't tell apart from a real mistake. Add a term to the Personal Dictionary to exclude it from this pass.</div>
     <div class="opt"><label>Flag captions crossing a shot change</label><input type="checkbox" id="opt-shotchange"></div>
     <div class="substep">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
-    <button class="btn" id="btn-run" disabled style="margin-top:8px">Run full analysis</button>
   </div>
 
-  <div class="collapsehead" data-toggle="hotkeypanel">▸ HOTKEYS</div>
   <div class="panelbox" id="hotkeypanel">
     <div class="oh info">Click a key box, then press the key you want — it rebinds immediately. Ctrl/Cmd+F (find) and Escape are fixed.</div>
     <div id="hotkeyList"></div>
@@ -364,7 +392,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
-  <div class="collapsehead" data-toggle="zonepanel">▸ OST ZONES</div>
   <div class="panelbox" id="zonepanel">
     <div class="oh">OST zones — captions in a zone move to the opposite side of the frame</div>
     <div class="prow">
@@ -378,13 +405,11 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="zonelist" id="zonelist"></div>
   </div>
 
-  <div class="collapsehead" data-toggle="clusterpanel">▸ VOICE-BASED SPEAKER LABELS</div>
   <div class="panelbox" id="clusterpanel">
     <div class="oh info">Cues with no speaker ID are grouped by rough voice similarity (pitch + timbre). This is an acoustic estimate, not verified voice-print recognition — check before trusting a grouping. Rename a label once and apply it everywhere that label was used.</div>
     <div id="clusterlist"></div>
   </div>
 
-  <div class="collapsehead" data-toggle="syncpanel">▸ SYNC</div>
   <div class="panelbox" id="syncpanel">
     <div class="oh info">If the "captions may be running early/late" finding shows up below, use these to preview an offset live against the video, then bake it in once it looks right.</div>
     <div class="prow">
@@ -419,7 +444,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
-  <div class="collapsehead" data-toggle="castpanel">▸ CHARACTER SEARCH</div>
   <div class="panelbox" id="castpanel">
     <div class="oh info">Searches free public sources for this show/movie's characters and adds every name found straight into the speaker ID pool — no clicking through, no manual typing. If your network blocks these fetches, the two link buttons below are a manual fallback.</div>
     <div class="prow">
@@ -441,7 +465,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
-  <div class="collapsehead" data-toggle="scriptpanel">▸ SCRIPT &amp; TRANSCRIPT REFERENCE</div>
   <div class="panelbox" id="scriptpanel">
     <div class="oh info">Opens a real search on a specific reference site in a new tab — no fetch, no scraping, nothing imported automatically. Same reason as Character Search: cross-site fetches like this get blocked by browser CORS policy anyway, and there's no way for this tool to verify the rights status or accuracy of anything found this way. Use these to sanity-check a name, a line, or a scene against what's publicly out there — never as a substitute for QC on the actual delivered file.</div>
     <div class="prow">
@@ -460,7 +483,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="plabel" style="margin-top:8px;color:var(--faint)">SimplyScripts / IMSDb host screenplay drafts (often shooting scripts, not final-air dialogue). Forever Dreaming / Subslikescript / 8FLiX are episode dialogue transcripts, closer to what actually aired. None of these are guaranteed accurate or officially licensed — verify, don't assume.</div>
   </div>
 
-  <div class="collapsehead" data-toggle="comparepanel">▸ TRANSCRIPT COMPARE</div>
   <div class="panelbox" id="comparepanel">
     <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt) and flags captions whose text diverges significantly from what the reference has for the same timespan. This flags a DISAGREEMENT, not a confirmed error — the reference transcript can itself be wrong (ASR mishears things constantly), especially on names. Treat every flag as "these two disagree, a human should check," never as "the caption is wrong."</div>
     <div class="prow">
@@ -475,7 +497,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="plabel" id="compare-status" style="margin-top:6px"></div>
   </div>
 
-  <div class="collapsehead" data-toggle="charlibpanel">▸ CHARACTER LIBRARY (BETA)</div>
   <div class="panelbox" id="charlibpanel">
     <div class="oh info">A per-show library of voice and face reference data, built up as you confirm names — export it, share the file, and anyone importing it gets automatic name suggestions on the next episode instead of starting from scratch. This is NOT a live shared database — it's a plain exportable/importable file, so "sharing" means passing the file around (shared drive, etc.), not automatic syncing between people. Face matching uses a new model (face-api.js) that, like every AI feature in this suite, has not been verified end-to-end from this side — test it before trusting it.</div>
     <div class="prow">
@@ -503,7 +524,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="plabel" id="charlib-status" style="margin-top:8px"></div>
   </div>
 
-  <div class="collapsehead" data-toggle="dictpanel">▸ PERSONAL DICTIONARY</div>
   <div class="panelbox" id="dictpanel">
     <div class="oh info">A list of proper nouns (character names, places, show-specific terms) that get protected from the ALL CAPS → mixed case conversion, so they come out correctly capitalized instead of just title-cased. Also excluded from the common-misspellings auto-fix, in case a name or invented term happens to look like one. Export/import as a plain text file — one term per line — to reuse across episodes of the same show.</div>
     <div class="prow">
@@ -521,7 +541,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
-  <div class="collapsehead" data-toggle="shortformspanel">▸ SHORT FORMS &amp; AUTOCORRECT</div>
   <div class="panelbox" id="shortformspanel">
     <div class="oh info">Whole-word find-and-replace, applied automatically during "Run full analysis" and live while editing a row. Every occurrence of the short form gets expanded — this isn't a one-time trigger, so don't add a term you sometimes want to appear literally.</div>
     <div class="prow">
@@ -611,6 +630,7 @@ logEvent('legaci', 'page_view', '');
 function expandAndScrollTo(id){
   const el=document.getElementById(id);
   if(!el)return;
+  if(el.classList.contains('floatwin')){ openFloatWin(id); return; }
   if(el.classList.contains('panelbox') && !el.classList.contains('show')){
     el.classList.add('show');
     const head=document.querySelector('.collapsehead[data-toggle="'+id+'"]');
@@ -619,6 +639,146 @@ function expandAndScrollTo(id){
   }
   el.scrollIntoView({behavior:'smooth',block:'center'});
 }
+
+/* =========================================================
+   FLOATING WINDOWS — Hotkeys, Character Search, Personal Dictionary,
+   Short Forms, Character Library, Sync, Run Settings, Script Reference,
+   and Transcript Compare all live here now instead of a permanent sidebar.
+   Each panel keeps its original position in the DOM (lower-risk than
+   physically relocating large HTML blocks) — position:fixed just lifts it
+   out of the sidebar's visual flow regardless of where it sits in the tree.
+========================================================= */
+const FLOATWIN_TITLES={
+  settingsSection:'Run Settings', hotkeypanel:'Hotkeys', zonepanel:'OST Zones',
+  clusterpanel:'Voice-Based Speaker Labels', syncpanel:'Sync', castpanel:'Character Search',
+  scriptpanel:'Script & Transcript Reference', comparepanel:'Transcript Compare',
+  charlibpanel:'Character Library', dictpanel:'Personal Dictionary', shortformspanel:'Short Forms & Autocorrect'
+};
+let floatZ=200;
+function convertToFloatWin(id){
+  const el=document.getElementById(id);
+  if(!el || el.classList.contains('floatwin'))return;
+  const title=FLOATWIN_TITLES[id]||id;
+  const inner=el.innerHTML;
+  el.classList.add('floatwin');
+  el.innerHTML='<div class="floatwin-head" data-drag-for><span class="t">'+title+'</span><button data-close-float="'+id+'">✕</button></div>'+
+    '<div class="floatwin-body">'+inner+'</div>';
+}
+function openFloatWin(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.classList.add('show');
+  el.style.zIndex=++floatZ;
+  saveProfileSoon();
+}
+function closeFloatWin(id){
+  const el=document.getElementById(id);
+  if(el)el.classList.remove('show');
+  saveProfileSoon();
+}
+Object.keys(FLOATWIN_TITLES).forEach(convertToFloatWin);
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-close-float]');
+  if(btn)closeFloatWin(btn.dataset.closeFloat);
+});
+document.addEventListener('mousedown',e=>{
+  const head=e.target.closest('.floatwin-head');
+  if(!head || e.target.closest('button'))return;
+  const win=head.closest('.floatwin');
+  win.style.zIndex=++floatZ;
+  const rect=win.getBoundingClientRect();
+  const offsetX=e.clientX-rect.left, offsetY=e.clientY-rect.top;
+  win.classList.add('dragging');
+  function onMove(ev){
+    win.style.left=Math.max(4,Math.min(window.innerWidth-40,ev.clientX-offsetX))+'px';
+    win.style.top=Math.max(4,Math.min(window.innerHeight-40,ev.clientY-offsetY))+'px';
+    win.style.right='auto';
+  }
+  function onUp(){
+    win.classList.remove('dragging');
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onUp);
+    saveProfileSoon();
+  }
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onUp);
+});
+
+/* =========================================================
+   PROFILE — bundles hotkeys, Personal Dictionary, Short Forms, run
+   settings, and floating-window positions into one thing. Auto-saves to
+   this browser's localStorage so reloading the page doesn't reset anything;
+   Export/Import as a file lets a profile move to another machine or get
+   shared with a teammate.
+========================================================= */
+const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
+function buildProfile(){
+  const settings={};
+  PROFILE_SETTINGS_IDS.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    settings[id] = el.type==='checkbox' ? el.checked : el.value;
+  });
+  const windowPositions={};
+  document.querySelectorAll('.floatwin').forEach(w=>{
+    if(w.style.left || w.style.top) windowPositions[w.id]={left:w.style.left||'', top:w.style.top||''};
+  });
+  return { version:1, keybinds:JSON.parse(JSON.stringify(S.keybinds)), personalDictionary:JSON.parse(JSON.stringify(S.personalDictionary)), shortForms:JSON.parse(JSON.stringify(S.shortForms)), settings, windowPositions };
+}
+function applyProfile(profile){
+  if(!profile || typeof profile!=='object')return;
+  if(profile.keybinds)S.keybinds=Object.assign({},S.keybinds,profile.keybinds);
+  if(Array.isArray(profile.personalDictionary))S.personalDictionary=profile.personalDictionary;
+  if(Array.isArray(profile.shortForms))S.shortForms=profile.shortForms;
+  if(profile.settings){
+    Object.keys(profile.settings).forEach(id=>{
+      const el=document.getElementById(id);
+      if(!el)return;
+      if(el.type==='checkbox')el.checked=!!profile.settings[id];
+      else el.value=profile.settings[id];
+    });
+  }
+  if(profile.windowPositions){
+    Object.keys(profile.windowPositions).forEach(id=>{
+      const el=document.getElementById(id), pos=profile.windowPositions[id];
+      if(el && pos){ if(pos.left)el.style.left=pos.left; if(pos.top)el.style.top=pos.top; }
+    });
+  }
+  if(typeof renderHotkeyPanel==='function')renderHotkeyPanel();
+  if(typeof renderDictPanel==='function')renderDictPanel();
+  if(typeof renderShortFormsPanel==='function')renderShortFormsPanel();
+}
+let profileSaveTimer=null;
+function saveProfileSoon(){
+  clearTimeout(profileSaveTimer);
+  profileSaveTimer=setTimeout(()=>{
+    try{ localStorage.setItem('legaci_profile', JSON.stringify(buildProfile())); }catch(e){}
+  }, 400);
+}
+function loadProfileFromStorage(){
+  try{
+    const raw=localStorage.getItem('legaci_profile');
+    if(raw)applyProfile(JSON.parse(raw));
+  }catch(e){}
+}
+function exportProfile(){
+  const blob=new Blob([JSON.stringify(buildProfile(),null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='legaci_profile.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setProg('Profile exported — hotkeys, Personal Dictionary, Short Forms, run settings, and window positions.');
+}
+document.getElementById('file-profile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      applyProfile(JSON.parse(reader.result));
+      saveProfileSoon();
+      setProg('Profile imported from '+f.name+'.');
+    }catch(err){ setProg('Could not read that as a profile file: '+err.message, true); }
+  };
+  reader.readAsText(f);
+});
 document.querySelectorAll('.menuwrap > .menuitem').forEach(btn=>{
   btn.addEventListener('click',e=>{
     e.stopPropagation();
@@ -646,6 +806,8 @@ document.querySelectorAll('.menudrop button[data-act]').forEach(btn=>{
     else if(act==='view-issues'){ if(!S.cues.length){setProg('Run the analysis first.',true);return;} setViewMode('issues'); render(); document.getElementById('mainhead').scrollIntoView({behavior:'smooth',block:'center'}); }
     else if(act==='view-all'){ if(!S.cues.length){setProg('Run the analysis first.',true);return;} setViewMode('all'); render(); document.getElementById('mainhead').scrollIntoView({behavior:'smooth',block:'center'}); }
     else if(act==='find')openFindBar();
+    else if(act==='export-profile')exportProfile();
+    else if(act==='import-profile')document.getElementById('file-profile').click();
   });
 });
 (function(){
@@ -1820,7 +1982,7 @@ function renderDictPanel(){
     ? S.personalDictionary.map((term,i)=>'<span class="chip" data-rmterm="'+i+'">'+esc(term)+' ✕</span>').join('')
     : '<span class="plabel" style="color:var(--faint)">No terms yet.</span>';
   box.querySelectorAll('[data-rmterm]').forEach(c=>c.addEventListener('click',()=>{
-    S.personalDictionary.splice(+c.dataset.rmterm,1); renderDictPanel();
+    S.personalDictionary.splice(+c.dataset.rmterm,1); renderDictPanel(); saveProfileSoon();
   }));
 }
 document.getElementById('dict-add-btn').addEventListener('click',()=>{
@@ -1830,6 +1992,7 @@ document.getElementById('dict-add-btn').addEventListener('click',()=>{
   if(!S.personalDictionary.some(t=>t.toLowerCase()===term.toLowerCase()))S.personalDictionary.push(term);
   inp.value='';
   renderDictPanel();
+  saveProfileSoon();
 });
 document.getElementById('dict-add-term').addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('dict-add-btn').click(); });
 document.getElementById('dict-export').addEventListener('click',()=>{
@@ -1848,6 +2011,7 @@ document.getElementById('file-dict').addEventListener('change',e=>{
     document.getElementById('drop-dict').classList.add('loaded');
     document.getElementById('dict-import-name').textContent=f.name+' — '+terms.length+' term(s)';
     renderDictPanel();
+    saveProfileSoon();
     setProg('Imported '+terms.length+' term(s) into the Personal Dictionary.');
   };
   reader.readAsText(f);
@@ -1864,7 +2028,7 @@ function renderShortFormsPanel(){
     ? S.shortForms.map((sf,i)=>'<div class="clusterrow"><span class="lab">'+esc(sf.short)+'</span><span class="plabel">→ '+esc(sf.long)+'</span><button class="pbtn small" data-rmsf="'+i+'">Remove</button></div>').join('')
     : '<div class="plabel" style="color:var(--faint)">None yet.</div>';
   box.querySelectorAll('[data-rmsf]').forEach(b=>b.addEventListener('click',()=>{
-    S.shortForms.splice(+b.dataset.rmsf,1); renderShortFormsPanel();
+    S.shortForms.splice(+b.dataset.rmsf,1); renderShortFormsPanel(); saveProfileSoon();
   }));
 }
 document.getElementById('shortform-add-btn').addEventListener('click',()=>{
@@ -1875,6 +2039,7 @@ document.getElementById('shortform-add-btn').addEventListener('click',()=>{
   S.shortForms.push({short,long});
   shortInp.value=''; longInp.value='';
   renderShortFormsPanel();
+  saveProfileSoon();
 });
 
 function renderCharLibPanel(){
@@ -2706,6 +2871,7 @@ function renderHotkeyPanel(){
       S.keybinds[action]=e.key;
       document.removeEventListener('keydown',capture,true);
       renderHotkeyPanel();
+      saveProfileSoon();
       setProg('Rebound "'+HOTKEY_LABELS[action]+'" to '+displayKey(e.key)+'.');
     };
     document.addEventListener('keydown',capture,true);
@@ -2714,12 +2880,17 @@ function renderHotkeyPanel(){
 document.getElementById('hotkey-reset').addEventListener('click',()=>{
   S.keybinds={prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'};
   renderHotkeyPanel();
+  saveProfileSoon();
   setProg('Hotkeys reset to defaults.');
 });
 renderHotkeyPanel();
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'){ e.preventDefault(); openFindBar(); return; }
   if(e.key==='Escape'&&document.getElementById('findBar').style.display!=='none'){ document.getElementById('findBar').style.display='none'; return; }
+  if(e.key==='Escape'){
+    const open=[...document.querySelectorAll('.floatwin.show')].sort((a,b)=>(+b.style.zIndex||0)-(+a.style.zIndex||0));
+    if(open[0]){ closeFloatWin(open[0].id); return; }
+  }
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){
     if(isTypingInField())return; // let the browser's native in-field undo handle typing mistakes
     e.preventDefault(); undo(); return;
@@ -3245,6 +3416,11 @@ document.getElementById('tc-jump-go').addEventListener('click',()=>{
 document.getElementById('tc-jump').addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('tc-jump-go').click(); });
 renderDictPanel();
 renderShortFormsPanel();
+PROFILE_SETTINGS_IDS.forEach(id=>{
+  const el=document.getElementById(id);
+  if(el)el.addEventListener('change',saveProfileSoon);
+});
+loadProfileFromStorage();
 </script>
 </body>
 </html>
