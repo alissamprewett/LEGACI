@@ -208,7 +208,18 @@ video{width:100%;display:block;border-radius:13px}
 .tier-difficult{background:#fff2dc;color:var(--warn)}
 .tier-complex{background:#e6f1ff;color:var(--info)}
 .item .msg{font-size:12.5px;color:var(--gray);margin-top:5px}
-.item textarea.txt-edit{width:100%;font-family:var(--mono);font-size:12px;color:var(--white);margin-top:6px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px 8px;resize:vertical;min-height:44px}
+.item textarea.txt-edit{width:100%;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--white);margin-top:6px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px 8px;resize:vertical;min-height:44px}
+/* Character/line-limit highlighting — Ooona shows exactly what's typed, unwrapped, with
+   the over-limit portion colored red in place, rather than auto-rewrapping or blocking
+   the keystroke. A plain textarea can't render two colors in its own text, so this sits
+   a read-only, identically-styled div behind a text-transparent textarea; the textarea
+   keeps its native caret/selection, the div underneath shows the real colored text. */
+.txt-edit-wrap{position:relative;margin-top:6px}
+.txt-edit-wrap textarea.txt-edit{position:relative;margin-top:0;color:transparent;caret-color:var(--white);background:transparent;z-index:1}
+.txt-edit-highlight{position:absolute;inset:0;padding:6px 8px;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--white);
+  white-space:pre-wrap;word-wrap:break-word;overflow:hidden;pointer-events:none;border:1px solid transparent;background:var(--panel2);border-radius:10px;z-index:0}
+.txt-edit-highlight .overlen{color:var(--err);font-weight:700}
+.txt-edit-highlight .overline{color:var(--err);font-weight:700;text-decoration:underline wavy}
 .item textarea.txt-edit:focus{border-color:var(--yellow);outline:none}
 .item .rowlabel{font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:8px;letter-spacing:.06em;text-transform:uppercase}
 .item .actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
@@ -614,6 +625,15 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
+  <div class="prow" id="bulkBarAll" style="display:none;margin-bottom:14px;border:1px solid var(--info);border-radius:6px;padding:10px 12px;background:rgba(93,184,255,.05)">
+    <span class="plabel" id="bulkCountAll" style="color:var(--info)"></span>
+    <button class="pbtn small" id="bulk-select-all-events">Select all shown</button>
+    <button class="pbtn small" id="bulk-clear-all-events">Clear selection</button>
+    <span style="flex:1"></span>
+    <button class="pbtn small" id="bulk-top-all-events">Move selected to TOP</button>
+    <button class="pbtn small" id="bulk-bottom-all-events">Move selected to BOTTOM</button>
+  </div>
+
   <div class="empty" id="empty">
     <div class="big">⬛ → ⬆</div>
     <p>Load the <b>.vtt</b> (and optionally the video proxy + metadata JSON), then run the analysis. Deterministic issues get fixed silently. Anything needing a human — stacking, speaker ID, on-screen text — shows up below, editable in place: fix the text, move it top/bottom, or set the speaker, right here.</p>
@@ -929,6 +949,7 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   ost:[],ostPending:null,detected:{},offset:0,scanning:false,
   meta:null,kidvid:false,speakerFlags:{},voiceFeatures:{},speakerClusters:{},clusterNames:{},fixCounts:null,
   validated:new Set(),everSeen:new Set(),speakerPool:[],issueFilter:'all',currentVisible:[],selectedRows:new Set(),
+  selectedCueIndices:new Set(),lastClickedCueIdx:null,
   viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],playBoundEnd:null,
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
   refTranscript:null,
@@ -1322,6 +1343,41 @@ function enforceCaptionLimits(rawText,maxLen){
   rawText.split('\n').forEach(l=>wrapped.push(...wrapLine(l,maxLen)));
   const overflow=wrapped.length>3;
   return {text:(overflow?wrapped.slice(0,3):wrapped).join('\n'), overflow};
+}
+/* =========================================================
+   LIVE OVER-LIMIT HIGHLIGHTING — shown while typing directly, matching
+   Ooona's own behavior: type freely, exactly what you type stays, the
+   part over the per-line character limit turns red in place, and a 4th+
+   line is flagged too — nothing is auto-rewrapped or blocked. A plain
+   textarea can't render two text colors itself, so a read-only div with
+   identical font/padding/line-height sits behind a text-transparent
+   textarea; the textarea keeps its native caret and selection, the div
+   underneath shows the real colored text.
+========================================================= */
+function buildLimitHighlightHTML(text,maxLen){
+  return text.split('\n').map((line,i)=>{
+    if(i>=3)return '<span class="overline">'+esc(line)+'</span>';
+    if(line.length>maxLen)return esc(line.slice(0,maxLen))+'<span class="overlen">'+esc(line.slice(maxLen))+'</span>';
+    return esc(line);
+  }).join('\n');
+}
+function ensureHighlightOverlay(ta){
+  let wrap=ta.parentElement;
+  if(!wrap.classList.contains('txt-edit-wrap')){
+    wrap=document.createElement('div');
+    wrap.className='txt-edit-wrap';
+    ta.parentNode.insertBefore(wrap,ta);
+    const hl=document.createElement('div');
+    hl.className='txt-edit-highlight';
+    wrap.appendChild(hl);
+    wrap.appendChild(ta);
+    ta.addEventListener('scroll',()=>{ hl.scrollTop=ta.scrollTop; hl.scrollLeft=ta.scrollLeft; });
+  }
+  return wrap.querySelector('.txt-edit-highlight');
+}
+function updateHighlightOverlay(ta,maxLen){
+  const hl=ensureHighlightOverlay(ta);
+  hl.innerHTML=buildLimitHighlightHTML(ta.value,maxLen)+'\n';
 }
 // Insert a manual line break at the cursor — e.g. moving the second half of a sentence to
 // its own line — then re-enforce the char/line caps so it can't produce an illegal event.
@@ -2813,8 +2869,33 @@ function setViewMode(mode){
   allBtn.style.color = mode==='all' ? '#fff' : 'var(--yellow)';
   document.getElementById('modebadge').textContent = 'MODE: '+(mode==='all'?'ALL EVENTS':"WHAT'S LEFT");
 }
-document.getElementById('view-issues').addEventListener('click',()=>{ setViewMode('issues'); render(); });
-document.getElementById('view-all').addEventListener('click',()=>{ setViewMode('all'); render(); });
+document.getElementById('view-issues').addEventListener('click',()=>{ setViewMode('issues'); render(); restoreLastViewedRow(); });
+document.getElementById('view-all').addEventListener('click',()=>{ setViewMode('all'); render(); restoreLastViewedRow(); });
+
+// Switching between "What's Left" and "All Events" used to always jump back to the top of
+// the list — found annoying when reviewing a specific caption and wanting to flip views
+// without losing your place. S.lastViewedCueIdx is kept up to date by row clicks, textarea
+// focus, and issues-mode navigation; this finds the equivalent row in whichever view was
+// just switched to and scrolls to it instead.
+function restoreLastViewedRow(){
+  if(S.lastViewedCueIdx==null)return;
+  if(S.viewMode==='all'){
+    const el=document.querySelector('.item[data-cueidx="'+S.lastViewedCueIdx+'"]');
+    if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  const visible=S.currentVisible||[];
+  const idx=visible.findIndex(r=>{
+    if(r.gap)return false;
+    if(r.stackStartA!=null)return findCueIdxByStart(r.stackStartA)===S.lastViewedCueIdx||findCueIdxByStart(r.stackStartB)===S.lastViewedCueIdx;
+    return findCueIdxByStart(r.startKey)===S.lastViewedCueIdx;
+  });
+  if(idx<0)return; // that cue has no outstanding issue in this view — nothing to activate
+  S.activeReportIdx=idx;
+  render();
+  const active=document.querySelector('.item.active');
+  if(active)active.scrollIntoView({behavior:'smooth',block:'center'});
+}
 
 function findIssueRowForCueIdx(i){
   return S.report.find(r=>{
@@ -2829,9 +2910,12 @@ function renderAllEvents(){
   document.getElementById('issueFilterBar').style.display='none';
   document.getElementById('issueFilterBar').innerHTML='';
   document.getElementById('bulkBar').style.display='none';
+  document.getElementById('bulkBarAll').style.display='flex';
   const box=document.getElementById('checklist');
   box.innerHTML='';
-  if(!S.cues.length){ box.innerHTML='<div class="allclear">No captions loaded.</div>'; return; }
+  if(!S.cues.length){ box.innerHTML='<div class="allclear">No captions loaded.</div>'; document.getElementById('bulkBarAll').style.display='none'; return; }
+  [...S.selectedCueIndices].forEach(i=>{ if(i>=S.cues.length)S.selectedCueIndices.delete(i); });
+  document.getElementById('bulkCountAll').textContent=S.selectedCueIndices.size+' selected';
   const query=(document.getElementById('find-input').value||'').trim().toLowerCase();
   S.cues.forEach((cue,i)=>{
     const el=document.createElement('div');
@@ -2844,7 +2928,7 @@ function renderAllEvents(){
       : '<span class="tier" style="background:rgba(255,255,255,.06);color:var(--faint)">no issues flagged</span>';
     const maxLen=+document.getElementById('opt-len').value||32;
     let body =
-      '<div class="top"><span class="evnum">#'+(i+1)+'</span><span class="tc">'+fmtTime(cue.start).slice(0,11)+' → '+fmtTime(cue.end).slice(0,11)+'</span>'+badges+'</div>'+
+      '<div class="top"><input type="checkbox" class="bulk-select-all-events" data-cueidx="'+i+'" '+(S.selectedCueIndices.has(i)?'checked':'')+' title="Select for bulk actions"><span class="evnum">#'+(i+1)+'</span><span class="tc">'+fmtTime(cue.start).slice(0,11)+' → '+fmtTime(cue.end).slice(0,11)+'</span>'+badges+'</div>'+
       '<textarea spellcheck="true" class="txt-edit" data-cue="'+i+'">'+esc(cue.text)+'</textarea>'+
       '<div class="livemeta" data-metafor="'+i+'" style="margin:4px 0">'+renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF)+'</div>'+
       '<div class="actions">'+
@@ -2869,9 +2953,29 @@ function renderAllEvents(){
     el.innerHTML=body;
     box.appendChild(el);
   });
+  box.querySelectorAll('.bulk-select-all-events').forEach(cb=>cb.addEventListener('click',e=>{
+    e.stopPropagation();
+    const i=+cb.dataset.cueidx;
+    if(cb.checked)S.selectedCueIndices.add(i); else S.selectedCueIndices.delete(i);
+    document.getElementById('bulkCountAll').textContent=S.selectedCueIndices.size+' selected';
+  }));
   box.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{
     if(e.target.closest('button,textarea,select,input'))return;
     const i=+el.dataset.cueidx;
+    if(e.shiftKey && S.lastClickedCueIdx!=null){
+      const [a,b]=[S.lastClickedCueIdx,i].sort((x,y)=>x-y);
+      for(let k=a;k<=b;k++)S.selectedCueIndices.add(k);
+      renderAllEvents();
+      return;
+    }
+    if(e.ctrlKey||e.metaKey){
+      if(S.selectedCueIndices.has(i))S.selectedCueIndices.delete(i); else S.selectedCueIndices.add(i);
+      S.lastClickedCueIdx=i;
+      renderAllEvents();
+      return;
+    }
+    S.lastClickedCueIdx=i;
+    S.lastViewedCueIdx=i;
     if(S.videoURL){
       video.currentTime=Math.max(0,S.cues[i].start+S.offset+0.01);
       S.playBoundEnd=S.cues[i].end+S.offset;
@@ -2881,7 +2985,8 @@ function renderAllEvents(){
     el.classList.add('active');
   }));
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; },{once:false});
+    updateHighlightOverlay(ta,+document.getElementById('opt-len').value||32);
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; S.lastViewedCueIdx=+ta.dataset.cue; },{once:false});
     ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
     ta.addEventListener('blur',()=>{
       if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
@@ -2889,15 +2994,15 @@ function renderAllEvents(){
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
     const maxLen=+document.getElementById('opt-len').value||32;
-    const pos=ta.selectionStart;
-    const {text,overflow}=enforceCaptionLimits(ta.value,maxLen);
-    if(text!==ta.value){ ta.value=text; const np=Math.min(pos,text.length); ta.setSelectionRange(np,np); }
-    cue.text=text;
+    // Exactly what's typed is kept, unwrapped and untruncated — Ooona's own behavior,
+    // per direct feedback: auto-rewrapping/truncating could silently alter or drop text
+    // the person never touched. The over-limit portion is flagged in red in place instead.
+    cue.text=ta.value;
     recordOverride(cue);
     refreshCaptionOverlay();
+    updateHighlightOverlay(ta,maxLen);
     const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
     if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
-    if(overflow)setProg('This event is capped at 3 lines / '+maxLen+' chars per line — extra text was trimmed. Split the dialogue into a new event if it needs more room.',true);
   });});
   box.querySelectorAll('[data-allnote]').forEach(inp=>inp.addEventListener('input',()=>{
     const cue=S.cues[+inp.dataset.allnote];
@@ -3161,6 +3266,27 @@ document.getElementById('bulk-select-all').addEventListener('click',()=>{
   render();
 });
 document.getElementById('bulk-clear').addEventListener('click',()=>{ S.selectedRows.clear(); render(); });
+document.getElementById('bulk-select-all-events').addEventListener('click',()=>{
+  S.cues.forEach((c,i)=>S.selectedCueIndices.add(i));
+  renderAllEvents();
+});
+document.getElementById('bulk-clear-all-events').addEventListener('click',()=>{ S.selectedCueIndices.clear(); renderAllEvents(); });
+function bulkMoveAllEvents(zone){
+  pushHistory();
+  let moved=0;
+  S.selectedCueIndices.forEach(i=>{
+    const cue=S.cues[i]; if(!cue)return;
+    cue.settings = zone==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+    recordOverride(cue);
+    moved++;
+  });
+  S.selectedCueIndices.clear();
+  buildChecklist(); render(); refreshCaptionOverlay();
+  setProg('Moved '+moved+' selected cue(s) to '+zone.toUpperCase()+'.');
+  logEvent('legaci','bulk_move',zone+'_'+moved+'_rows');
+}
+document.getElementById('bulk-top-all-events').addEventListener('click',()=>bulkMoveAllEvents('top'));
+document.getElementById('bulk-bottom-all-events').addEventListener('click',()=>bulkMoveAllEvents('bottom'));
 document.getElementById('bulk-validate').addEventListener('click',()=>{
   pushHistory();
   const n=S.selectedRows.size;
@@ -3213,6 +3339,10 @@ document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
 document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.max(0,video.currentTime-10); });
 document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); });
 document.getElementById('video-playpause').addEventListener('click',()=>{
+  if(!S.videoURL)return;
+  if(video.paused)video.play().catch(()=>{}); else video.pause();
+});
+video.addEventListener('click',()=>{
   if(!S.videoURL)return;
   if(video.paused)video.play().catch(()=>{}); else video.pause();
 });
@@ -3369,7 +3499,8 @@ function render(){
   }));
   renderTicks();
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; });
+    updateHighlightOverlay(ta,+document.getElementById('opt-len').value||32);
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; S.lastViewedCueIdx=+ta.dataset.cue; });
     ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
     ta.addEventListener('blur',()=>{
       if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
@@ -3377,15 +3508,12 @@ function render(){
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
     const maxLen=+document.getElementById('opt-len').value||32;
-    const pos=ta.selectionStart;
-    const {text,overflow}=enforceCaptionLimits(ta.value,maxLen);
-    if(text!==ta.value){ ta.value=text; const np=Math.min(pos,text.length); ta.setSelectionRange(np,np); }
-    cue.text=text;
+    cue.text=ta.value;
     recordOverride(cue);
     refreshCaptionOverlay();
+    updateHighlightOverlay(ta,maxLen);
     const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
     if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
-    if(overflow)setProg('This event is capped at 3 lines / '+maxLen+' chars per line — extra text was trimmed. Split the dialogue into a new event if it needs more room.',true);
   });});
   box.querySelectorAll('[data-note-ri]').forEach(inp=>inp.addEventListener('input',()=>{
     const r=S.currentVisible[+inp.dataset.noteRi];
@@ -3517,6 +3645,7 @@ function selectReportRow(idx){
   S.activeReportIdx=idx;
   render();
   const r=visible[idx]; const ref=rowRef(r);
+  S.lastViewedCueIdx=findCueIdxByStart(ref.start);
   if(S.videoURL){
     video.currentTime=Math.max(0,ref.start+S.offset+0.01);
     S.playBoundEnd=ref.end+S.offset;
