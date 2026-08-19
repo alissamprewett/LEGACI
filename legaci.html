@@ -255,6 +255,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <button data-act="jump" data-target="zonepanel">OST zones</button>
       <button data-act="jump" data-target="clusterpanel">Voice-based speaker labels</button>
       <button data-act="jump" data-target="castpanel">Character search</button>
+      <button data-act="jump" data-target="rosterlinkpanel">Roster link</button>
       <button data-act="jump" data-target="scriptpanel">Script &amp; transcript reference</button>
       <button data-act="jump" data-target="charlibpanel">Character library</button>
       <button data-act="jump" data-target="comparepanel">Transcript compare</button>
@@ -472,6 +473,15 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
+  <div class="panelbox" id="rosterlinkpanel">
+    <div class="oh info">A live handoff from Roster, ROSTER's own more mature cast-matched speaker ID tool — resolve names there, apply them here, nothing re-typed by hand. Roster writes to this browser's shared storage as soon as a name is resolved; this panel picks it up automatically, live, even if Roster is open in another tab right now. Nothing is ever applied without a click here first.</div>
+    <div class="plabel" id="rosterlink-status" style="margin-top:8px">No handoff data yet — open Roster, resolve some speakers, then come back.</div>
+    <div class="prow" style="margin-top:10px">
+      <button class="pbtn small primary" id="rosterlink-apply" disabled>Apply from Roster</button>
+      <a href="roster.html" target="_blank" style="font-family:var(--mono);font-size:11px;color:var(--info);text-decoration:none">Open Roster →</a>
+    </div>
+  </div>
+
   <div class="panelbox" id="scriptpanel">
     <div class="oh info">Opens a real search on a specific reference site in a new tab — no fetch, no scraping, nothing imported automatically. Same reason as Character Search: cross-site fetches like this get blocked by browser CORS policy anyway, and there's no way for this tool to verify the rights status or accuracy of anything found this way. Use these to sanity-check a name, a line, or a scene against what's publicly out there — never as a substitute for QC on the actual delivered file.</div>
     <div class="prow">
@@ -658,6 +668,7 @@ function expandAndScrollTo(id){
 const FLOATWIN_TITLES={
   settingsSection:'Run Settings', hotkeypanel:'Hotkeys', zonepanel:'OST Zones',
   clusterpanel:'Voice-Based Speaker Labels', syncpanel:'Sync', castpanel:'Character Search',
+  rosterlinkpanel:'Roster Link',
   scriptpanel:'Script & Transcript Reference', comparepanel:'Transcript Compare',
   charlibpanel:'Character Library', dictpanel:'Personal Dictionary', shortformspanel:'Short Forms & Autocorrect'
 };
@@ -785,6 +796,61 @@ document.getElementById('file-profile').addEventListener('change',e=>{
     }catch(err){ setProg('Could not read that as a profile file: '+err.message, true); }
   };
   reader.readAsText(f);
+});
+
+/* =========================================================
+   ROSTER LINK — a live handoff from Roster via this same origin's shared
+   localStorage, so a name resolved there shows up here with no export/import
+   file round-trip. Roster only ever writes this key; Legaci only ever reads
+   it, and never applies anything without an explicit click here.
+========================================================= */
+function readRosterHandoff(){
+  try{
+    const raw=localStorage.getItem('legaci_roster_handoff');
+    return raw?JSON.parse(raw):null;
+  }catch(e){ return null; }
+}
+function checkRosterHandoff(){
+  const statusEl=document.getElementById('rosterlink-status');
+  const btn=document.getElementById('rosterlink-apply');
+  if(!statusEl||!btn)return;
+  const data=readRosterHandoff();
+  if(!data||!data.rows||!data.rows.length){
+    statusEl.textContent='No handoff data yet — open Roster, resolve some speakers, then come back.';
+    btn.disabled=true;
+    return;
+  }
+  const fixRows=data.rows.filter(r=>r.action==='fix');
+  let warn='';
+  if(S.vttFileName && data.sourceFile && S.vttFileName!==data.sourceFile){
+    warn=' ⚠ Roster\'s loaded file ("'+data.sourceFile+'") doesn\'t match this one ("'+S.vttFileName+'") — double-check before applying.';
+  }
+  let when='a moment ago';
+  try{ when=new Date(data.updatedAt).toLocaleTimeString(); }catch(e){}
+  statusEl.textContent=fixRows.length+' speaker ID(s) ready from Roster (synced '+when+').'+warn;
+  btn.disabled = !S.cues.length || fixRows.length===0;
+}
+function applyRosterHandoff(){
+  const data=readRosterHandoff();
+  if(!data||!data.rows||!data.rows.length){ setProg('No Roster handoff data to apply.',true); return; }
+  if(!S.cues.length){ setProg('Run the analysis first, so there are cues to match against.',true); return; }
+  pushHistory();
+  let applied=0, skippedHasId=0, skippedNoMatch=0;
+  data.rows.filter(r=>r.action==='fix').forEach(r=>{
+    const cue=S.cues.find(c=>Math.abs(c.start-r.start)<0.5 && Math.abs(c.end-r.end)<0.5);
+    if(!cue){ skippedNoMatch++; return; }
+    if(HAS_ID.test(cue.text)){ skippedHasId++; return; }
+    cue.text = String(r.speaker||'').toUpperCase()+': '+cue.text;
+    recordOverride(cue);
+    applied++;
+  });
+  buildChecklist(); render(); refreshCaptionOverlay();
+  setProg('Applied '+applied+' speaker ID(s) from Roster'+(skippedHasId?' · '+skippedHasId+' skipped, already had a speaker ID':'')+(skippedNoMatch?' · '+skippedNoMatch+' skipped, no matching cue found':'')+'.', applied===0);
+  logEvent('legaci','roster_link_apply', applied+'_applied_'+skippedHasId+'_hadId_'+skippedNoMatch+'_noMatch');
+}
+document.getElementById('rosterlink-apply').addEventListener('click', applyRosterHandoff);
+window.addEventListener('storage', e=>{
+  if(e.key==='legaci_roster_handoff')checkRosterHandoff();
 });
 document.querySelectorAll('.menuwrap > .menuitem').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -1177,6 +1243,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
   const reader=new FileReader();
   reader.onload=()=>{
     S.vttRaw=reader.result;
+    S.vttFileName=f.name;
     S.src=parseVTT(S.vttRaw);
     S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0;
     S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
@@ -2238,6 +2305,18 @@ const CTA_WORDS=/\b(donate|buy now|order now|visit our website|call now|text\s+\
 function findCueIdxByStart(t){
   return S.cues.findIndex(c=>Math.abs(c.start-t)<0.0005);
 }
+/* For analytics only — which issue type(s) a cue currently has, never its
+   text. Used to answer "how much hand-editing does each flag type actually
+   need," not "what did the operator type." */
+function issueTypesForCue(i){
+  const types=new Set();
+  Object.values(S.rowsByKey).forEach(r=>{
+    if(r.gap)return;
+    const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+    if(idx===i)(r.issues||[]).forEach(x=>types.add(x.id));
+  });
+  return [...types].join(',')||'none';
+}
 /* =========================================================
    GRAMMAR / SPELLING — FLAG ONLY, NEVER AUTO-FIXED
    Distinct from fixCommonMisspellings() above, which only touches unambiguous
@@ -2501,6 +2580,7 @@ async function runFullAnalysis(){
     document.getElementById('btn-export').disabled=false;
     document.getElementById('btn-export-csv').disabled=false;
     setProg('Analysis complete — '+S.report.length+' item(s) need a human look.');
+    checkRosterHandoff();
   } finally {
     S.scanning=false;
     document.getElementById('btn-run').disabled=false;
@@ -2758,7 +2838,10 @@ function renderAllEvents(){
     el.classList.add('active');
   }));
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>pushHistory(),{once:false});
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; },{once:false});
+    ta.addEventListener('blur',()=>{
+      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue));
+    });
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
     const maxLen=+document.getElementById('opt-len').value||32;
@@ -2783,21 +2866,25 @@ function renderAllEvents(){
   box.querySelectorAll('[data-allact]').forEach(btn=>btn.addEventListener('click',e=>{
     e.stopPropagation();
     const i=+btn.dataset.cueidx, act=btn.dataset.allact, cue=S.cues[i];
+    const issueTypes=issueTypesForCue(i);
     pushHistory();
     if(act==='pos-top'||act==='pos-bottom'){
       cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
       recordOverride(cue);
       buildChecklist(); refreshCaptionOverlay();
       setProg('Position updated — check the video preview, it\'s already updated.');
+      logEvent('legaci','position_button',issueTypes);
     } else if(act==='toggle-italic'||act==='toggle-bold'){
       toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
       buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+      logEvent('legaci',act==='toggle-italic'?'italic_toggle':'bold_toggle',issueTypes);
     } else if(act==='word-next'||act==='word-prev'){
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
       const moved=moveWordBetweenLines(cue.text,ta?ta.selectionStart:0,act==='word-next'?'next':'prev');
       if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
       cue.text=moved; recordOverride(cue);
       buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
+      logEvent('legaci','word_nudge',issueTypes);
     } else if(act==='linebreak'){
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
       const cursor=ta?ta.selectionStart:cue.text.length;
@@ -2807,6 +2894,7 @@ function renderAllEvents(){
       cue.text=text; recordOverride(cue);
       buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
       if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
+      logEvent('legaci','linebreak_inserted',issueTypes);
     } else if(act==='split'){
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+i+'"]');
       const cursor=ta?ta.selectionStart:Math.floor(cue.text.length/2);
@@ -2815,6 +2903,7 @@ function renderAllEvents(){
       S.cues.splice(i,1,parts[0],parts[1]);
       buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
       setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
+      logEvent('legaci','split_used',issueTypes);
     } else if(act==='apply-spk'){
       const sel=document.querySelector('select.spk-select-all[data-cueidx="'+i+'"]');
       const newInp=document.querySelector('[data-allnewspk="'+i+'"]');
@@ -2824,6 +2913,7 @@ function renderAllEvents(){
       addToPool(name.toUpperCase());
       buildChecklist(); refreshCaptionOverlay(); renderAllEvents();
       setProg('Speaker ID "'+name.toUpperCase()+'" applied.');
+      logEvent('legaci','speaker_field_edited',issueTypes);
     }
   }));
 }
@@ -3229,7 +3319,10 @@ function render(){
   }));
   renderTicks();
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>pushHistory());
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; });
+    ta.addEventListener('blur',()=>{
+      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue));
+    });
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
     const maxLen=+document.getElementById('opt-len').value||32;
@@ -3251,6 +3344,7 @@ function render(){
   box.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',e=>{
     e.stopPropagation();
     const ri=+btn.dataset.ri, act=btn.dataset.act, r=S.currentVisible[ri];
+    const issueTypes=(r.issues||[]).map(i=>i.id).join(',')||'none';
     pushHistory();
     if(act==='merge-dash'||act==='merge-nodash'){
       const a=findCueIdxByStart(r.stackStartA), b=findCueIdxByStart(r.stackStartB);
@@ -3262,16 +3356,19 @@ function render(){
       S.cues.splice(b,1);
       buildChecklist(); render(); refreshCaptionOverlay();
       setProg('Merged — '+(act==='merge-dash'?'dash added to both speakers.':'no dash, same speaker.')+' Note: a merge does not survive clicking "Run full analysis" again — it rebuilds from the original file. Export before re-running if you want to keep it.');
+      logEvent('legaci','merge_used',issueTypes);
     } else if(act==='pos-top'||act==='pos-bottom'){
       const cue=S.cues[findCueIdxByStart(r.startKey)];
       cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
       recordOverride(cue);
       buildChecklist(); render(); refreshCaptionOverlay();
       setProg('Position set to '+(act==='pos-top'?'TOP':'BOTTOM')+' for that cue — check the video preview, it updates immediately.');
+      logEvent('legaci','position_button',issueTypes);
     } else if(act==='toggle-italic'||act==='toggle-bold'){
       const cue=S.cues[findCueIdxByStart(r.startKey)];
       toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
       buildChecklist(); render(); refreshCaptionOverlay();
+      logEvent('legaci',act==='toggle-italic'?'italic_toggle':'bold_toggle',issueTypes);
     } else if(act==='word-next'||act==='word-prev'){
       const idx=findCueIdxByStart(r.startKey);
       const cue=S.cues[idx];
@@ -3280,6 +3377,7 @@ function render(){
       if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
       cue.text=moved; recordOverride(cue);
       buildChecklist(); render(); refreshCaptionOverlay();
+      logEvent('legaci','word_nudge',issueTypes);
     } else if(act==='linebreak'){
       const idx=findCueIdxByStart(r.startKey);
       const cue=S.cues[idx];
@@ -3291,6 +3389,7 @@ function render(){
       cue.text=text; recordOverride(cue);
       buildChecklist(); render(); refreshCaptionOverlay();
       if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
+      logEvent('legaci','linebreak_inserted',issueTypes);
     } else if(act==='split'){
       const idx=findCueIdxByStart(r.startKey);
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
@@ -3301,6 +3400,7 @@ function render(){
       S.cues.splice(idx,1,parts[0],parts[1]);
       buildChecklist(); render(); refreshCaptionOverlay();
       setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
+      logEvent('legaci','split_used',issueTypes);
     } else if(act==='apply-spk'){
       const sel=document.querySelector('select[data-ri="'+ri+'"]');
       const newInp=document.querySelector('[data-newspk="'+ri+'"]');
@@ -3327,6 +3427,7 @@ function render(){
       setProg(cl
         ? 'Speaker ID "'+name.toUpperCase()+'" applied here + propagated to '+propagated+' other cue(s) the voice scan grouped as the same speaker. Check the video preview — it\'s already updated.'
         : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
+      logEvent('legaci','speaker_field_edited',issueTypes);
     } else if(act==='validate'){
       S.validated.add(r.key);
       logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
@@ -3437,6 +3538,7 @@ PROFILE_SETTINGS_IDS.forEach(id=>{
   if(el)el.addEventListener('change',saveProfileSoon);
 });
 loadProfileFromStorage();
+checkRosterHandoff();
 </script>
 </body>
 </html>

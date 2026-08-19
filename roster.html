@@ -174,6 +174,8 @@ button.stop{border-color:var(--warn);color:var(--warn)}
 <div class="toolbar">
   <div class="brand"><b>ROSTER</b> · cast-matched speaker ID<small>standalone companion for LEGACI · v1.3</small></div>
   <span class="verbadge">LEGACI SUITE v1.1</span>
+  <span class="verbadge" id="legaci-link-status">🔗 not synced yet</span>
+  <a href="legaci.html" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(255,255,255,.85);text-decoration:none">Open LEGACI →</a>
   <div class="tsep"></div>
   <div class="netpill"><span class="dot"></span>Uses network — TVMaze/Wikidata/Wikipedia lookup + face-model CDN · media never leaves this machine</div>
   <div class="spacer"></div>
@@ -351,6 +353,40 @@ logEvent('roster', 'page_view', '');
 ========================================================= */
 const $=id=>document.getElementById(id);
 const video=$('video');
+
+/* =========================================================
+   LEGACI LINK — a live handoff to Legaci via the shared localStorage on
+   this same origin, so a name resolved here shows up there without an
+   export/import file round-trip. Same fields as the CSV export (kept
+   deliberately consistent), just written continuously instead of once
+   on a manual click. Legaci decides whether/when to apply anything —
+   this only ever writes data, never reads Legaci's own state.
+========================================================= */
+let legaciLinkTimer=null;
+function syncToLegaciSoon(){
+  clearTimeout(legaciLinkTimer);
+  legaciLinkTimer=setTimeout(syncToLegaciNow, 500);
+}
+function syncToLegaciNow(){
+  try{
+    const P=idPolicy();
+    const rows=[];
+    ROWS.forEach(r=>{
+      if(!r.name)return; // unresolved rows are left for a human in LEGACI, same rule as the CSV export
+      const d=tagDecision(r,P);
+      const end = r.end!=null ? r.end : (S.cues[+r.key] ? S.cues[+r.key].end : r.t+2);
+      rows.push({ start:r.t, end, speaker:displayName(r.name,P), action:d.tag?'fix':'',
+        message: r.manual ? 'Manually assigned in ROSTER'
+                : r.evidence==='visual' ? 'Face matched to a reference photo, mouth motion confirmed speaking'
+                : r.evidence==='voice'  ? 'Off-screen — voice matched to a visually-confirmed speaker cluster'
+                : 'Assigned in ROSTER' });
+    });
+    localStorage.setItem('legaci_roster_handoff', JSON.stringify({
+      sourceFile: S.capFileName||'', updatedAt: new Date().toISOString(), rows
+    }));
+    const pill=$('legaci-link-status'); if(pill)pill.textContent='🔗 '+rows.length+' resolved row(s) synced to LEGACI';
+  }catch(e){}
+}
 const scanVideo=document.createElement('video'); scanVideo.muted=true; scanVideo.playsInline=true;
 /* OST detector geometry was tuned at 320px wide, so that canvas stays 320.
    Face recognition at 320 is too coarse — descriptors from ~40px faces are
@@ -1378,6 +1414,7 @@ async function runAnalysis(only){
       + (step>1?' (sampled every '+step+')':'') + '.'
       + (notes.length?' Note: '+notes.join('; ')+'.':'');
     setProg(msg, S.abort?'':(n?'ok':'warn'));
+    syncToLegaciSoon();
   }catch(err){ console.error(err); setProg('Error: '+err.message,'warn'); }
   setRunning(false); setBar(null); S.abort=false;
 }
@@ -1499,6 +1536,7 @@ function render(){
       const v=e.target.value, tgt=S.results[r.key];
       tgt.name=v||null; tgt.evidence=v?'manual':'unresolved'; tgt.manual=!!v;
       buildGrid(); render(); updateExportButtons();
+      syncToLegaciSoon();
     };
     row.onclick=()=>{ video.currentTime=r.t+0.05; markActive(r.key); showFaceBox(r); };
     el.appendChild(row);
@@ -1962,6 +2000,7 @@ wire('drop-vtt','file-vtt',f=>{
   r.onerror=()=>setProg('Could not read '+f.name+'.','warn');
   r.onload=()=>{
     S.cues=parseCaptions(String(r.result||''));
+    S.capFileName=f.name;
     S.results={}; ROWS=[]; S.clusters=[]; S.cueClu=[];
     const ds=$('drop-vtt').querySelector('.ds');
     if(!S.cues.length){
