@@ -67,6 +67,11 @@ a.back:hover{color:#fff}
 .drop .ds{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:1px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stack{display:flex;flex-direction:column;gap:8px}
 .substep{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.05em;margin:-4px 0 2px}
+.substep.infotext{display:none;margin:2px 0 8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.substep.infotext.show{display:block}
+.infobtn{width:16px;height:16px;border-radius:50%;border:1px solid var(--line2);background:transparent;color:var(--faint);
+  font-size:10px;line-height:1;padding:0;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-style:italic;font-family:Georgia,serif}
+.infobtn:hover,.infobtn.on{border-color:var(--yellow);color:var(--yellow)}
 
 .opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0}
 .opt label{font-size:12.5px;color:var(--gray)}
@@ -313,16 +318,16 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <h3>Run settings</h3>
     <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
-    <div class="opt"><label>Flag single-line leading dashes</label><input type="checkbox" id="opt-extradash"></div>
-    <div class="substep">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
+    <div class="opt"><label>Flag single-line leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
+    <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
     <div class="opt"><label>Convert ALL CAPS to mixed case</label><input type="checkbox" id="opt-mixedcase"></div>
     <div class="substep" id="mixedcase-hint" style="display:none;color:var(--warn)">This file looks like it's written in ALL CAPS — check the box above to convert dialogue to mixed case (known character names get re-capitalized properly).</div>
-    <div class="opt"><label>Auto-fix common misspellings</label><input type="checkbox" id="opt-spelling" checked></div>
-    <div class="substep">catches unambiguous typos only ("happend" → "happened", "aggresive" → "aggressive") — never homophones like your/you're or word-choice calls, since those need sentence context a script can't safely judge. Add a term to the Personal Dictionary below to exclude it from this pass.</div>
-    <div class="opt"><label>Flag grammar &amp; spelling for review</label><input type="checkbox" id="opt-grammar"></div>
-    <div class="substep">off by default — flags exactly the stuff the auto-fix above won't touch: homophones (its/it's, their/they're), missing apostrophes, duplicated or clashing words, and stray punctuation, each with a suggested fix in the message. Never rewrites anything itself — it's a NEEDS REVIEW row like any other, because dialogue transcripts are full of intentional fragments, dropped g's, and stutters that a script can't tell apart from a real mistake. Add a term to the Personal Dictionary to exclude it from this pass.</div>
-    <div class="opt"><label>Flag captions crossing a shot change</label><input type="checkbox" id="opt-shotchange"></div>
-    <div class="substep">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
+    <div class="opt"><label>Auto-fix common misspellings</label><button class="infobtn" data-infofor="spelling-hint">i</button><input type="checkbox" id="opt-spelling" checked></div>
+    <div class="substep infotext" id="spelling-hint">catches unambiguous typos only ("happend" → "happened", "aggresive" → "aggressive") — never homophones like your/you're or word-choice calls, since those need sentence context a script can't safely judge. Add a term to the Personal Dictionary below to exclude it from this pass.</div>
+    <div class="opt"><label>Flag grammar &amp; spelling for review</label><button class="infobtn" data-infofor="grammar-hint">i</button><input type="checkbox" id="opt-grammar"></div>
+    <div class="substep infotext" id="grammar-hint">off by default — flags exactly the stuff the auto-fix above won't touch: homophones (its/it's, their/they're), missing apostrophes, duplicated or clashing words, and stray punctuation, each with a suggested fix in the message. Never rewrites anything itself — it's a NEEDS REVIEW row like any other, because dialogue transcripts are full of intentional fragments, dropped g's, and stutters that a script can't tell apart from a real mistake. Add a term to the Personal Dictionary to exclude it from this pass.</div>
+    <div class="opt"><label>Flag captions crossing a shot change</label><button class="infobtn" data-infofor="shotchange-hint">i</button><input type="checkbox" id="opt-shotchange"></div>
+    <div class="substep infotext" id="shotchange-hint">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
   </div>
 
   <div class="panelbox" id="hotkeypanel">
@@ -835,6 +840,15 @@ document.querySelectorAll('.collapsehead').forEach(head=>{
     const collapsed=panel.classList.toggle('show')===false;
     head.textContent=(collapsed?'▸':'▾')+' '+head.textContent.slice(2);
     syncStickyOffsets();
+  });
+});
+document.querySelectorAll('.infobtn[data-infofor]').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const target=document.getElementById(btn.dataset.infofor);
+    if(!target)return;
+    const nowShown=target.classList.toggle('show');
+    btn.classList.toggle('on',nowShown);
   });
 });
 
