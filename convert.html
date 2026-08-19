@@ -27,6 +27,7 @@ header{display:flex;align-items:baseline;gap:16px;padding:16px 24px;background:v
 .brand{font-stretch:112%;font-weight:800;font-size:19px;letter-spacing:.1em;text-transform:uppercase;color:#fff}
 .brand em{font-style:normal}
 a.back{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.85);text-decoration:none;margin-left:auto}
+.verbadge{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,.65);letter-spacing:.05em;padding:2px 7px;border:1px solid rgba(255,255,255,.35);border-radius:10px;margin-left:8px}
 a.back:hover{color:#fff}
 .app{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
 @media(max-width:900px){.app{grid-template-columns:1fr}}
@@ -77,6 +78,7 @@ a.back:hover{color:#fff}
 <body>
 <header>
   <div class="brand">Leg<em>aci</em></div>
+  <span class="verbadge">v1.1</span>
   <a class="back" href="index.html">← Back to hub</a>
 </header>
 <div class="app">
