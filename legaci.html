@@ -33,13 +33,13 @@ header{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;padding:16px 24
 a.back{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.85);text-decoration:none;margin-left:auto}
 .verbadge{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,.65);letter-spacing:.05em;padding:2px 7px;border:1px solid rgba(255,255,255,.35);border-radius:10px;margin-left:8px}
 a.back:hover{color:#fff}
-.statusbar{display:inline-flex;font-family:var(--mono);font-size:11px;border:1px solid rgba(255,255,255,.35);border-radius:20px;overflow:hidden}
-.statusbar span{padding:5px 12px;border-right:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.8)}
+.statusbar{display:inline-flex;font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:20px;overflow:hidden;background:var(--panel)}
+.statusbar span{padding:5px 12px;border-right:1px solid var(--line);color:var(--gray)}
 .statusbar span:last-child{border-right:0}
-.statusbar b{color:#fff;font-weight:600;margin-left:6px}
-.statusbar .s-y b{color:#fff}
-.statusbar .s-err b{color:#ffd7d7}
-.statusbar .s-ok b{color:#d7ffe9}
+.statusbar b{color:var(--white);font-weight:600;margin-left:6px}
+.statusbar .s-y b{color:var(--yellow)}
+.statusbar .s-err b{color:var(--err)}
+.statusbar .s-ok b{color:var(--ok)}
 
 .menubar{display:flex;align-items:center;gap:2px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:19;box-shadow:var(--shadow-sm)}
 .menubar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--accent-grad);opacity:.4}
@@ -688,11 +688,13 @@ function openFloatWin(id){
   el.classList.add('show');
   el.style.zIndex=++floatZ;
   saveProfileSoon();
+  logEvent('legaci','floatwin_opened',id);
 }
 function closeFloatWin(id){
   const el=document.getElementById(id);
   if(el)el.classList.remove('show');
   saveProfileSoon();
+  logEvent('legaci','floatwin_closed',id);
 }
 Object.keys(FLOATWIN_TITLES).forEach(convertToFloatWin);
 document.addEventListener('click',e=>{
@@ -2879,9 +2881,10 @@ function renderAllEvents(){
     el.classList.add('active');
   }));
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; },{once:false});
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; },{once:false});
+    ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
     ta.addEventListener('blur',()=>{
-      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue));
+      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
     });
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
@@ -2983,12 +2986,14 @@ function gotoSearchMatch(delta){
   const el=document.querySelector('.item[data-cueidx="'+cueIdx+'"]');
   if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
   if(S.videoURL)video.currentTime=Math.max(0,S.cues[cueIdx].start+S.offset+0.01);
+  logEvent('legaci','find_navigated','');
 }
 function openFindBar(){
   if(!S.cues.length)return;
   document.getElementById('findBar').style.display='flex';
   const inp=document.getElementById('find-input');
   inp.focus(); inp.select();
+  logEvent('legaci','find_opened','');
 }
 document.getElementById('find-open').addEventListener('click',openFindBar);
 document.getElementById('find-close').addEventListener('click',()=>{ document.getElementById('findBar').style.display='none'; });
@@ -3094,6 +3099,7 @@ function renderIssueFilterBar(){
     S.issueFilter=b.dataset.filter;
     S.activeReportIdx=0;
     render();
+    logEvent('legaci','issue_filter_used',b.dataset.filter);
   }));
 }
 // Hotkey-driven issue-type stepping (bracket keys) — cycles through the same list the
@@ -3162,6 +3168,7 @@ document.getElementById('bulk-validate').addEventListener('click',()=>{
   S.selectedRows.clear();
   buildChecklist(); render();
   setProg('Validated '+n+' selected item(s) in bulk.');
+  logEvent('legaci','bulk_validate',n+'_rows');
 });
 function bulkMove(zone){
   pushHistory();
@@ -3179,6 +3186,7 @@ function bulkMove(zone){
   S.selectedRows.clear();
   buildChecklist(); render(); refreshCaptionOverlay();
   setProg('Moved '+moved+' selected cue(s) to '+zone.toUpperCase()+'.');
+  logEvent('legaci','bulk_move',zone+'_'+moved+'_rows');
 }
 document.getElementById('bulk-top').addEventListener('click',()=>bulkMove('top'));
 document.getElementById('bulk-bottom').addEventListener('click',()=>bulkMove('bottom'));
@@ -3200,6 +3208,7 @@ document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   S.selectedRows.clear();
   buildChecklist(); render(); refreshCaptionOverlay();
   setProg('Applied '+applied+' OST suggestion(s)'+(skipped?' · '+skipped+' selected row(s) had no OST suggestion, skipped':'')+(middleSkipped?' · '+middleSkipped+' middle-zone detection(s) skipped — no single correct direction, reposition those by hand':'')+'.');
+  logEvent('legaci','bulk_apply_suggested',applied+'_applied_'+skipped+'_skipped_'+middleSkipped+'_middle');
 });
 document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.max(0,video.currentTime-10); });
 document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); });
@@ -3360,9 +3369,10 @@ function render(){
   }));
   renderTicks();
   box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; });
+    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; });
+    ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
     ta.addEventListener('blur',()=>{
-      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue));
+      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
     });
     ta.addEventListener('input',()=>{
     const cue=S.cues[+ta.dataset.cue];
@@ -3547,6 +3557,7 @@ document.getElementById('tcbarTrack').addEventListener('click',e=>{
   const rect=e.currentTarget.getBoundingClientRect();
   const pct=Math.min(1,Math.max(0,(e.clientX-rect.left)/rect.width));
   video.currentTime=pct*video.duration;
+  logEvent('legaci','video_scrubbed','');
 });
 function parseJumpTimecode(str){
   str=str.trim();
