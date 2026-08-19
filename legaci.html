@@ -2035,9 +2035,50 @@ function upsertVoiceLibraryEntry(name,avgPitch,avgCentroid){
   }
   renderCharLibPanel();
 }
+/* =========================================================
+   SHARED CAST POOL — a live, bidirectional pool shared with Roster's own
+   cast search via this same origin's localStorage. Same broadcast-on-add,
+   merge-never-rebroadcasts pattern as the Roster Link above.
+========================================================= */
+function syncSpeakerPoolToShared(){
+  try{
+    const raw=localStorage.getItem('legaci_shared_cast_pool');
+    const shared = raw?JSON.parse(raw):[];
+    const known=new Set(shared.map(s=>s.name.toLowerCase()));
+    let changed=false;
+    S.speakerPool.forEach(name=>{
+      if(!known.has(name.toLowerCase())){
+        shared.push({name, img:null, source:'manual', addedFrom:'legaci'});
+        known.add(name.toLowerCase());
+        changed=true;
+      }
+    });
+    if(changed)localStorage.setItem('legaci_shared_cast_pool', JSON.stringify(shared));
+  }catch(e){}
+}
+function mergeSharedPoolIntoSpeakers(){
+  try{
+    const raw=localStorage.getItem('legaci_shared_cast_pool');
+    if(!raw)return;
+    const shared=JSON.parse(raw);
+    let added=0;
+    shared.forEach(s=>{
+      if(!S.speakerPool.some(n=>n.toLowerCase()===s.name.toLowerCase())){
+        S.speakerPool.push(s.name);
+        added++;
+      }
+    });
+    if(added)refreshSpeakerDropdowns();
+  }catch(e){}
+}
+window.addEventListener('storage', e=>{ if(e.key==='legaci_shared_cast_pool')mergeSharedPoolIntoSpeakers(); });
+
 function addToPool(name){
   name=(name||'').trim(); if(!name)return;
-  if(!S.speakerPool.some(n=>n.toLowerCase()===name.toLowerCase()))S.speakerPool.push(name);
+  if(!S.speakerPool.some(n=>n.toLowerCase()===name.toLowerCase())){
+    S.speakerPool.push(name);
+    syncSpeakerPoolToShared();
+  }
   refreshSpeakerDropdowns();
 }
 function refreshSpeakerDropdowns(){
@@ -3539,6 +3580,7 @@ PROFILE_SETTINGS_IDS.forEach(id=>{
 });
 loadProfileFromStorage();
 checkRosterHandoff();
+mergeSharedPoolIntoSpeakers();
 </script>
 </body>
 </html>

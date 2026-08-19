@@ -54,8 +54,7 @@ a.back:hover{color:#fff}
 .main{padding:24px 28px 60px}
 .empty{border:1.5px dashed var(--line2);border-radius:18px;padding:50px 30px;text-align:center;color:var(--gray);max-width:640px;background:var(--panel)}
 .empty .big{font-size:26px;margin-bottom:12px}
-.results{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:1100px){.results{grid-template-columns:1fr}}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
 .panel{border:1px solid var(--line);border-radius:16px;padding:16px 18px;background:var(--panel);display:none;box-shadow:var(--shadow-sm)}
 .panel.show{display:block}
 .panel h3{font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
@@ -87,12 +86,18 @@ a.back:hover{color:#fff}
     </label>
   </div>
   <div>
-    <h3>Models — try both, compare</h3>
+    <h3>Models — try any combination, compare</h3>
     <div class="modelcard">
       <h4>⚡ Fast</h4>
       <p>Whisper tiny — quick, rougher. Good for a first pass or a long file.</p>
       <div class="meta">~40MB one-time download, cached after that</div>
       <button class="btn ghost" id="run-fast" disabled>Transcribe — Fast</button>
+    </div>
+    <div class="modelcard">
+      <h4>🎧 Small</h4>
+      <p>Whisper small — a genuine middle ground between Fast and Accurate, worth trying on dialogue-heavy or noisier audio.</p>
+      <div class="meta">~250MB one-time download, cached after that — noticeably slower to load than Fast/Accurate</div>
+      <button class="btn ghost" id="run-small" disabled>Transcribe — Small</button>
     </div>
     <div class="modelcard">
       <h4>🎯 Accurate</h4>
@@ -104,10 +109,10 @@ a.back:hover{color:#fff}
   <div class="progress" id="progress"></div>
 </aside>
 <main class="main">
-  <div class="hint">Both models run entirely in your browser — nothing is uploaded except the one-time model download from Hugging Face's model hub. Output is a first draft: open the exported .vtt in Analyze to fix speaker IDs, formatting, and anything the model got wrong.</div>
+  <div class="hint">All three models run entirely in your browser — nothing is uploaded except the one-time model download from Hugging Face's model hub. Output is a first draft: open the exported .vtt in Analyze to fix speaker IDs, formatting, and anything the model got wrong.</div>
   <div class="empty" id="empty">
     <div class="big">🎙 → 📝</div>
-    <p>Load a video or audio file, then try Fast, Accurate, or both — the results appear side by side so you can judge the trade-off yourself.</p>
+    <p>Load a video or audio file, then try any combination of Fast, Small, and Accurate — the results appear side by side so you can judge the trade-off yourself.</p>
   </div>
   <div class="results" id="results">
     <div class="panel" id="panel-fast">
@@ -117,6 +122,15 @@ a.back:hover{color:#fff}
       <div class="actions">
         <button id="export-fast-vtt">Export .vtt</button>
         <button id="export-fast-txt">Export .txt</button>
+      </div>
+    </div>
+    <div class="panel" id="panel-small">
+      <h3>🎧 Small</h3>
+      <div class="sub" id="small-meta"></div>
+      <div class="seglist" id="small-segs"></div>
+      <div class="actions">
+        <button id="export-small-vtt">Export .vtt</button>
+        <button id="export-small-txt">Export .txt</button>
       </div>
     </div>
     <div class="panel" id="panel-accurate">
@@ -159,10 +173,15 @@ document.getElementById('file-media').addEventListener('change', async e => {
   S.file = f; S.audioData = null; S.results = {};
   document.getElementById('drop-media').classList.add('loaded');
   document.getElementById('media-name').textContent = f.name;
-  document.getElementById('run-fast').disabled = false;
-  document.getElementById('run-accurate').disabled = false;
-  setProg('File loaded. Click a model to start — decoding the audio track happens once and is reused if you try the other model after.');
+  Object.keys(MODEL_TIERS).forEach(key => { document.getElementById('run-'+key).disabled = false; });
+  setProg('File loaded. Click a model to start — decoding the audio track happens once and is reused if you try another model after.');
 });
+
+const MODEL_TIERS = {
+  fast:     { label: 'Fast',     modelId: 'Xenova/whisper-tiny'  },
+  small:    { label: 'Small',    modelId: 'Xenova/whisper-small' },
+  accurate: { label: 'Accurate', modelId: 'Xenova/whisper-base'  }
+};
 
 function fmtTime(s){
   const h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=Math.floor(s%60), ms=Math.round((s-Math.floor(s))*1000);
@@ -190,24 +209,24 @@ async function ensureAudioData(){
   return S.audioData;
 }
 
-const modelIds = { fast: 'Xenova/whisper-tiny', accurate: 'Xenova/whisper-base' };
 const transcribers = {};
 
 async function runModel(key){
-  const btn = document.getElementById(key==='fast' ? 'run-fast' : 'run-accurate');
+  const tier = MODEL_TIERS[key];
+  const btn = document.getElementById('run-'+key);
   btn.disabled = true;
   logEvent('transcribe', 'run_model', key);
   try {
     const audio = await ensureAudioData();
     if (!transcribers[key]) {
-      setProg('Loading ' + (key==='fast'?'Fast':'Accurate') + ' model (one-time download, then cached)…', 'info');
-      transcribers[key] = await pipeline('automatic-speech-recognition', modelIds[key], {
+      setProg('Loading ' + tier.label + ' model (one-time download, then cached)…', 'info');
+      transcribers[key] = await pipeline('automatic-speech-recognition', tier.modelId, {
         progress_callback: p => {
           if (p.status === 'progress') setProg('Downloading model: ' + (p.file||'') + ' ' + Math.round(p.progress||0) + '%', 'info');
         }
       });
     }
-    setProg('Transcribing with ' + (key==='fast'?'Fast':'Accurate') + '… this can take a few minutes on a long file.', 'info');
+    setProg('Transcribing with ' + tier.label + '… this can take a few minutes on a long file.', 'info');
     const t0 = performance.now();
     const output = await transcribers[key](audio, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true });
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
@@ -218,24 +237,25 @@ async function runModel(key){
     })).filter(c => c.text);
     S.results[key] = { chunks, elapsed, fullText: output.text || '' };
     renderResult(key);
-    setProg('Done — ' + (key==='fast'?'Fast':'Accurate') + ' finished in ' + elapsed + 's, ' + chunks.length + ' segment(s). Review it — this is a first draft, not a final transcript.');
+    setProg('Done — ' + tier.label + ' finished in ' + elapsed + 's, ' + chunks.length + ' segment(s). Review it — this is a first draft, not a final transcript.');
   } catch (err) {
     setProg('Transcription failed: ' + err.message, 'err');
   } finally {
     btn.disabled = false;
   }
 }
-document.getElementById('run-fast').addEventListener('click', () => runModel('fast'));
-document.getElementById('run-accurate').addEventListener('click', () => runModel('accurate'));
+Object.keys(MODEL_TIERS).forEach(key => {
+  document.getElementById('run-'+key).addEventListener('click', () => runModel(key));
+});
 
 function renderResult(key){
   document.getElementById('empty').style.display = 'none';
-  const panel = document.getElementById(key==='fast'?'panel-fast':'panel-accurate');
+  const panel = document.getElementById('panel-'+key);
   panel.classList.add('show');
   const r = S.results[key];
-  document.getElementById(key==='fast'?'fast-meta':'accurate-meta').textContent =
+  document.getElementById(key+'-meta').textContent =
     r.chunks.length + ' segment(s) · finished in ' + r.elapsed + 's · draft quality — verify before delivery';
-  const box = document.getElementById(key==='fast'?'fast-segs':'accurate-segs');
+  const box = document.getElementById(key+'-segs');
   box.innerHTML = '';
   r.chunks.forEach(c => {
     const el = document.createElement('div');
@@ -257,10 +277,14 @@ function download(content, name, mime){
   a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
 }
-document.getElementById('export-fast-vtt').addEventListener('click', ()=>{ if(S.results.fast){ logEvent('transcribe','export','fast_vtt'); download(toVTT(S.results.fast.chunks), 'transcript_fast_draft.vtt', 'text/vtt'); } });
-document.getElementById('export-fast-txt').addEventListener('click', ()=>{ if(S.results.fast){ logEvent('transcribe','export','fast_txt'); download(S.results.fast.fullText, 'transcript_fast_draft.txt', 'text/plain'); } });
-document.getElementById('export-accurate-vtt').addEventListener('click', ()=>{ if(S.results.accurate){ logEvent('transcribe','export','accurate_vtt'); download(toVTT(S.results.accurate.chunks), 'transcript_accurate_draft.vtt', 'text/vtt'); } });
-document.getElementById('export-accurate-txt').addEventListener('click', ()=>{ if(S.results.accurate){ logEvent('transcribe','export','accurate_txt'); download(S.results.accurate.fullText, 'transcript_accurate_draft.txt', 'text/plain'); } });
+Object.keys(MODEL_TIERS).forEach(key => {
+  document.getElementById('export-'+key+'-vtt').addEventListener('click', ()=>{
+    if(S.results[key]){ logEvent('transcribe','export',key+'_vtt'); download(toVTT(S.results[key].chunks), 'transcript_'+key+'_draft.vtt', 'text/vtt'); }
+  });
+  document.getElementById('export-'+key+'-txt').addEventListener('click', ()=>{
+    if(S.results[key]){ logEvent('transcribe','export',key+'_txt'); download(S.results[key].fullText, 'transcript_'+key+'_draft.txt', 'text/plain'); }
+  });
+});
 </script>
 </body>
 </html>

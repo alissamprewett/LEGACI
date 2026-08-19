@@ -788,11 +788,52 @@ function renderCastResults(label,cast){
 /* =========================================================
    SPEAKER POOL — cast lineup
 ========================================================= */
+/* =========================================================
+   SHARED CAST POOL — a live, bidirectional pool shared with Legaci's own
+   Character Search via this same origin's localStorage. Broadcasting only
+   happens from a genuine new addition (addPoolMember); merging a name IN
+   from the shared pool never re-broadcasts, so the two tabs can't ping-pong
+   writes back and forth at each other.
+========================================================= */
+function syncPoolToShared(){
+  try{
+    const raw=localStorage.getItem('legaci_shared_cast_pool');
+    const shared = raw?JSON.parse(raw):[];
+    const known=new Set(shared.map(s=>s.name.toLowerCase()));
+    let changed=false;
+    S.pool.forEach(p=>{
+      if(!known.has(p.name.toLowerCase())){
+        shared.push({name:p.name, img:p.img||null, source:p.source||'manual', addedFrom:'roster'});
+        known.add(p.name.toLowerCase());
+        changed=true;
+      }
+    });
+    if(changed)localStorage.setItem('legaci_shared_cast_pool', JSON.stringify(shared));
+  }catch(e){}
+}
+function mergeFromSharedPool(){
+  try{
+    const raw=localStorage.getItem('legaci_shared_cast_pool');
+    if(!raw)return;
+    const shared=JSON.parse(raw);
+    let added=0;
+    shared.forEach(s=>{
+      if(!S.pool.some(p=>p.name.toLowerCase()===s.name.toLowerCase())){
+        S.pool.push({name:s.name, img:s.img||null, refDescriptor:null, source:(s.source||'shared')+' · from '+(s.addedFrom||'?'), instances:[], episodes:[]});
+        added++;
+      }
+    });
+    if(added){ renderPool(); setTmdb(added+' cast name(s) merged in from the shared pool (LEGACI or another Roster tab).','ok'); }
+  }catch(e){}
+}
+window.addEventListener('storage', e=>{ if(e.key==='legaci_shared_cast_pool')mergeFromSharedPool(); });
+
 function addPoolMember(name,img,source,episodes){
   name=(name||'').trim(); if(!name) return;
   if(S.pool.some(p=>p.name.toLowerCase()===name.toLowerCase())) return;
   S.pool.push({name,img:img||null,refDescriptor:null,source:source||'manual',instances:[],episodes:episodes&&episodes.length?[...episodes]:[]});
   renderPool();
+  syncPoolToShared();
 }
 /* Coverage backstop: TVMaze/Wikidata won't have a photo for every character
    (especially smaller or newer titles), so any pool card without one can take
@@ -2034,6 +2075,7 @@ video.addEventListener('error',()=>{
 });
 window.addEventListener('beforeunload',e=>{ if(S.running){ e.preventDefault(); e.returnValue=''; } });
 renderPool(); render(); updateExportButtons(); updateQuickLinks();
+mergeFromSharedPool();
 </script>
 </body>
 </html>
