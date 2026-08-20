@@ -1654,6 +1654,21 @@ function resolveTopOrBottom(settingsStr){
   if(numMatch)return (+numMatch[1])<0 ? 'bottom' : 'top';
   return 'bottom';
 }
+// Horizontal alignment always gets forced to center during auto-fix — this looks at the
+// ORIGINAL settings string first, before that happens, so a deliberate non-center position
+// (a caption legitimately shifted left/right, e.g. to dodge on-screen text) gets a flag
+// instead of silently disappearing with no notice at all.
+function detectOffCenterHorizontal(settingsStr){
+  const s=settingsStr||'';
+  if(/align:start/.test(s))return 'was left-aligned (align:start)';
+  if(/align:end/.test(s))return 'was right-aligned (align:end)';
+  const posMatch=s.match(/(?:^|\s)position:(-?[\d.]+)%/);
+  if(posMatch){
+    const pct=+posMatch[1];
+    if(pct<35||pct>65)return 'was horizontally offset to position:'+pct+'%';
+  }
+  return null;
+}
 function buildFixedCues(counts){
   const maxLen=+document.getElementById('opt-len').value;
   const useMixedCase=document.getElementById('opt-mixedcase').checked;
@@ -1692,6 +1707,11 @@ function buildFixedCues(counts){
       // Only a MANUAL zone (you explicitly drew it) auto-applies. An auto-detected zone is
       // a suggestion only — it shows up in the checklist with a Move button, nothing moves
       // until you confirm it.
+      // Horizontal alignment is always forced to center below — capture whether the
+      // ORIGINAL file had a deliberate, meaningful non-center horizontal position first,
+      // so a human gets a chance to confirm that's fine to lose rather than it silently
+      // vanishing with no flag at all.
+      const offCenterH=detectOffCenterHorizontal(c.settings);
       settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : (resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%');
       if((c.settings||'')!==settings)counts.position++;
       posTag = manualZone ? (manualZone==='bottom'?'MAN-UP':'MAN-DOWN') : null;
@@ -1715,7 +1735,7 @@ function buildFixedCues(counts){
     chunks.forEach((ch,ci)=>{
       const share=ch.join(' ').length/totalChars;
       const chunkEnd = ci===chunks.length-1 ? c.end : cursor+dur*share;
-      out.push({start:cursor,end:chunkEnd,settings,text:ch.join('\n'),srcIdx,posTag,narratorContext,ostSuggested});
+      out.push({start:cursor,end:chunkEnd,settings,text:ch.join('\n'),srcIdx,posTag,narratorContext,ostSuggested,offCenterH});
       cursor=chunkEnd;
     });
   });
@@ -1975,6 +1995,18 @@ async function runCombinedVideoPass(){
         S.syncFlag={dir:'late',preHits,postHits,syncConsidered};
       else if(postHits>=3 && postHits>preHits*1.5)
         S.syncFlag={dir:'early',preHits,postHits,syncConsidered};
+    }
+    // A caption file that stops well before the video actually ends is a real, common
+    // sign of a truncated/incomplete file — but normal end-credits or a black-frame tail
+    // with no dialogue is also completely normal, so the threshold is deliberately generous
+    // (the larger of 60s or 8% of total runtime) to avoid flagging every file with a
+    // reasonably long credits sequence.
+    S.incompleteFlag=null;
+    if(video.duration && S.cues.length){
+      const lastEnd=Math.max(...S.cues.map(c=>c.end));
+      const gap=video.duration-lastEnd;
+      const threshold=Math.max(60,video.duration*0.08);
+      if(gap>threshold)S.incompleteFlag={gap,lastEnd,videoDuration:video.duration};
     }
   } finally {
     scanVideo.pause();
@@ -2600,6 +2632,8 @@ function buildChecklist(){
       add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — confirm whether two people are speaking here.');
     if(/\*/.test(cue.text))
       add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
+    if(cue.offCenterH)
+      add(gk,ref,'OFF_CENTER_H','difficult','Original file '+cue.offCenterH+' — this tool always centers horizontally, so that\'s been overridden. Confirm this cue didn\'t need to stay shifted (e.g. to avoid covering on-screen text) before treating it as done.');
     const stripped=cue.text.replace(/♪|[-'\u2019.,!?:;"()\[\]\s@#$%&*]/g,'');
     const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
@@ -2646,6 +2680,11 @@ function buildChecklist(){
     const f=S.syncFlag;
     add('sync',{gap:{start:0,end:0}},'SYNC','complex',
       'Captions may be running '+f.dir+' relative to the audio — dialogue was audible right '+(f.dir==='late'?'before':'after')+' the caption window in '+(f.dir==='late'?f.preHits:f.postHits)+' of '+f.syncConsidered+' cues checked, well above the other direction. Worth a manual sync check.');
+  }
+  if(S.incompleteFlag){
+    const f=S.incompleteFlag;
+    add('incomplete',{gap:{start:0,end:0}},'INCOMPLETE_FILE','complex',
+      'Last caption ends at '+fmtTime(f.lastEnd).slice(0,11)+', but the video runs to '+fmtTime(f.videoDuration).slice(0,11)+' — a gap of about '+Math.round(f.gap)+'s with no captions at all. Could be a normal credits/black-frame tail, or a genuinely truncated file. Confirm against the video.');
   }
 
   // Persist rows once seen — fixing the underlying issue doesn't remove a row by itself
