@@ -965,9 +965,16 @@ const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flag
 /* =========================================================
    VTT PARSE / SERIALIZE
 ========================================================= */
+let lastParseHadUnusualRange=false;
 function parseTime(t){
   const m=t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
   if(!m)return null;
+  // The regex itself only checks digit COUNT, not value range — "00:75:30.000" (minutes
+  // ≥60) matches structurally and would otherwise parse silently with zero warning, even
+  // though it's very likely a malformed timecode (a missing carry into hours, a stray
+  // digit, etc). Still returns a usable time — treated as worth a human's confirmation,
+  // not treated as definitely wrong, since the arithmetic is still well-defined either way.
+  lastParseHadUnusualRange = (+m[2]>=60) || (+m[3]>=60);
   return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
 }
 function fmtTime(s){
@@ -977,7 +984,7 @@ function fmtTime(s){
 }
 function parseVTT(text){
   const cues=[];
-  let skipped=0, flipped=0;
+  let skipped=0, flipped=0, unusualRange=0;
   text=text.replace(/^\uFEFF/,'');
   for(const b of text.split(/\r?\n\r?\n+/)){
     const lines=b.split(/\r?\n/).filter(l=>l!=='');
@@ -988,13 +995,17 @@ function parseVTT(text){
     if(i>=lines.length||!lines[i].includes('-->')){ if(i<lines.length)skipped++; continue; }
     const[tpart,...rest]=lines[i].split('-->');
     const endTok=rest.join('-->').trim().split(/\s+/);
-    let start=parseTime(tpart),end=parseTime(endTok[0]);
+    let start=parseTime(tpart);
+    const startUnusual=lastParseHadUnusualRange;
+    let end=parseTime(endTok[0]);
+    const endUnusual=lastParseHadUnusualRange;
     if(start==null||end==null){ skipped++; continue; }
+    if(startUnusual||endUnusual)unusualRange++;
     if(end<start){ const tmp=start; start=end; end=tmp; flipped++; }
     cues.push({start,end,settings:endTok.slice(1).join(' '),origText:lines.slice(i+1).join('\n')});
   }
   cues.sort((a,b)=>a.start-b.start);
-  cues._skipped=skipped; cues._flipped=flipped;
+  cues._skipped=skipped; cues._flipped=flipped; cues._unusualRange=unusualRange;
   return cues;
 }
 document.getElementById('file-reftranscript').addEventListener('change',e=>{
@@ -1274,7 +1285,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
     S.vttRaw=reader.result;
     S.vttFileName=f.name;
     S.src=parseVTT(S.vttRaw);
-    S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0;
+    S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0; S.parseUnusualRange=S.src._unusualRange||0;
     S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
     S.validated=new Set(); S.everSeen=new Set(); S.speakerPool=[]; S.rowsByKey={}; S.selectedRows=new Set();
     S.viewMode='issues'; S.searchMatches=[]; S.searchMatchIdx=0; S.manualOverrides={}; S.annotations={};
@@ -1287,6 +1298,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
       let msg=S.src.length+' cues loaded.';
       if(S.parseSkipped)msg+=' ⚠ '+S.parseSkipped+' block(s) skipped — missing or unparseable timecodes, not counted anywhere else.';
       if(S.parseFlipped)msg+=' '+S.parseFlipped+' flipped timecode(s) auto-swapped.';
+      if(S.parseUnusualRange)msg+=' ⚠ '+S.parseUnusualRange+' timecode(s) had a minute or second value of 60 or higher — technically parsed, but double-check those against the source, that\'s usually a sign of a missing carry into the next unit.';
       msg+=' Add a video proxy for the video/audio checks, or just run the analysis on text alone.';
       setProg(msg,!!S.parseSkipped);
       const letters=S.src.map(c=>c.origText.replace(/<[^>]+>/g,'')).join('').match(/[A-Za-z]/g)||[];
@@ -2008,6 +2020,16 @@ async function runCombinedVideoPass(){
       const threshold=Math.max(60,video.duration*0.08);
       if(gap>threshold)S.incompleteFlag={gap,lastEnd,videoDuration:video.duration};
     }
+    // Same idea, checking the other end of the file. Deliberately MORE generous than the
+    // end-gap threshold above — a cold open, title sequence, or "previously on" segment
+    // with no dialogue needing captions is an extremely common, completely normal reason
+    // for this, more so than a long tail at the end.
+    S.incompleteStartFlag=null;
+    if(video.duration && S.cues.length){
+      const firstStart=Math.min(...S.cues.map(c=>c.start));
+      const startThreshold=Math.max(90,video.duration*0.10);
+      if(firstStart>startThreshold)S.incompleteStartFlag={firstStart,videoDuration:video.duration};
+    }
   } finally {
     scanVideo.pause();
   }
@@ -2685,6 +2707,22 @@ function buildChecklist(){
     const f=S.incompleteFlag;
     add('incomplete',{gap:{start:0,end:0}},'INCOMPLETE_FILE','complex',
       'Last caption ends at '+fmtTime(f.lastEnd).slice(0,11)+', but the video runs to '+fmtTime(f.videoDuration).slice(0,11)+' — a gap of about '+Math.round(f.gap)+'s with no captions at all. Could be a normal credits/black-frame tail, or a genuinely truncated file. Confirm against the video.');
+  }
+  if(S.incompleteStartFlag){
+    const f=S.incompleteStartFlag;
+    add('incomplete-start',{gap:{start:0,end:0}},'INCOMPLETE_FILE','complex',
+      'First caption doesn\'t start until '+fmtTime(f.firstStart).slice(0,11)+' into a '+fmtTime(f.videoDuration).slice(0,11)+' video — could be a normal cold-open/intro with no dialogue, or captions missing from the beginning. Confirm against the video.');
+  }
+  // Works from timecodes alone — no video needed — so this catches a large chunk of
+  // missing captions in the MIDDLE of a file even in text-only mode, which the video-
+  // dependent start/end checks above can't cover on their own.
+  const INTERNAL_GAP_THRESHOLD=180;
+  for(let i=1;i<S.cues.length;i++){
+    const gapDur=S.cues[i].start-S.cues[i-1].end;
+    if(gapDur>INTERNAL_GAP_THRESHOLD){
+      add('internalgap'+S.cues[i-1].end.toFixed(3),{gap:{start:S.cues[i-1].end,end:S.cues[i].start}},'INCOMPLETE_FILE','complex',
+        'No captions at all from '+fmtTime(S.cues[i-1].end).slice(0,11)+' to '+fmtTime(S.cues[i].start).slice(0,11)+' — about '+Math.round(gapDur/60)+' minute(s) with nothing covering it. Could be a legitimate long dialogue-free stretch (action, music), or a chunk of missing captions. Confirm against the source.');
+    }
   }
 
   // Persist rows once seen — fixing the underlying issue doesn't remove a row by itself
