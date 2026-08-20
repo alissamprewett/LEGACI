@@ -1490,8 +1490,19 @@ function splitCueAtCursor(cueIdx,cursorPos){
 function autoFixText(rawText,counts){
   let t=rawText;
   const before=t;
+  // Invisible/control characters that have no legitimate place in caption text — zero-width
+  // space and byte-order-mark sometimes leak in from bad encoding or copy-paste, and raw
+  // control bytes (excluding tab/newline/carriage-return, which are handled separately)
+  // occasionally survive a bad export. None of these are visible, so a naive review can't
+  // catch them by eye.
+  t=t.replace(/[\u200B\uFEFF\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+  // Broader HTML entity decoding — the original only handled &amp;, which missed &lt;, &gt;,
+  // &quot;, &#39;/&apos;, &nbsp;, and numeric entities like &#8217; that show up in files
+  // that passed through various export tools.
+  t=t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&nbsp;/g,' ');
+  t=t.replace(/&#(\d+);/g,(m,code)=>{ try{ return String.fromCodePoint(+code); }catch(e){ return m; } });
   t=t.replace(/&amp;/g,'&');
-  t=t.replace(/<\/?(i|b|u|c|ruby|rt|lang|font|em|strong)\b[^>]*>/gi,'');
+  t=t.replace(/<\/?(i|b|u|c|ruby|rt|lang|font|em|strong|span|sub|sup)\b[^>]*>/gi,'');
   t=t.replace(/<br\s*\/?>/gi,'\n');
   t=t.replace(/<v\s*->/gi,'- ');
   t=t.replace(/<v\s+([^>]*)>/gi,(m,name)=>name.replace(/^[(\[]|[)\]]$/g,'')+': ');
@@ -1629,6 +1640,20 @@ function fixCommonMisspellings(text){
   return {text:out,changed};
 }
 
+// Replaces a plain substring check for "line:0%" (which silently misclassified any other
+// top-ish value — line:5%, line:10%, line:15% — as bottom, since none of those literally
+// contain "line:0%"). Parses the actual line value: for a percentage, anything under 50%
+// is top; for WebVTT's other valid form, a bare line NUMBER with no "%" sign, a negative
+// value means "counted from the bottom" per the WebVTT spec, positive means "from the top."
+// Falls back to bottom only when there's genuinely nothing recognizable to parse.
+function resolveTopOrBottom(settingsStr){
+  const s=settingsStr||'';
+  const pctMatch=s.match(/line:(-?[\d.]+)%/);
+  if(pctMatch)return (+pctMatch[1])<50 ? 'top' : 'bottom';
+  const numMatch=s.match(/line:(-?\d+)(?!\.)(?!%)/);
+  if(numMatch)return (+numMatch[1])<0 ? 'bottom' : 'top';
+  return 'bottom';
+}
 function buildFixedCues(counts){
   const maxLen=+document.getElementById('opt-len').value;
   const useMixedCase=document.getElementById('opt-mixedcase').checked;
@@ -1667,7 +1692,7 @@ function buildFixedCues(counts){
       // Only a MANUAL zone (you explicitly drew it) auto-applies. An auto-detected zone is
       // a suggestion only — it shows up in the checklist with a Move button, nothing moves
       // until you confirm it.
-      settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : ((c.settings||'').includes('line:0%') ? 'align:middle line:0%' : 'align:middle line:90%');
+      settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : (resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%');
       if((c.settings||'')!==settings)counts.position++;
       posTag = manualZone ? (manualZone==='bottom'?'MAN-UP':'MAN-DOWN') : null;
       ostSuggested = (autoZone && !manualZone) ? autoZone : null;
@@ -2591,7 +2616,11 @@ function buildChecklist(){
 
   for(let i=1;i<S.cues.length;i++){
     const prev=S.cues[i-1], cur=S.cues[i];
-    if(cur.start===prev.start&&cur.end===prev.end){
+    // Same 0.001s tolerance as the overlap check 3 lines below — exact equality (===) was
+    // missing stacked cues that were off by a single millisecond, plausible after any
+    // VTT<->SCC round trip or a different tool's rounding, even when they're "supposed"
+    // to be identical.
+    if(Math.abs(cur.start-prev.start)<0.001&&Math.abs(cur.end-prev.end)<0.001){
       add('s'+prev.start.toFixed(3),{stackStartA:prev.start,stackStartB:cur.start},'STACK','difficult',
         'Identical in/out timecodes as previous cue. If two people share this instance, merge with a dash on each line. If it\'s the same speaker, merge with no dash — never add one automatically.');
     } else if(cur.start<prev.end-0.001){
