@@ -32,10 +32,22 @@
  *   The day-tab's date reflects the spreadsheet's own timezone setting (File ->
  *   Settings in the Sheet), not the visitor's browser, so the day boundary is
  *   consistent no matter who's using it or where from.
+ *
+ * v1.1.1 FIX — blank rows from a real race condition:
+ * A page load often fires more than one event within milliseconds of each other
+ * (e.g. a hub tile's card_click and the destination page's page_view). Apps
+ * Script can run more than one doPost() concurrently, and insertRowBefore(2)
+ * followed by a separate setValues() call is NOT one atomic operation — two
+ * overlapping executions could each insert a blank row before either one got
+ * around to filling it in, leaving empty rows interleaved with real data. This
+ * actually happened in production, not just in theory. LockService.getScriptLock()
+ * below forces every insert-then-fill sequence to complete fully, one at a time,
+ * before the next one is allowed to start, which removes the race window entirely.
+ * Any blank rows already sitting in a day-tab from before this fix are harmless
+ * (just a visual gap) and can be deleted manually if you want to tidy them up —
+ * this only prevents new ones going forward.
  */
 function doPost(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
   let data;
   try {
     data = JSON.parse(e.postData.contents);
@@ -50,25 +62,40 @@ function doPost(e) {
   //     .setMimeType(ContentService.MimeType.JSON);
   // }
 
-  const tz = ss.getSpreadsheetTimeZone();
-  const dayTabName = 'Events_' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  let sheet = ss.getSheetByName(dayTabName);
-  if (!sheet) {
-    sheet = ss.insertSheet(dayTabName, 0); // index 0 = leftmost tab, so today's is always easiest to find
-    sheet.appendRow(['Timestamp', 'Tool', 'Event', 'Detail', 'Session']);
-    sheet.setFrozenRows(1);
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // wait up to 10s for another concurrent event to finish writing
+  } catch (lockErr) {
+    // Extremely unlikely under normal traffic, but fail loudly rather than risk a
+    // half-written row if it ever does happen.
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'busy, try again' }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
-  const row = [
-    new Date(),
-    String(data.tool || '').slice(0, 60),
-    String(data.event || '').slice(0, 60),
-    String(data.detail || '').slice(0, 300),
-    String(data.session || '').slice(0, 60)
-  ];
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const tz = ss.getSpreadsheetTimeZone();
+    const dayTabName = 'Events_' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    let sheet = ss.getSheetByName(dayTabName);
+    if (!sheet) {
+      sheet = ss.insertSheet(dayTabName, 0); // index 0 = leftmost tab, so today's is always easiest to find
+      sheet.appendRow(['Timestamp', 'Tool', 'Event', 'Detail', 'Session']);
+      sheet.setFrozenRows(1);
+    }
 
-  sheet.insertRowBefore(2);
-  sheet.getRange(2, 1, 1, row.length).setValues([row]);
+    const row = [
+      new Date(),
+      String(data.tool || '').slice(0, 60),
+      String(data.event || '').slice(0, 60),
+      String(data.detail || '').slice(0, 300),
+      String(data.session || '').slice(0, 60)
+    ];
+
+    sheet.insertRowBefore(2);
+    sheet.getRange(2, 1, 1, row.length).setValues([row]);
+  } finally {
+    lock.releaseLock();
+  }
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);
