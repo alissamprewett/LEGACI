@@ -2020,16 +2020,6 @@ async function runCombinedVideoPass(){
       const threshold=Math.max(60,video.duration*0.08);
       if(gap>threshold)S.incompleteFlag={gap,lastEnd,videoDuration:video.duration};
     }
-    // Same idea, checking the other end of the file. Deliberately MORE generous than the
-    // end-gap threshold above — a cold open, title sequence, or "previously on" segment
-    // with no dialogue needing captions is an extremely common, completely normal reason
-    // for this, more so than a long tail at the end.
-    S.incompleteStartFlag=null;
-    if(video.duration && S.cues.length){
-      const firstStart=Math.min(...S.cues.map(c=>c.start));
-      const startThreshold=Math.max(90,video.duration*0.10);
-      if(firstStart>startThreshold)S.incompleteStartFlag={firstStart,videoDuration:video.duration};
-    }
   } finally {
     scanVideo.pause();
   }
@@ -2707,22 +2697,6 @@ function buildChecklist(){
     const f=S.incompleteFlag;
     add('incomplete',{gap:{start:0,end:0}},'INCOMPLETE_FILE','complex',
       'Last caption ends at '+fmtTime(f.lastEnd).slice(0,11)+', but the video runs to '+fmtTime(f.videoDuration).slice(0,11)+' — a gap of about '+Math.round(f.gap)+'s with no captions at all. Could be a normal credits/black-frame tail, or a genuinely truncated file. Confirm against the video.');
-  }
-  if(S.incompleteStartFlag){
-    const f=S.incompleteStartFlag;
-    add('incomplete-start',{gap:{start:0,end:0}},'INCOMPLETE_FILE','complex',
-      'First caption doesn\'t start until '+fmtTime(f.firstStart).slice(0,11)+' into a '+fmtTime(f.videoDuration).slice(0,11)+' video — could be a normal cold-open/intro with no dialogue, or captions missing from the beginning. Confirm against the video.');
-  }
-  // Works from timecodes alone — no video needed — so this catches a large chunk of
-  // missing captions in the MIDDLE of a file even in text-only mode, which the video-
-  // dependent start/end checks above can't cover on their own.
-  const INTERNAL_GAP_THRESHOLD=180;
-  for(let i=1;i<S.cues.length;i++){
-    const gapDur=S.cues[i].start-S.cues[i-1].end;
-    if(gapDur>INTERNAL_GAP_THRESHOLD){
-      add('internalgap'+S.cues[i-1].end.toFixed(3),{gap:{start:S.cues[i-1].end,end:S.cues[i].start}},'INCOMPLETE_FILE','complex',
-        'No captions at all from '+fmtTime(S.cues[i-1].end).slice(0,11)+' to '+fmtTime(S.cues[i].start).slice(0,11)+' — about '+Math.round(gapDur/60)+' minute(s) with nothing covering it. Could be a legitimate long dialogue-free stretch (action, music), or a chunk of missing captions. Confirm against the source.');
-    }
   }
 
   // Persist rows once seen — fixing the underlying issue doesn't remove a row by itself
