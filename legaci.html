@@ -967,15 +967,31 @@ const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flag
 ========================================================= */
 let lastParseHadUnusualRange=false;
 function parseTime(t){
-  const m=t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
-  if(!m)return null;
-  // The regex itself only checks digit COUNT, not value range — "00:75:30.000" (minutes
-  // ≥60) matches structurally and would otherwise parse silently with zero warning, even
-  // though it's very likely a malformed timecode (a missing carry into hours, a stray
-  // digit, etc). Still returns a usable time — treated as worth a human's confirmation,
-  // not treated as definitely wrong, since the arithmetic is still well-defined either way.
-  lastParseHadUnusualRange = (+m[2]>=60) || (+m[3]>=60);
-  return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
+  t=t.trim();
+  const m=t.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/);
+  if(m){
+    // The regex itself only checks digit COUNT, not value range — "00:75:30.000" (minutes
+    // ≥60) matches structurally and would otherwise parse silently with zero warning, even
+    // though it's very likely a malformed timecode (a missing carry into hours, a stray
+    // digit, etc). Still returns a usable time — treated as worth a human's confirmation,
+    // not treated as definitely wrong, since the arithmetic is still well-defined either way.
+    lastParseHadUnusualRange = (+m[2]>=60) || (+m[3]>=60);
+    return (m[1]?+m[1]:0)*3600+(+m[2])*60+(+m[3])+(+m[4].padEnd(3,'0'))/1000;
+  }
+  // Not a decimal-seconds timecode — before giving up, check for a real but differently-
+  // formatted one: SMPTE frame-based (HH:MM:SS:FF or HH:MM:SS;FF for NTSC drop-frame).
+  // A file using this format genuinely HAS a timecode; treating it as missing just because
+  // it isn't in the more common decimal form would be a real false positive, not a caught
+  // error. Same framerate fallback already used by the timecode-jump box, for consistency.
+  const smpte=t.match(/^(\d{1,2}):(\d{2}):(\d{2})[:;](\d{1,3})$/);
+  if(smpte){
+    lastParseHadUnusualRange=false;
+    const[,hh,mm,ss,ff]=smpte;
+    const dropFrame=t.includes(';');
+    const fps=(S.meta&&S.meta.framerate)?S.meta.framerate:(dropFrame?29.97:23.976);
+    return (+hh)*3600+(+mm)*60+(+ss)+(+ff)/fps;
+  }
+  return null;
 }
 function fmtTime(s){
   const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=Math.floor(s%60),
@@ -991,8 +1007,12 @@ function parseVTT(text){
     if(!lines.length)continue;
     let i=0;
     if(/^WEBVTT|^NOTE|^STYLE/.test(lines[0]))continue;
-    if(!lines[i].includes('-->'))i++;
-    if(i>=lines.length||!lines[i].includes('-->')){ if(i<lines.length)skipped++; continue; }
+    // Search forward for the actual timecode line rather than assuming it's exactly one
+    // line down — a block with more than one metadata/comment line before the real
+    // timecode (uncommon, but real) would otherwise get counted as missing a timecode it
+    // actually has.
+    while(i<lines.length && !lines[i].includes('-->'))i++;
+    if(i>=lines.length){ skipped++; continue; }
     const[tpart,...rest]=lines[i].split('-->');
     const endTok=rest.join('-->').trim().split(/\s+/);
     let start=parseTime(tpart);
@@ -1698,11 +1718,11 @@ function buildFixedCues(counts){
     if(isNarratorId)narratorEstablished=true;
 
     const override=S.manualOverrides[srcIdx];
-    let text, settings, posTag, ostSuggested;
+    let text, settings, posTag, ostSuggested, offCenterH;
     if(override){
       text=override.text;
       settings=override.settings;
-      posTag=null; ostSuggested=null; // a manual override means the person already decided position
+      posTag=null; ostSuggested=null; offCenterH=null; // a manual override means the person already decided position
       if(!text.trim()){ counts.removed++; return; }
     } else {
       text=autoFixText(c.origText,counts);
@@ -1723,7 +1743,7 @@ function buildFixedCues(counts){
       // ORIGINAL file had a deliberate, meaningful non-center horizontal position first,
       // so a human gets a chance to confirm that's fine to lose rather than it silently
       // vanishing with no flag at all.
-      const offCenterH=detectOffCenterHorizontal(c.settings);
+      offCenterH=detectOffCenterHorizontal(c.settings);
       settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : (resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%');
       if((c.settings||'')!==settings)counts.position++;
       posTag = manualZone ? (manualZone==='bottom'?'MAN-UP':'MAN-DOWN') : null;
