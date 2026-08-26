@@ -1942,6 +1942,79 @@ function toggleWrapTag(cue,tag){
   recordOverride(cue);
 }
 
+/* =========================================================
+   MERGED DASH LINES — two speakers' dash-prefixed dialogue merged onto one
+   physical line, e.g. "-Oh, my God, I love that place! -Yeah" — distinct
+   from MISSING_DASH/EXTRA_DASH, which only look at whole-line dash
+   presence, not an embedded dash mid-line. Only proposes a split when
+   confident: the text before the embedded dash has to end with terminal
+   punctuation, since without that it could just be an interruption or aside
+   within one speaker's own line, not a real second speaker. Anything less
+   clear-cut, or any cue that would need more lines than the cap allows once
+   split, is flagged for manual review instead of guessed at.
+========================================================= */
+const DASH_LINE_LEADING_RE=/^[-\u2013\u2014]/;
+// A space, then a dash, then zero or more spaces, then real content. Catches
+// both "-Yeah" (no space after) and "- Yeah" (space after), while excluding
+// hyphenated words like "well-known" (no space before the hyphen either).
+const DASH_LINE_EMBEDDED_RE=/\s([-\u2013\u2014])\s*(?=\S)/g;
+const DASH_LINE_TERMINAL_PUNCT_RE=/[.!?]["')\u2019\u201d\]]?$/;
+
+function splitDashLine(line){
+  if(!DASH_LINE_LEADING_RE.test(line.trimStart()))return null;
+  const positions=[];
+  let m;
+  DASH_LINE_EMBEDDED_RE.lastIndex=0;
+  while((m=DASH_LINE_EMBEDDED_RE.exec(line))!==null)positions.push(m.index+1);
+  if(!positions.length)return null;
+  const parts=[];
+  let prev=0, allHighConfidence=true;
+  for(const pos of positions){
+    const before=line.slice(prev,pos).trimEnd();
+    parts.push(before);
+    if(!DASH_LINE_TERMINAL_PUNCT_RE.test(before))allHighConfidence=false;
+    prev=pos;
+  }
+  parts.push(line.slice(prev).trimEnd());
+  return {parts,allHighConfidence};
+}
+
+function fixCueDashLines(text,charsPerLine,maxLinesHard){
+  const lines=text.split('\n');
+  const candidate=[];
+  const flags=[];
+  let anyCandidate=false;
+  for(const line of lines){
+    const result=splitDashLine(line);
+    if(!result){ candidate.push(line); continue; }
+    anyCandidate=true;
+    if(!result.allHighConfidence){
+      flags.push({reason:'ambiguous',line});
+      candidate.push(line);
+      continue;
+    }
+    const overLong=result.parts.filter(p=>p.length>charsPerLine);
+    if(overLong.length){
+      flags.push({reason:'line-too-long-after-split',line,parts:result.parts});
+      candidate.push(line);
+      continue;
+    }
+    candidate.push(...result.parts);
+  }
+  if(!anyCandidate)return {changed:false,lines,flags:[]};
+  if(candidate.length>maxLinesHard){
+    return {changed:false,lines,flags:[{reason:'would-exceed-line-cap',wouldBeLines:candidate.length,cap:maxLinesHard}]};
+  }
+  const changed=candidate.length!==lines.length||candidate.some((l,i)=>l!==lines[i]);
+  return {changed,lines:candidate,flags};
+}
+
+const DASH_LINE_REASON_TEXT={
+  ambiguous:'no terminal punctuation before the embedded dash — could be an interruption or aside rather than a real second speaker',
+  'line-too-long-after-split':'splitting would produce a line over the character limit',
+  'would-exceed-line-cap':'splitting would push this cue past the line cap — needs a manual re-split'
+};
+
 const SPEECH_THRESH=0.03;
 const MAXCPS_REF=25; // reference only, for the live character-budget display — not a flag. Confirmed against Ooona's real "PLUTO TV CC SPECS" preset.
 async function runCombinedVideoPass(){
@@ -2611,6 +2684,8 @@ function buildChecklist(){
   const compareThreshold=+document.getElementById('opt-compare-threshold').value||0.5;
   const grammarOn=document.getElementById('opt-grammar').checked;
   const grammarProtected=new Set((S.personalDictionary||[]).map(t=>t.toLowerCase()));
+  const maxLenForDashSplit=+document.getElementById('opt-len').value||32;
+  S.dashSplitProposals={};
   const freshByKey={}; // groupKey -> {startKey?/stackStartA+B?/gap?, issues:[{id,tier,message}]}
   const add=(groupKey,ref,id,tier,message)=>{
     if(!freshByKey[groupKey])freshByKey[groupKey]={...ref,issues:[]};
@@ -2666,6 +2741,15 @@ function buildChecklist(){
       add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
     if(cue.offCenterH)
       add(gk,ref,'OFF_CENTER_H','difficult','Original file '+cue.offCenterH+' — this tool always centers horizontally, so that\'s been overridden. Confirm this cue didn\'t need to stay shifted (e.g. to avoid covering on-screen text) before treating it as done.');
+    const dashSplitResult=fixCueDashLines(cue.text,maxLenForDashSplit,3);
+    if(dashSplitResult.changed||dashSplitResult.flags.length){
+      S.dashSplitProposals[gk]=dashSplitResult;
+      if(dashSplitResult.changed){
+        add(gk,ref,'MERGED_DASH_LINE','difficult','Looks like two speakers\' dialogue got merged onto one line — proposed split:\n'+dashSplitResult.lines.map(l=>'  '+l).join('\n')+'\nClick "Apply split" below to accept, or edit manually if that\'s not right.');
+      } else {
+        add(gk,ref,'MERGED_DASH_LINE','difficult','Possible merged-speaker line found, but not auto-fixed: '+dashSplitResult.flags.map(f=>DASH_LINE_REASON_TEXT[f.reason]||f.reason).join(' '));
+      }
+    }
     const stripped=cue.text.replace(/♪|[-'\u2019.,!?:;"()\[\]\s@#$%&*]/g,'');
     const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
@@ -3591,9 +3675,13 @@ function render(){
         '</div>';
     } else {
       const maxLen=+document.getElementById('opt-len').value||32;
+      const dashProposal=S.dashSplitProposals[r.startKey!=null?'c'+r.startKey.toFixed(3):''];
+      const dashApplyBtn=(dashProposal&&dashProposal.changed)
+        ? '<button class="pbtn small primary" data-act="apply-dash-split" data-ri="'+ri+'">✓ Apply split</button>' : '';
       body+='<textarea spellcheck="true" class="txt-edit" data-cue="'+idxA+'">'+esc(cueA.text)+'</textarea>'+
         '<div class="livemeta" data-metafor="'+idxA+'" style="margin:4px 0">'+renderCaptionMeta(cueA.text,cueA.end-cueA.start,maxLen,MAXCPS_REF)+'</div>'+
         '<div class="actions">'+
+        dashApplyBtn+
         '<button class="pbtn small" data-act="pos-top" data-ri="'+ri+'">Move to TOP</button>'+
         '<button class="pbtn small" data-act="pos-bottom" data-ri="'+ri+'">Move to BOTTOM</button>'+
         '<button class="pbtn small" data-act="toggle-italic" data-ri="'+ri+'"><i>I</i> Italic</button>'+
@@ -3721,6 +3809,17 @@ function render(){
       buildChecklist(); render(); refreshCaptionOverlay();
       if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
       logEvent('legaci','linebreak_inserted',issueTypes);
+    } else if(act==='apply-dash-split'){
+      const idx=findCueIdxByStart(r.startKey);
+      const cue=S.cues[idx];
+      const gk='c'+r.startKey.toFixed(3);
+      const proposal=S.dashSplitProposals[gk];
+      if(!proposal||!proposal.changed){setProg('That split is no longer available — the text may have changed since it was proposed.',true);return;}
+      cue.text=proposal.lines.join('\n');
+      recordOverride(cue);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg('Split applied — two speakers\' merged line separated onto their own lines.');
+      logEvent('legaci','dash_split_applied',issueTypes);
     } else if(act==='split'){
       const idx=findCueIdxByStart(r.startKey);
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
