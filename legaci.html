@@ -2792,7 +2792,16 @@ function buildChecklist(){
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
     if(cue.posTag)add(gk,ref,'OST','difficult',(cue.posTag.includes('UP')?'On-screen text at bottom — caption moved to top.':'On-screen text at top — caption moved to bottom.')+' (manual zone, already applied)');
     if(cue.ostSuggested==='middle')add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic in the MIDDLE of the frame — this caption may need repositioning to avoid it, but there\'s no single obvious "move to the opposite side" fix like there is for a top/bottom overlap. Draw a manual OST zone below (or reposition by hand) if this looks correct, or leave it if it\'s a false positive.');
-    else if(cue.ostSuggested)add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
+    else if(cue.ostSuggested){
+      // Checks the cue's ACTUAL current position rather than trusting the frozen
+      // suggestion alone — found by testing, not assumed: clicking "Move to TOP/BOTTOM"
+      // never cleared this flag, so it kept re-firing with an increasingly stale message
+      // claiming "nothing has been moved" even after the position genuinely had been.
+      const wantsOpposite = cue.ostSuggested==='bottom' ? 'top' : 'bottom';
+      const alreadyMoved = resolveTopOrBottom(cue.settings)===wantsOpposite;
+      if(!alreadyMoved)
+        add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
+    }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
       const cl=S.speakerClusters[cue.srcIdx];
       add(gk,ref,'SPKR_OFF','complex',S.speakerFlags[cue.srcIdx].reason+(cl?' Voice-fingerprint group: '+cl+'.':''));
