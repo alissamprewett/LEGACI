@@ -2015,6 +2015,42 @@ const DASH_LINE_REASON_TEXT={
   'would-exceed-line-cap':'splitting would push this cue past the line cap — needs a manual re-split'
 };
 
+/** Splits every dash-led line at every embedded dash, ignoring the confidence
+ *  and length checks the automatic pass applies. Only ever used as a one-time
+ *  starting point for a "Suggest split" action on an AMBIGUOUS row — the
+ *  result lands in the textarea for a human to look at and adjust, exactly
+ *  like any other manual edit, never applied on its own. */
+function forceSplitDashLines(lines){
+  const out=[];
+  for(const line of lines){
+    const r=splitDashLine(line);
+    if(r)out.push(...r.parts.filter(p=>p.trim()!==''));
+    else out.push(line);
+  }
+  return out;
+}
+/** Greedy word-wrap to the character limit, keeping each dash-led speaker
+ *  turn starting on its own line — used alongside forceSplitDashLines so the
+ *  suggested starting point is at least in the right shape, not a single
+ *  giant unwrapped line. Can overrun the line cap; that's shown via the
+ *  existing highlight overlay rather than silently dropped, same as any
+ *  other manual edit. */
+function rewrapDashLines(lines,charsPerLine){
+  const blocks=forceSplitDashLines(lines);
+  const out=[];
+  for(const block of blocks){
+    const words=block.trim().split(/\s+/).filter(Boolean);
+    let cur='';
+    for(const w of words){
+      if(!cur)cur=w;
+      else if((cur+' '+w).length<=charsPerLine)cur+=' '+w;
+      else { out.push(cur); cur=w; }
+    }
+    if(cur)out.push(cur);
+  }
+  return out.length?out:lines;
+}
+
 const SPEECH_THRESH=0.03;
 const MAXCPS_REF=25; // reference only, for the live character-budget display — not a flag. Confirmed against Ooona's real "PLUTO TV CC SPECS" preset.
 async function runCombinedVideoPass(){
@@ -3678,10 +3714,12 @@ function render(){
       const dashProposal=S.dashSplitProposals[r.startKey!=null?'c'+r.startKey.toFixed(3):''];
       const dashApplyBtn=(dashProposal&&dashProposal.changed)
         ? '<button class="pbtn small primary" data-act="apply-dash-split" data-ri="'+ri+'">✓ Apply split</button>' : '';
+      const dashSuggestBtn=(dashProposal&&!dashProposal.changed&&dashProposal.flags.length)
+        ? '<button class="pbtn small" data-act="suggest-dash-split" data-ri="'+ri+'">✂ Suggest split</button>' : '';
       body+='<textarea spellcheck="true" class="txt-edit" data-cue="'+idxA+'">'+esc(cueA.text)+'</textarea>'+
         '<div class="livemeta" data-metafor="'+idxA+'" style="margin:4px 0">'+renderCaptionMeta(cueA.text,cueA.end-cueA.start,maxLen,MAXCPS_REF)+'</div>'+
         '<div class="actions">'+
-        dashApplyBtn+
+        dashApplyBtn+dashSuggestBtn+
         '<button class="pbtn small" data-act="pos-top" data-ri="'+ri+'">Move to TOP</button>'+
         '<button class="pbtn small" data-act="pos-bottom" data-ri="'+ri+'">Move to BOTTOM</button>'+
         '<button class="pbtn small" data-act="toggle-italic" data-ri="'+ri+'"><i>I</i> Italic</button>'+
@@ -3820,6 +3858,20 @@ function render(){
       buildChecklist(); render(); refreshCaptionOverlay();
       setProg('Split applied — two speakers\' merged line separated onto their own lines.');
       logEvent('legaci','dash_split_applied',issueTypes);
+    } else if(act==='suggest-dash-split'){
+      const idx=findCueIdxByStart(r.startKey);
+      const cue=S.cues[idx];
+      const maxLen=+document.getElementById('opt-len').value||32;
+      // A one-time starting point, not a decision — forces a split at every embedded
+      // dash regardless of confidence, then rewraps to fit. Lands in the textarea for
+      // the operator to look at and adjust with the same tools as any manual edit;
+      // never applied on its own.
+      const suggested=rewrapDashLines(cue.text.split('\n'),maxLen).join('\n');
+      cue.text=suggested;
+      recordOverride(cue);
+      buildChecklist(); render(); refreshCaptionOverlay();
+      setProg('Suggested split filled in — review it, this ignored the usual confidence check on purpose. Adjust as needed before moving on.',true);
+      logEvent('legaci','dash_split_suggested',issueTypes);
     } else if(act==='split'){
       const idx=findCueIdxByStart(r.startKey);
       const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
