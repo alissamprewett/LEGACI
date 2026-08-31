@@ -3004,6 +3004,14 @@ async function scanGapsForMissingContent(){
   S.gapFlags=[];
   if(!scanVideo.duration)return;
   const MIN_GAP=0.6; // was 1.5s — musical stings/sound effects are often brief
+  // Found from a real file: most MISSING_CAPTION flags were landing on gaps well under
+  // 1.5s (a 1.13s and a 0.75s example, both right at the edge of MIN_GAP) — consistent
+  // with a brief laugh, reaction, or background chatter VAD correctly heard as speech,
+  // not a genuinely missed line of dialogue. MIN_GAP itself stays low since sound/music
+  // cues legitimately can be this brief; only the speech classification needs the
+  // higher bar, since "a whole line got skipped" is a different claim than "there was
+  // a brief non-speech sound here."
+  const SPEECH_GAP_MIN=1.5;
   const cues=S.cues.slice().sort((a,b)=>a.start-b.start);
   const gaps=[]; let cursor=0;
   cues.forEach(c=>{ if(c.start-cursor>MIN_GAP)gaps.push({start:cursor,end:c.start}); cursor=Math.max(cursor,c.end); });
@@ -3043,7 +3051,7 @@ async function scanGapsForMissingContent(){
         if(isNonSpeechEnergy){ if(harmonicity>=HARMONICITY_THRESH)musicHits++; else soundHits++; }
       }catch(e){}
     }
-    if(samples>0 && speechHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
+    if(samples>0 && speechHits>=Math.ceil(samples/2) && dur>=SPEECH_GAP_MIN)S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
     else if(samples>0 && musicHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
     else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
     // On-screen text/graphic that persists into a captionless stretch (e.g. a chyron that
@@ -4360,21 +4368,29 @@ document.getElementById('bulk-top-all-events').addEventListener('click',()=>bulk
 document.getElementById('bulk-bottom-all-events').addEventListener('click',()=>bulkMoveAllEvents('bottom'));
 document.getElementById('bulk-validate').addEventListener('click',()=>{
   pushHistory();
-  const n=S.selectedRows.size;
-  S.selectedRows.forEach(k=>S.validated.add(k));
+  let done=0,skipped=0;
+  S.selectedRows.forEach(k=>{
+    const r=S.rowsByKey[k];
+    if(r && (r.issues||[]).length>1){ skipped++; return; }
+    S.validated.add(k); done++;
+  });
   S.selectedRows.clear();
   buildChecklist(); render();
-  setProg('Validated '+n+' selected item(s) in bulk.');
-  logEvent('legaci','bulk_validate',n+'_rows');
+  setProg('Validated '+done+' selected item(s) in bulk'+(skipped?' — '+skipped+' skipped (still had more than one outstanding issue each)':'')+'.');
+  logEvent('legaci','bulk_validate',done+'_rows_'+skipped+'_skipped');
 });
 document.getElementById('bulk-falseflag').addEventListener('click',()=>{
   pushHistory();
-  const n=S.selectedRows.size;
-  S.selectedRows.forEach(k=>{ S.validated.add(k); S.falseFlagged.add(k); });
+  let done=0,skipped=0;
+  S.selectedRows.forEach(k=>{
+    const r=S.rowsByKey[k];
+    if(r && (r.issues||[]).length>1){ skipped++; return; }
+    S.validated.add(k); S.falseFlagged.add(k); done++;
+  });
   S.selectedRows.clear();
   buildChecklist(); render();
-  setProg('Marked '+n+' selected item(s) as false flags in bulk.');
-  logEvent('legaci','bulk_false_flagged',n+'_rows');
+  setProg('Marked '+done+' selected item(s) as false flags in bulk'+(skipped?' — '+skipped+' skipped (still had more than one outstanding issue each)':'')+'.');
+  logEvent('legaci','bulk_false_flagged',done+'_rows_'+skipped+'_skipped');
 });
 function bulkMove(zone){
   pushHistory();
@@ -4768,6 +4784,16 @@ function render(){
         : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
       logEvent('legaci','speaker_field_edited',issueTypes);
     } else if(act==='validate'){
+      // Both Validate and False-flag clear the WHOLE row, not a single issue within it —
+      // found from real usage data that this was silently dropping other, untouched
+      // issues on the same cue (a row flagged for both OST_SUGGEST and ASTERISK would
+      // lose the ASTERISK flag entirely the moment OST_SUGGEST alone got addressed).
+      // Blocking outright when more than one issue remains, rather than just warning,
+      // since the whole point is that a partial fix should never look like a full one.
+      if((r.issues||[]).length>1){
+        setProg('This row still has '+r.issues.length+' separate issues — validating would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+        return;
+      }
       S.validated.add(r.key);
       logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
       buildChecklist(); render();
@@ -4778,6 +4804,10 @@ function render(){
       // indistinguishable in the data (both just fired flag_validated), which meant
       // a high validate count on some issue type could mean it's usually right or
       // usually wrong, with no way to tell which from the numbers alone.
+      if((r.issues||[]).length>1){
+        setProg('This row still has '+r.issues.length+' separate issues — marking one as a false flag would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+        return;
+      }
       S.validated.add(r.key);
       S.falseFlagged.add(r.key);
       logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
