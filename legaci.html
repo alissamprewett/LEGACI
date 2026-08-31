@@ -2573,7 +2573,14 @@ function sampleAudioEnergyAndVoice(){
     if(corr>bestCorr){bestCorr=corr;bestOff=off;}
   }
   const pitchHz = bestOff>0 ? scanAudioCtx.sampleRate/bestOff : 0;
-  return {energy,centroidHz,pitchHz};
+  // The autocorrelation peak strength was already being computed for pitch detection but
+  // discarded — normalized against the signal's own energy, it doubles as a genuine
+  // tonality signal: close to 1 for a strongly periodic/tonal sound (music), much lower
+  // for broadband, noise-like audio (most sound effects, impact/environmental sounds).
+  // Not a precise measurement — the two loops run over slightly different sample ranges —
+  // but a reasonable heuristic for "does this sound tonal," which is the actual question.
+  const harmonicity = sum>1e-9 ? Math.max(0,Math.min(1,bestCorr/sum)) : 0;
+  return {energy,centroidHz,pitchHz,harmonicity};
 }
 
 let blazefaceModel=null, blazefaceLoading=null;
@@ -3004,28 +3011,40 @@ async function scanGapsForMissingContent(){
   for(const g of gaps){
     const dur=g.end-g.start;
     const n=Math.min(4,Math.max(1,Math.round(dur/3)));
-    let speechHits=0,soundHits=0,samples=0;
+    let speechHits=0,soundHits=0,musicHits=0,samples=0;
     // Was: "pitch between 70-400Hz = speech, otherwise sound" — a crude range guess that
     // could misclassify low-pitched music or a high-pitched sound effect either way now
     // that a real speech-detection model (VAD) is available. Same graceful fallback to the
     // old heuristic as everywhere else VAD gets used, if it didn't load for some reason.
+    // Once something is confirmed non-speech, harmonicity decides music vs. a generic
+    // sound effect — a real tonality signal, not a second guess stacked on the first one.
+    // 0.5 was an untested guess and turned out wrong when actually checked: even a perfect
+    // sine wave (the most tonal signal possible) only scores ~0.45 under this normalization,
+    // due to a structural mismatch between the two loops it's built from (different step
+    // sizes and ranges) — not a flaw worth changing given pitch detection already depends
+    // on it elsewhere, just a reason the ratio never approaches 1.0. Recalibrated against
+    // actual measured values: noise ~0.035, a real chord ~0.235, pure sine ~0.45.
+    const HARMONICITY_THRESH=0.15;
     for(let s=0;s<n;s++){
       const t=g.start+dur*((s+1)/(n+1))+S.offset;
       try{
         await seekAndWait(scanVideo,t);
         samples++;
+        let isNonSpeechEnergy=false, harmonicity=0;
         if(S.vadSegments){
-          if(isTimeInSpeechSegments(t-S.offset,S.vadSegments))speechHits++;
-          else if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH)soundHits++;
+          if(isTimeInSpeechSegments(t-S.offset,S.vadSegments)){ speechHits++; }
+          else{ const v=sampleAudioEnergyAndVoice(); if(v.energy>SPEECH_THRESH){ isNonSpeechEnergy=true; harmonicity=v.harmonicity; } }
         } else {
           const v=sampleAudioEnergyAndVoice();
           if(v.energy>SPEECH_THRESH){
-            if(v.pitchHz>=70&&v.pitchHz<=400)speechHits++; else soundHits++;
+            if(v.pitchHz>=70&&v.pitchHz<=400){ speechHits++; } else { isNonSpeechEnergy=true; harmonicity=v.harmonicity; }
           }
         }
+        if(isNonSpeechEnergy){ if(harmonicity>=HARMONICITY_THRESH)musicHits++; else soundHits++; }
       }catch(e){}
     }
     if(samples>0 && speechHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
+    else if(samples>0 && musicHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
     else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
     // On-screen text/graphic that persists into a captionless stretch (e.g. a chyron that
     // outlasts its caption, or end credits) — the per-cue detector can't see this since
@@ -3647,7 +3666,10 @@ function buildChecklist(){
         'Speech-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption covering it — possible missing caption(s) or an out-of-sync file. Confirm against the audio.');
     else if(g.kind==='sound')
       add('gap'+g.start.toFixed(3),{gap:g},'MISSING_SOUND_CUE','complex',
-        'Non-speech audio (music/effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no [sound cue] nearby — possible missing sound/music cue. Confirm against the audio.');
+        'Non-speech, non-tonal audio (a sound effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no [sound cue] nearby — possible missing sound cue. Confirm against the audio.');
+    else if(g.kind==='music')
+      add('gap'+g.start.toFixed(3),{gap:g},'MISSING_MUSIC_CUE','complex',
+        'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no ♪ music cue nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
     else if(g.kind==='ost')
       add('gap'+g.start.toFixed(3),{gap:g},'OST_GAP','difficult',
         'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — likely a graphic that outlasted its caption (e.g. end credits). No caption to move; add one manually if dialogue needs to go here, or ignore if this is just end-credits/no-dialogue footage.');
