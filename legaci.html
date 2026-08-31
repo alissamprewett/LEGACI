@@ -168,6 +168,8 @@ video{width:100%;display:block;border-radius:13px}
 .pbtn:hover{background:#eef4ff}
 .pbtn.validate{border-color:var(--ok);color:var(--ok)}
 .pbtn.validate:hover{background:#e9f9ef}
+.pbtn.falseflag{border-color:var(--warn);color:var(--warn)}
+.pbtn.falseflag:hover{background:#fff2dc}
 .pbtn.small{padding:5px 9px;font-size:10px}
 .pbtn.primary{background:var(--accent-grad);border:0;color:#fff;font-weight:700}
 .zonelist{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
@@ -1307,7 +1309,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
     S.src=parseVTT(S.vttRaw);
     S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0; S.parseUnusualRange=S.src._unusualRange||0;
     S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
-    S.validated=new Set(); S.everSeen=new Set(); S.speakerPool=[]; S.rowsByKey={}; S.selectedRows=new Set();
+    S.validated=new Set(); S.falseFlagged=new Set(); S.everSeen=new Set(); S.speakerPool=[]; S.rowsByKey={}; S.selectedRows=new Set();
     S.viewMode='issues'; S.searchMatches=[]; S.searchMatchIdx=0; S.manualOverrides={}; S.annotations={};
     S.offset=0; updateSyncDisplay();
     document.getElementById('findBar').style.display='none'; document.getElementById('find-input').value='';
@@ -1436,6 +1438,7 @@ function pushHistory(){
     src:JSON.parse(JSON.stringify(S.src)),
     cues:JSON.parse(JSON.stringify(S.cues)),
     validated:new Set(S.validated),
+    falseFlagged:new Set(S.falseFlagged),
     annotations:{...S.annotations},
     manualOverrides:JSON.parse(JSON.stringify(S.manualOverrides)),
     speakerPool:[...S.speakerPool],
@@ -1447,7 +1450,7 @@ function pushHistory(){
 function undo(){
   if(!S.history.length){ setProg('Nothing to undo.',true); return; }
   const snap=S.history.pop();
-  S.src=snap.src; S.cues=snap.cues; S.validated=snap.validated; S.annotations=snap.annotations;
+  S.src=snap.src; S.cues=snap.cues; S.validated=snap.validated; S.falseFlagged=snap.falseFlagged||new Set(); S.annotations=snap.annotations;
   S.manualOverrides=snap.manualOverrides; S.speakerPool=snap.speakerPool; S.selectedRows=snap.selectedRows;
   buildChecklist(); render(); refreshCaptionOverlay();
   updateUndoCount();
@@ -3652,7 +3655,7 @@ function render(){
   document.getElementById('mainheadTitle').textContent="What's left";
   const visible=visibleReport();
   S.currentVisible=visible;
-  document.getElementById('mainheadSub').textContent=S.report.length+' row(s) outstanding ('+visible.length+' shown) · '+S.validated.size+' validated';
+  document.getElementById('mainheadSub').textContent=S.report.length+' row(s) outstanding ('+visible.length+' shown) · '+(S.validated.size-S.falseFlagged.size)+' validated'+(S.falseFlagged.size?' · '+S.falseFlagged.size+' false flag(s)':'');
   renderIssueFilterBar();
   renderBulkBar();
   const readyTag=document.getElementById('readyTag');
@@ -3667,7 +3670,8 @@ function render(){
   const box=document.getElementById('checklist');
   box.innerHTML='';
   if(!S.report.length){
-    box.innerHTML='<div class="allclear">✓ Nothing outstanding'+(S.validated.size?' — '+S.validated.size+' item(s) validated. You\'re good to go.':' — all clear.')+'</div>';
+    const genuineCount=S.validated.size-S.falseFlagged.size;
+    box.innerHTML='<div class="allclear">✓ Nothing outstanding'+(S.validated.size?' — '+genuineCount+' item(s) validated'+(S.falseFlagged.size?', '+S.falseFlagged.size+' marked as false flag(s)':'')+'. You\'re good to go.':' — all clear.')+'</div>';
     return;
   }
   if(!visible.length){
@@ -3697,7 +3701,8 @@ function render(){
       (evIdx!=null&&evIdx>=0?'<span class="evnum">#'+(evIdx+1)+'</span>':'')+
       '<span class="tc">'+fmtTime(ref.start).slice(0,11)+' → '+fmtTime(ref.end).slice(0,11)+'</span>'+
       badges+
-      '<button class="pbtn small validate" data-act="validate" data-ri="'+ri+'" style="margin-left:auto">✓ Validate</button></div>'+
+      '<button class="pbtn small validate" data-act="validate" data-ri="'+ri+'" style="margin-left:auto">✓ Validate</button>'+
+      '<button class="pbtn small falseflag" data-act="false-flag" data-ri="'+ri+'">✕ False flag</button></div>'+
       msgs;
 
     if(isGap){
@@ -3924,6 +3929,17 @@ function render(){
       logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
       buildChecklist(); render();
       setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
+    } else if(act==='false-flag'){
+      // Deliberately separate from Validate, both in the UI and in what gets logged —
+      // "I fixed a real issue" and "this was never a real issue" were previously
+      // indistinguishable in the data (both just fired flag_validated), which meant
+      // a high validate count on some issue type could mean it's usually right or
+      // usually wrong, with no way to tell which from the numbers alone.
+      S.validated.add(r.key);
+      S.falseFlagged.add(r.key);
+      logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
+      buildChecklist(); render();
+      setProg('Marked as a false flag — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
     }
   }));
 }
