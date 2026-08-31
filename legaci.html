@@ -96,13 +96,14 @@ a.back:hover{color:#fff}
 
 .main{padding:20px 24px 60px;min-width:0}
 @media(min-width:1180px){
-  .main{display:grid;grid-template-columns:minmax(360px,540px) 1fr;gap:28px}
+  .main{display:grid;grid-template-columns:minmax(360px,900px) 1fr;gap:28px}
   .mainRight{min-width:0}
 }
 .videopane{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:2px;padding-bottom:14px}
+.stickyControls{position:sticky;top:0;z-index:4;background:var(--bg);padding-top:8px;padding-bottom:2px}
 .collapsehead{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);cursor:pointer;padding:8px 2px;user-select:none;max-width:720px;border-top:1px solid var(--line);margin-top:4px}
 .collapsehead:hover{color:var(--yellow)}
-.videowrap{position:relative;background:#000;border:1px solid var(--line);border-radius:14px;max-width:720px;margin-bottom:0;display:none;box-shadow:var(--shadow-md)}
+.videowrap{position:relative;background:#000;border:1px solid var(--line);border-radius:14px;max-width:100%;min-width:280px;width:720px;margin-bottom:0;display:none;box-shadow:var(--shadow-md);resize:horizontal;overflow:hidden}
 .videowrap.show{display:block}
 .tcbar{max-width:720px;display:none}
 .tcbar-track{position:relative;height:16px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;margin-top:6px;cursor:pointer;overflow:hidden}
@@ -203,6 +204,7 @@ video{width:100%;display:block;border-radius:13px}
 .item{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:13px 16px;transition:border-color .12s,transform .12s,box-shadow .12s;box-shadow:var(--shadow-sm)}
 .item:hover{border-color:var(--line2);box-shadow:var(--shadow-md)}
 .item.active{border-color:var(--yellow)}
+.item.playing{box-shadow:inset 3px 0 0 var(--info),0 0 0 1px var(--info);background:#eef6ff}
 .item .top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;cursor:pointer}
 .item .tc{font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600}
 .item .evnum{font-family:var(--mono);font-size:10px;color:var(--faint);background:var(--panel2);border-radius:8px;padding:2px 6px}
@@ -599,6 +601,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <button class="pbtn small" id="find-close">✕ Close</button>
   </div>
 
+  <div class="stickyControls" id="stickyControls">
   <div class="mainhead" id="mainhead" style="display:none">
     <h2 id="mainheadTitle">What's left</h2>
     <div class="sub" id="mainheadSub"></div>
@@ -641,6 +644,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <button class="pbtn small" id="bulk-bottom-all-events">Move selected to BOTTOM</button>
     <button class="pbtn small" id="bulk-add-dash-all-events">+ Add leading dash</button>
     <button class="pbtn small" id="bulk-remove-dash-all-events">− Remove leading dash</button>
+  </div>
   </div>
 
   <div class="empty" id="empty">
@@ -929,6 +933,7 @@ function syncStickyOffsets(){
   const mb=document.querySelector('.menubar');
   mb.style.top=h.offsetHeight+'px';
   document.getElementById('videopane').style.top=(h.offsetHeight+mb.offsetHeight)+'px';
+  document.getElementById('stickyControls').style.top=(h.offsetHeight+mb.offsetHeight)+'px';
 }
 window.addEventListener('resize',syncStickyOffsets);
 syncStickyOffsets();
@@ -959,7 +964,7 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   meta:null,kidvid:false,speakerFlags:{},voiceFeatures:{},speakerClusters:{},clusterNames:{},fixCounts:null,
   validated:new Set(),everSeen:new Set(),speakerPool:[],issueFilter:'all',currentVisible:[],selectedRows:new Set(),
   selectedCueIndices:new Set(),lastClickedCueIdx:null,
-  viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],playBoundEnd:null,
+  viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
   refTranscript:null,
   charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[]};
@@ -1722,11 +1727,11 @@ function buildFixedCues(counts){
     if(isNarratorId)narratorEstablished=true;
 
     const override=S.manualOverrides[srcIdx];
-    let text, settings, posTag, ostSuggested, offCenterH;
+    let text, settings, ostSuggested, offCenterH;
     if(override){
       text=override.text;
       settings=override.settings;
-      posTag=null; ostSuggested=null; offCenterH=null; // a manual override means the person already decided position
+      ostSuggested=null; offCenterH=null; // a manual override means the person already decided position
       if(!text.trim()){ counts.removed++; return; }
     } else {
       text=autoFixText(c.origText,counts);
@@ -1740,18 +1745,21 @@ function buildFixedCues(counts){
       const autoZone=S.detected[srcIdx]?S.detected[srcIdx].zone:null;
       const manualHitObj=S.ost.find(o=>Math.max(0,Math.min(c.end,o.end)-Math.max(c.start,o.start))>0.15);
       const manualZone=manualHitObj?(manualHitObj.zone||'bottom'):null;
-      // Only a MANUAL zone (you explicitly drew it) auto-applies. An auto-detected zone is
-      // a suggestion only — it shows up in the checklist with a Move button, nothing moves
-      // until you confirm it.
+      // A manually-drawn zone used to auto-apply immediately, on the reasoning that you'd
+      // drawn it on purpose. In practice a zone drawn for one part of the video can overlap
+      // OTHER, unrelated captions nearby that were never meant to move — and those got
+      // silently repositioned with zero warning, which is exactly the kind of surprise this
+      // tool should never spring on someone. A manual zone is now a suggestion too, same as
+      // an auto-detected one: shown in the checklist with a Move button, nothing moves the
+      // caption from wherever the file itself already says it is until you confirm it.
       // Horizontal alignment is always forced to center below — capture whether the
       // ORIGINAL file had a deliberate, meaningful non-center horizontal position first,
       // so a human gets a chance to confirm that's fine to lose rather than it silently
       // vanishing with no flag at all.
       offCenterH=detectOffCenterHorizontal(c.settings);
-      settings = manualZone==='bottom' ? 'align:middle line:0%' : manualZone==='top' ? 'align:middle line:90%' : (resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%');
+      settings = resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
       if((c.settings||'')!==settings)counts.position++;
-      posTag = manualZone ? (manualZone==='bottom'?'MAN-UP':'MAN-DOWN') : null;
-      ostSuggested = (autoZone && !manualZone) ? autoZone : null;
+      ostSuggested = autoZone || manualZone || null;
     }
 
     let lines=text.split('\n');
@@ -1771,7 +1779,7 @@ function buildFixedCues(counts){
     chunks.forEach((ch,ci)=>{
       const share=ch.join(' ').length/totalChars;
       const chunkEnd = ci===chunks.length-1 ? c.end : cursor+dur*share;
-      out.push({start:cursor,end:chunkEnd,settings,text:ch.join('\n'),srcIdx,posTag,narratorContext,ostSuggested,offCenterH});
+      out.push({start:cursor,end:chunkEnd,settings,text:ch.join('\n'),srcIdx,narratorContext,ostSuggested,offCenterH});
       cursor=chunkEnd;
     });
   });
@@ -2795,8 +2803,7 @@ function buildChecklist(){
     const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
-    if(cue.posTag)add(gk,ref,'OST','difficult',(cue.posTag.includes('UP')?'On-screen text at bottom — caption moved to top.':'On-screen text at top — caption moved to bottom.')+' (manual zone, already applied)');
-    if(cue.ostSuggested==='middle')add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic in the MIDDLE of the frame — this caption may need repositioning to avoid it, but there\'s no single obvious "move to the opposite side" fix like there is for a top/bottom overlap. Draw a manual OST zone below (or reposition by hand) if this looks correct, or leave it if it\'s a false positive.');
+    if(cue.ostSuggested==='middle')add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic (detected, or a manually-drawn zone) in the MIDDLE of the frame — this caption may need repositioning to avoid it, but there\'s no single obvious "move to the opposite side" fix like there is for a top/bottom overlap. Reposition by hand if this looks correct, or leave it if it\'s a false positive.');
     else if(cue.ostSuggested){
       // Checks the cue's ACTUAL current position rather than trusting the frozen
       // suggestion alone — found by testing, not assumed: clicking "Move to TOP/BOTTOM"
@@ -2805,7 +2812,7 @@ function buildChecklist(){
       const wantsOpposite = cue.ostSuggested==='bottom' ? 'top' : 'bottom';
       const alreadyMoved = resolveTopOrBottom(cue.settings)===wantsOpposite;
       if(!alreadyMoved)
-        add(gk,ref,'OST_SUGGEST','difficult','Detected on-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is CURRENTLY still at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to actually reposition it, or leave it if this is a false positive.');
+        add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic (detected, or a manually-drawn zone) at the '+cue.ostSuggested.toUpperCase()+' of the frame. This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.');
     }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
       const cl=S.speakerClusters[cue.srcIdx];
@@ -3218,7 +3225,6 @@ function renderAllEvents(){
     S.lastViewedCueIdx=i;
     if(S.videoURL){
       video.currentTime=Math.max(0,S.cues[i].start+S.offset+0.01);
-      S.playBoundEnd=S.cues[i].end+S.offset;
       video.pause();
     }
     box.querySelectorAll('.item.active').forEach(a=>a.classList.remove('active'));
@@ -3696,6 +3702,7 @@ function render(){
     el.dataset.select=ri;
     const isStack=r.stackStartA!=null;
     const isGap=!!r.gap;
+    if(!isGap)el.dataset.cueidx=isStack?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
     const ref=rowRef(r);
     const resolved=r.issues.length===0;
 
@@ -3961,15 +3968,28 @@ function render(){
 function refreshCaptionOverlay(){
   if(S.scanning)return;
   const t=video.currentTime-S.offset;
-  const c=S.cues.find(c=>t>=c.start&&t<c.end);
+  const idx=S.cues.findIndex(c=>t>=c.start&&t<c.end);
+  const c=idx>=0?S.cues[idx]:null;
   const ov=document.getElementById('capoverlay'),tx=document.getElementById('captext');
   if(c){ tx.textContent=c.text; ov.style.display='block';
-    const lm=/line:\s*(\d+)/.exec(c.settings||''); ov.className='capoverlay '+((lm&&+lm[1]<50)?'pos-top':'pos-bottom');
+    // Same resolveTopOrBottom used everywhere else this question comes up — a separate,
+    // cruder regex here previously ignored WebVTT's non-percentage line-number convention
+    // and any decimal value, meaning the preview could show a caption in the wrong spot
+    // even when the file's own settings were completely valid, just in a form this
+    // specific check didn't parse the same way the rest of the app does.
+    ov.className='capoverlay '+(resolveTopOrBottom(c.settings)==='top'?'pos-top':'pos-bottom');
   } else ov.style.display='none';
+  // Tracks which row corresponds to whatever's actually on screen right now, live, as
+  // the video plays — distinct from .active (the row that was last clicked/selected),
+  // which doesn't move on its own once playback continues past it.
+  document.querySelectorAll('.item.playing').forEach(el=>el.classList.remove('playing'));
+  if(idx>=0){
+    const row=document.querySelector('.item[data-cueidx="'+idx+'"]');
+    if(row)row.classList.add('playing');
+  }
 }
 video.addEventListener('timeupdate',()=>{
   refreshCaptionOverlay(); updatePlayheadUI();
-  if(S.playBoundEnd!=null && video.currentTime>=S.playBoundEnd){ video.pause(); S.playBoundEnd=null; }
 });
 video.addEventListener('loadedmetadata',()=>{ document.getElementById('tcbar').style.display='block'; renderTicks(); });
 
@@ -3987,7 +4007,6 @@ function selectReportRow(idx){
   S.lastViewedCueIdx=findCueIdxByStart(ref.start);
   if(S.videoURL){
     video.currentTime=Math.max(0,ref.start+S.offset+0.01);
-    S.playBoundEnd=ref.end+S.offset;
     video.pause();
   }
   document.getElementById('nav-pos').textContent=(idx+1)+'/'+visible.length;
