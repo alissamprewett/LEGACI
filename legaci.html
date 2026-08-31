@@ -622,6 +622,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <button class="pbtn small" id="bulk-remove-dash">− Remove leading dash</button>
       <button class="pbtn small" id="bulk-apply-suggested">Apply each row's own OST suggestion</button>
       <button class="pbtn small validate" id="bulk-validate">✓ Validate selected</button>
+      <button class="pbtn small falseflag" id="bulk-falseflag">✕ False flag selected</button>
     </div>
     <div class="prow">
       <span class="plabel">Same speaker in all selected?</span>
@@ -3533,6 +3534,15 @@ document.getElementById('bulk-validate').addEventListener('click',()=>{
   buildChecklist(); render();
   setProg('Validated '+n+' selected item(s) in bulk.');
   logEvent('legaci','bulk_validate',n+'_rows');
+});
+document.getElementById('bulk-falseflag').addEventListener('click',()=>{
+  pushHistory();
+  const n=S.selectedRows.size;
+  S.selectedRows.forEach(k=>{ S.validated.add(k); S.falseFlagged.add(k); });
+  S.selectedRows.clear();
+  buildChecklist(); render();
+  setProg('Marked '+n+' selected item(s) as false flags in bulk.');
+  logEvent('legaci','bulk_false_flagged',n+'_rows');
 });
 function bulkMove(zone){
   pushHistory();
