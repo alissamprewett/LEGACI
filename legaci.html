@@ -3072,15 +3072,20 @@ async function scanGapsForMissingContent(){
     if(samples>0 && speechHits>=Math.ceil(samples/2) && dur>=SPEECH_GAP_MIN)S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
     else if(samples>0 && musicHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
     else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
-    // On-screen text/graphic that persists into a captionless stretch (e.g. a chyron that
-    // outlasts its caption, or end credits) — the per-cue detector can't see this since
-    // there's no caption cue here to attach a flag to. Reuses the regions the main OST
-    // scan already found for the whole video, rather than re-sampling frames here — this
-    // used to run its own separate frame analysis, which broke silently (caught by its own
-    // try/catch) when that older detection code was replaced; using the already-computed
-    // regions directly is both the fix and a simplification, not just a patch.
-    const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
-    if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
+    // Was: fired unconditionally on any overlapping graphic, regardless of whether anyone
+    // was even talking during that gap — which meant ordinary dialogue-free footage (end
+    // credits, b-roll) got flagged just as often as a genuinely missed line, with nothing
+    // to tell them apart except a human checking each one. Reuses the exact same
+    // speech-majority evidence already computed above for MISSING_CAPTION: a graphic with
+    // no caption is only worth a flag when the audio also suggests someone was actually
+    // speaking during that same window — otherwise this is very likely just a normal
+    // graphic with nothing to caption, which is the "ignore" case the message itself
+    // already described, just no longer showing up as a flag to begin with.
+    const hasSpeechEvidence = samples>0 && speechHits>=Math.ceil(samples/2);
+    if(hasSpeechEvidence){
+      const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
+      if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
+    }
   }
 }
 
@@ -3698,7 +3703,7 @@ function buildChecklist(){
         'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no ♪ music cue nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
     else if(g.kind==='ost')
       add('gap'+g.start.toFixed(3),{gap:g},'OST_GAP','difficult',
-        'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — likely a graphic that outlasted its caption (e.g. end credits). No caption to move; add one manually if dialogue needs to go here, or ignore if this is just end-credits/no-dialogue footage.');
+        'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — and the audio also suggests someone is talking during this window, not just dialogue-free footage. Likely a genuinely missed caption. No caption to move; add one manually in your VTT if dialogue needs to go here, then re-run.');
   });
   if(S.syncFlag){
     const f=S.syncFlag;
