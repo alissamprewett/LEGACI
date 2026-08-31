@@ -1342,6 +1342,7 @@ document.getElementById('file-video').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
   if(S.videoURL)URL.revokeObjectURL(S.videoURL);
   S.videoURL=URL.createObjectURL(f);
+  S.videoFile=f;
   video.src=S.videoURL;
   scanVideo.src=S.videoURL;
   document.getElementById('drop-video').classList.add('loaded');
@@ -1931,6 +1932,79 @@ function patchDiff(a,b){
   let diff=0; for(let i=0;i<a.data.length;i+=4)diff+=Math.abs(a.data[i]-b.data[i]);
   return diff/(a.data.length/4)/255;
 }
+
+/* =========================================================
+   VOICE ACTIVITY DETECTION (Silero VAD via @ricky0123/vad-web) —
+   replaces the earlier crude "raw audio energy above a fixed threshold"
+   check used to decide whether a cue's window contains speech at all.
+   Energy alone can't tell speech apart from music or background noise,
+   which meant a loud non-dialogue moment could get treated as "someone's
+   talking off-screen." NonRealTimeVAD runs on a pre-decoded audio buffer
+   (not a live microphone), which matches this tool's actual use case —
+   analyzing an already-recorded video, not listening live.
+========================================================= */
+let vadInstance=null, vadLoading=null;
+function loadVAD(){
+  if(vadInstance)return Promise.resolve(vadInstance);
+  if(vadLoading)return vadLoading;
+  vadLoading=new Promise((resolve,reject)=>{
+    const s1=document.createElement('script');
+    s1.src='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script');
+      s2.src='https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js';
+      s2.onload=async()=>{
+        try{
+          vadInstance=await vad.NonRealTimeVAD.new({
+            onnxWASMBasePath:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
+            baseAssetPath:'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/'
+          });
+          resolve(vadInstance);
+        }catch(err){reject(err);}
+      };
+      s2.onerror=()=>reject(new Error('VAD model blocked'));
+      document.head.appendChild(s2);
+    };
+    s1.onerror=()=>reject(new Error('onnxruntime-web blocked'));
+    document.head.appendChild(s1);
+  });
+  return vadLoading;
+}
+// Decodes the WHOLE video file's audio track once, up front — VAD performs better with
+// full context than with isolated snippets, and one pass is far cheaper than running a
+// separate decode for every cue. Mixed down to mono (VAD expects a single channel);
+// left at the file's own native sample rate, since NonRealTimeVAD.run() takes the sample
+// rate as a parameter and handles resampling internally rather than requiring 16kHz input.
+async function decodeFullAudioTrack(file){
+  const arrayBuf=await file.arrayBuffer();
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const audioBuf=await ctx.decodeAudioData(arrayBuf);
+  const nativeSampleRate=audioBuf.sampleRate;
+  let mono;
+  if(audioBuf.numberOfChannels===1){
+    mono=audioBuf.getChannelData(0);
+  } else {
+    const ch0=audioBuf.getChannelData(0), ch1=audioBuf.getChannelData(1);
+    mono=new Float32Array(ch0.length);
+    for(let i=0;i<ch0.length;i++)mono[i]=(ch0[i]+ch1[i])/2;
+  }
+  ctx.close();
+  return {samples:mono,sampleRate:nativeSampleRate};
+}
+// Runs VAD once over the full track, returning speech segments in SECONDS (matching
+// this tool's own timecode units — the library itself reports milliseconds).
+async function computeVADSpeechSegments(file){
+  const vadModel=await loadVAD();
+  const {samples,sampleRate}=await decodeFullAudioTrack(file);
+  const segments=[];
+  for await(const seg of vadModel.run(samples,sampleRate)){
+    segments.push({start:seg.start/1000,end:seg.end/1000});
+  }
+  return segments;
+}
+function isTimeInSpeechSegments(t,segments){
+  return segments.some(s=>t>=s.start&&t<=s.end);
+}
 const HAS_ID=/^\s*(\(|\[)?[A-Z][A-Z .'-]{1,20}(\)|\])?\s*:/;
 // A speaker ID replaces the need for a leading dash (dashes are only for two speakers
 // sharing one caption event) — so strip any existing ID AND a leading dash before inserting a new ID.
@@ -2068,6 +2142,15 @@ const MAXCPS_REF=25; // reference only, for the live character-budget display �
 async function runCombinedVideoPass(){
   let faceOk=true;
   try{ await loadBlazeface(); }catch(err){ faceOk=false; setProg('Face model unavailable ('+err.message+') — OST + voice checks still run, off-screen-speaker face check skipped.','info'); }
+  let vadSegments=null;
+  if(S.videoFile){
+    try{
+      setProg('Loading voice activity model and decoding the full audio track…','info');
+      vadSegments=await computeVADSpeechSegments(S.videoFile);
+    }catch(err){
+      setProg('Voice activity model unavailable ('+err.message+') — falling back to the raw audio-energy check for speech detection.','info');
+    }
+  }
   ensureScanAudioGraph();
   scanVideo.play().catch(()=>{});
   S.detected={}; S.speakerFlags={}; S.voiceFeatures={};
@@ -2122,17 +2205,29 @@ async function runCombinedVideoPass(){
       // cues (not just one) suggests the caption track is offset from the audio.
       if((c.origText||'').trim()){
         syncConsidered++;
-        const insideQuiet=Math.max(...energies,0)<=SPEECH_THRESH;
+        const insideQuiet = vadSegments
+          ? !vadSegments.some(s=>Math.min(c.end,s.end)-Math.max(c.start,s.start)>0)
+          : Math.max(...energies,0)<=SPEECH_THRESH;
         try{
-          await seekAndWait(scanVideo,Math.max(0,c.start-0.4+S.offset));
-          if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)preHits++;
-          await seekAndWait(scanVideo,c.end+0.4+S.offset);
-          if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)postHits++;
+          const preT=Math.max(0,c.start-0.4+S.offset), postT=c.end+0.4+S.offset;
+          const preHasSpeech = vadSegments ? isTimeInSpeechSegments(preT-S.offset,vadSegments) : null;
+          const postHasSpeech = vadSegments ? isTimeInSpeechSegments(postT-S.offset,vadSegments) : null;
+          await seekAndWait(scanVideo,preT);
+          if((vadSegments ? preHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)preHits++;
+          await seekAndWait(scanVideo,postT);
+          if((vadSegments ? postHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)postHits++;
         }catch(e){}
       }
 
       const text=c.origText||'';
-      const speechLikely=Math.max(...energies,0)>SPEECH_THRESH;
+      // VAD (when it loaded) checks whether this cue's actual time RANGE overlaps any
+      // detected speech segment — a real improvement over the old approach, which only
+      // asked "was raw audio energy above a threshold at a few sample points," unable to
+      // tell speech apart from music or background noise. Falls back to the old check
+      // only if the VAD model failed to load for some reason (blocked, decode error).
+      const speechLikely = vadSegments
+        ? vadSegments.some(s=>Math.min(c.end,s.end)-Math.max(c.start,s.start)>0)
+        : Math.max(...energies,0)>SPEECH_THRESH;
       if(text.trim() && !HAS_ID.test(text) && speechLikely){
         if(!faceSeen && faceOk)S.speakerFlags[i]={reason:'No face visible during dialogue — candidate off-screen speaker (or phone-call cutaway).'};
         else if(faceSeen && patches.length===2 && patchDiff(patches[0],patches[1])<0.02)
