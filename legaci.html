@@ -2684,6 +2684,16 @@ async function computeVADSpeechSegments(file){
 function isTimeInSpeechSegments(t,segments){
   return segments.some(s=>t>=s.start&&t<=s.end);
 }
+// Two distinct VAD segments overlapping a cue's own time range means a real pause in
+// speech happened somewhere inside that window — VAD only splits continuous audio into
+// separate segments when there's genuine silence between them, so this is real evidence
+// of a turn-take, not just a text-structure guess. Returns null when VAD data isn't
+// available at all, so callers can tell "no corroboration possible" apart from "checked,
+// found only one continuous segment."
+function speechSegmentCountInRange(start,end,segments){
+  if(!segments)return null;
+  return segments.filter(s=>Math.min(end,s.end)-Math.max(start,s.start)>0).length;
+}
 const HAS_ID=/^\s*(\(|\[)?[A-Z][A-Z .'-]{1,20}(\)|\])?\s*:/;
 // A speaker ID replaces the need for a leading dash (dashes are only for two speakers
 // sharing one caption event) — so strip any existing ID AND a leading dash before inserting a new ID.
@@ -2846,6 +2856,7 @@ async function runCombinedVideoPass(){
     setProg('On-screen-text detection unavailable ('+err.message+') — other checks still run; use manual OST zones below.','info');
   }
   S.ostRegions=ostRegions; S.ostPic=ostPic;
+  S.vadSegments=vadSegments;
   let preHits=0, postHits=0, syncConsidered=0;
   let blocked=false;
   try{
@@ -2994,14 +3005,23 @@ async function scanGapsForMissingContent(){
     const dur=g.end-g.start;
     const n=Math.min(4,Math.max(1,Math.round(dur/3)));
     let speechHits=0,soundHits=0,samples=0;
+    // Was: "pitch between 70-400Hz = speech, otherwise sound" — a crude range guess that
+    // could misclassify low-pitched music or a high-pitched sound effect either way now
+    // that a real speech-detection model (VAD) is available. Same graceful fallback to the
+    // old heuristic as everywhere else VAD gets used, if it didn't load for some reason.
     for(let s=0;s<n;s++){
       const t=g.start+dur*((s+1)/(n+1))+S.offset;
       try{
         await seekAndWait(scanVideo,t);
-        const v=sampleAudioEnergyAndVoice();
         samples++;
-        if(v.energy>SPEECH_THRESH){
-          if(v.pitchHz>=70&&v.pitchHz<=400)speechHits++; else soundHits++;
+        if(S.vadSegments){
+          if(isTimeInSpeechSegments(t-S.offset,S.vadSegments))speechHits++;
+          else if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH)soundHits++;
+        } else {
+          const v=sampleAudioEnergyAndVoice();
+          if(v.energy>SPEECH_THRESH){
+            if(v.pitchHz>=70&&v.pitchHz<=400)speechHits++; else soundHits++;
+          }
         }
       }catch(e){}
     }
@@ -3508,8 +3528,15 @@ function buildChecklist(){
     const lines=cue.text.split('\n');
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
     const dashLineCount=lines.filter(l=>/^\s*-\s*\S/.test(l)).length;
-    if(extraDashOn && dashLineCount===1)
-      add(gk,ref,'EXTRA_DASH','difficult','Only one line in this cue starts with a dash — a dash marks a second speaker, and there\'s no second dash-led line here to distinguish it from. Confirm this is really a second speaker (the rest of this cue is likely just a wrapped continuation of the same person\'s line), or remove the dash.');
+    if(extraDashOn && dashLineCount===1){
+      // If VAD actually heard two separate speech segments inside this cue's own window,
+      // that's real evidence a turn-take may have genuinely happened here, even though
+      // only one line got a dash — weakens the "this dash is unnecessary" conclusion
+      // enough that flagging it would likely just be wrong, not just less certain.
+      const segCount=speechSegmentCountInRange(cue.start,cue.end,S.vadSegments);
+      if(segCount===null||segCount<2)
+        add(gk,ref,'EXTRA_DASH','difficult','Only one line in this cue starts with a dash — a dash marks a second speaker, and there\'s no second dash-led line here to distinguish it from. Confirm this is really a second speaker (the rest of this cue is likely just a wrapped continuation of the same person\'s line), or remove the dash.');
+    }
     if(grammarOn){
       const bodyText=cue.text.replace(HAS_ID,'');
       checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
@@ -3544,8 +3571,19 @@ function buildChecklist(){
       return /[.!?]["'\u2019)\]]?\s*$/.test(t);
     };
     const sentenceBreakBetweenLines = lines.slice(0,-1).some(endsWithRealSentenceBreak);
-    if(lines.length>1 && sentenceBreakBetweenLines && lines.every(l=>!/^\s*-/.test(l)) && !HAS_ID.test(cue.text) && !cue.narratorContext && document.getElementById('opt-missingdash').checked)
-      add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — confirm whether two people are speaking here.');
+    if(lines.length>1 && sentenceBreakBetweenLines && lines.every(l=>!/^\s*-/.test(l)) && !HAS_ID.test(cue.text) && !cue.narratorContext && document.getElementById('opt-missingdash').checked){
+      // This check's whole problem was conflating a wrapped two-sentence single-speaker
+      // line with an actual speaker change — text structure alone can't tell those apart.
+      // When VAD is available, require it to have actually heard two separate speech
+      // segments inside this cue's window before flagging at all — real audio evidence
+      // of a pause, not just a sentence boundary that happened to land near a line break.
+      // Falls back to the old text-only behavior only when VAD genuinely isn't available.
+      const segCount=speechSegmentCountInRange(cue.start,cue.end,S.vadSegments);
+      if(segCount===null)
+        add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — confirm whether two people are speaking here. (No audio available to corroborate — text structure only.)');
+      else if(segCount>=2)
+        add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — the audio also shows '+segCount+' separate speech segments inside this cue\'s window, corroborating a possible turn-take. Confirm whether two people are speaking here.');
+    }
     if(/\*/.test(cue.text))
       add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
     if(cue.offCenterH)
