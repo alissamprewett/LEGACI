@@ -2994,7 +2994,6 @@ async function scanGapsForMissingContent(){
     const dur=g.end-g.start;
     const n=Math.min(4,Math.max(1,Math.round(dur/3)));
     let speechHits=0,soundHits=0,samples=0;
-    const bottomFlags=[],topFlags=[],bottomProfiles=[],topProfiles=[];
     for(let s=0;s<n;s++){
       const t=g.start+dur*((s+1)/(n+1))+S.offset;
       try{
@@ -3004,28 +3003,19 @@ async function scanGapsForMissingContent(){
         if(v.energy>SPEECH_THRESH){
           if(v.pitchHz>=70&&v.pitchHz<=400)speechHits++; else soundHits++;
         }
-        try{
-          const band=analyzeFrame(scanVideo);
-          bottomFlags.push(band.bottom); topFlags.push(band.top);
-          bottomProfiles.push(band.bottomProfile); topProfiles.push(band.topProfile);
-        }catch(e){}
       }catch(e){}
     }
     if(samples>0 && speechHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
     else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
     // On-screen text/graphic that persists into a captionless stretch (e.g. a chyron that
     // outlasts its caption, or end credits) — the per-cue detector can't see this since
-    // there's no caption cue here to attach a flag to. Same static-across-samples check as
-    // the main OST detector, applied across every sampled point in the gap, not just two.
-    if(bottomFlags.length>=2 && bottomFlags.every(Boolean)){
-      let allOverlap=true;
-      for(let i=1;i<bottomProfiles.length;i++) if(profileOverlap(bottomProfiles[0],bottomProfiles[i])<0.55)allOverlap=false;
-      if(allOverlap)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:'bottom'});
-    } else if(topFlags.length>=2 && topFlags.every(Boolean)){
-      let allOverlap=true;
-      for(let i=1;i<topProfiles.length;i++) if(profileOverlap(topProfiles[0],topProfiles[i])<0.55)allOverlap=false;
-      if(allOverlap)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:'top'});
-    }
+    // there's no caption cue here to attach a flag to. Reuses the regions the main OST
+    // scan already found for the whole video, rather than re-sampling frames here — this
+    // used to run its own separate frame analysis, which broke silently (caught by its own
+    // try/catch) when that older detection code was replaced; using the already-computed
+    // regions directly is both the fix and a simplification, not just a patch.
+    const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
+    if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
   }
 }
 
