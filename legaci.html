@@ -334,8 +334,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <h3>Run settings</h3>
     <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
-    <div class="opt"><label>Flag single-line leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
-    <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise.</div>
+    <div class="opt"><label>Flag unnecessary leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
+    <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise. Catches a cue with only one dash-led line anywhere in it (including a single speaker's dialogue that wraps across multiple lines) — a dash marks a second speaker, so with no second one to distinguish, it likely isn't needed.</div>
     <div class="opt"><label>Flag missing dash on multi-sentence cues</label><button class="infobtn" data-infofor="missingdash-hint">i</button><input type="checkbox" id="opt-missingdash"></div>
     <div class="substep infotext" id="missingdash-hint">off by default as of this build — found from real usage data that this fired constantly on completely ordinary single-speaker dialogue (e.g. "That's not what I meant." / "I was talking about the movie.") any time two short sentences from ONE speaker happened to wrap across lines, since a sentence-ending line followed by a new sentence looks identical whether it's one speaker or two. Turn on if you'd rather have the extra (currently noisy) flag than miss a real one.</div>
     <div class="opt"><label>Convert ALL CAPS to mixed case</label><input type="checkbox" id="opt-mixedcase"></div>
@@ -2739,8 +2739,9 @@ function buildChecklist(){
     if(notes%2===1)add(gk,ref,'NOTES','difficult','Unpaired ♪ — lyrics should open and close with ♪.');
     const lines=cue.text.split('\n');
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
-    if(extraDashOn && lines.length===1 && /^\s*-\s*\S/.test(lines[0]))
-      add(gk,ref,'EXTRA_DASH','difficult','Single-line cue starts with a dash — confirm this is really a second speaker and not a leftover/extra dash.');
+    const dashLineCount=lines.filter(l=>/^\s*-\s*\S/.test(l)).length;
+    if(extraDashOn && dashLineCount===1)
+      add(gk,ref,'EXTRA_DASH','difficult','Only one line in this cue starts with a dash — a dash marks a second speaker, and there\'s no second dash-led line here to distinguish it from. Confirm this is really a second speaker (the rest of this cue is likely just a wrapped continuation of the same person\'s line), or remove the dash.');
     if(grammarOn){
       const bodyText=cue.text.replace(HAS_ID,'');
       checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
