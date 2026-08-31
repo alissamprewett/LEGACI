@@ -1571,7 +1571,25 @@ function autoFixText(rawText,counts){
   }).join('\n');
   if(t!==beforeSpace)counts.space++;
   const beforeCase=t;
-  t=t.replace(/([.!?] )([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  // Was: only caught a sentence start mid-line, after ". " on the SAME line — a genuine
+  // new sentence beginning right after a line break (no space, just a newline) was never
+  // touched at all, since the regex required a literal space character. Lines are already
+  // trimmed by this point (the spacing step above), so a sentence-ending mark immediately
+  // followed by a newline reliably means a new sentence starts on the next line.
+  t=t.replace(/(^|[.!?] |[.!?]\n)([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  // Known-name capitalization — reuses the exact same source convertToMixedCase already
+  // draws from (speaker pool, metadata actors, personal dictionary), but non-destructively:
+  // convertToMixedCase lowercases the whole cue first before re-capitalizing, which is
+  // correct for its actual job (converting an ALL-CAPS file down to normal case) but would
+  // silently undo any capitalization already correct elsewhere in a normal mixed-case file.
+  // This only touches an exact, known name found in the wrong case — nothing else.
+  const knownNamesForCase=[...new Set([...(S.speakerPool||[]),...((S.meta&&S.meta.actors)||[]),...(S.personalDictionary||[])])];
+  knownNamesForCase.forEach(name=>{
+    if(!name)return;
+    const titled=name.split(' ').map(titleCaseWord).join(' ');
+    const re=new RegExp('\\b'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi');
+    t=t.replace(re,(m2)=>m2===titled?m2:titled);
+  });
   if(t!==beforeCase)counts.caseFix++;
   // redundant terminal punctuation: "Am I first? ." / "Sure!." -> "Am I first?" / "Sure!"
   // (ellipsis "..." is protected — only a single stray . or , right after ? or ! is stripped)
