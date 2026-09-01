@@ -564,6 +564,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
     <div class="opt"><label>Enable this check</label><input type="checkbox" id="opt-compare-enabled"></div>
     <div class="opt"><label>Flag sensitivity (lower = stricter)</label><input type="number" id="opt-compare-threshold" value="0.5" step="0.05" min="0.1" max="0.9" style="width:70px"></div>
+    <div class="opt"><label>No reference loaded? Generate one (Whisper)</label><input type="checkbox" id="opt-autoref-enabled"></div>
+    <div class="plabel" style="margin-top:4px">Only runs when this check is on above, a video is loaded, and no file was uploaded here — transcribes the audio (Whisper "small" model, same tier as Transcribe) and corrects names/terms against your Speaker Pool, Personal Dictionary, and any cast metadata before comparing. This is a machine-generated reference, not a human-verified one — treat mismatches the same way, as "these two disagree," never as a confirmed caption error. Adds real time to analysis; only turn on if you don't already have a transcript to upload.</div>
     <div class="plabel" id="compare-status" style="margin-top:6px"></div>
   </div>
 
@@ -800,7 +802,7 @@ document.addEventListener('mousedown',e=>{
    Export/Import as a file lets a profile move to another machine or get
    shared with a teammate.
 ========================================================= */
-const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
+const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange','opt-autoref-enabled'];
 function buildProfile(){
   const settings={};
   PROFILE_SETTINGS_IDS.forEach(id=>{
@@ -1003,7 +1005,7 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   selectedCueIndices:new Set(),lastClickedCueIdx:null,
   viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
-  refTranscript:null,
+  refTranscript:null,refTranscriptSource:null,
   charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[],
   ooonaProject:null,scanCacheLoaded:false,placementDiff:null};
 const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row',posTop:'Move current row to TOP',posBottom:'Move current row to BOTTOM'};
@@ -1080,6 +1082,7 @@ document.getElementById('file-reftranscript').addEventListener('change',e=>{
   reader.onload=()=>{
     const cues=parseVTT(reader.result).map(c=>({start:c.start,end:c.end,text:(c.origText||'').replace(/<[^>]+>/g,' ')}));
     S.refTranscript=cues;
+    S.refTranscriptSource='manual';
     document.getElementById('drop-reftranscript').classList.add('loaded');
     document.getElementById('reftranscript-name').textContent=f.name+' — '+cues.length+' segment(s)';
     document.getElementById('compare-status').textContent='Loaded. Check "Enable this check" and re-run analysis to compare.';
@@ -1109,6 +1112,117 @@ function wordDiffSimilarity(a,b){
 function referenceTextForWindow(start,end){
   if(!S.refTranscript)return '';
   return S.refTranscript.filter(s=>s.end>start && s.start<end).map(s=>s.text.trim()).join(' ').trim();
+}
+
+/* =========================================================
+   AUTO-GENERATED REFERENCE TRANSCRIPT (Whisper) — for the Transcript
+   Mismatch check, when nobody has a reference transcript to upload.
+   Runs the same Whisper pipeline Transcribe already uses, then corrects
+   the output's proper nouns against known vocabulary before handing it
+   to the comparison. Doesn't touch anything else in this check.
+
+   Why correction happens AFTER transcription, not by prompting the model
+   beforehand: priming Whisper with the caption's own dialogue text and
+   then comparing its output back against that same text would bias the
+   model toward reproducing what it was just told is there — exactly the
+   failure mode (a dropped or wrong word) this check exists to catch.
+   That would make the check less sensitive while looking like an
+   improvement (fewer flags). A post-hoc correction pass only touches
+   Whisper's well-documented weak point — misspelling names and unusual
+   terms it's never heard before — without telling it what the sentence
+   should say, so the transcription's judgment of content stays independent.
+========================================================= */
+function levenshteinChars(a,b){
+  const dp=Array.from({length:a.length+1},()=>new Array(b.length+1).fill(0));
+  for(let i=0;i<=a.length;i++)dp[i][0]=i;
+  for(let j=0;j<=b.length;j++)dp[0][j]=j;
+  for(let i=1;i<=a.length;i++)
+    for(let j=1;j<=b.length;j++)
+      dp[i][j]= a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[a.length][b.length];
+}
+// Sentence-initial words are always capitalized regardless of whether they're a name —
+// without excluding common ones, "The" at a sentence start could get "corrected" into a
+// short vocab name that happens to be within edit distance 1. Only guards common short
+// words; anything longer is naturally protected by the distance cap below.
+const ASR_VOCAB_STOPWORDS=new Set(['i',"i'm","i've","i'll","i'd",'the','he','she','we','they','you','it','this','that','my','his','her','our','your','their','a','an','and','but','so','if','as','at','in','on','no','yes','ok','well','oh','hey','now','then','when','what','who','why','how']);
+function correctAsrVocabWord(word,vocabTerms){
+  if(!/^[A-Z]/.test(word))return word; // only touch tokens Whisper itself capitalized
+  const lower=word.toLowerCase();
+  if(ASR_VOCAB_STOPWORDS.has(lower))return word;
+  if(word.length<3)return word;
+  let best=null,bestDist=Infinity;
+  for(const term of vocabTerms){
+    const d=levenshteinChars(lower,term.toLowerCase());
+    if(d<bestDist){bestDist=d;best=term;}
+  }
+  const maxDist=word.length<=4?1:2; // only a genuinely close miss gets corrected
+  return (best&&bestDist>0&&bestDist<=maxDist) ? best : word;
+}
+function correctAsrVocabText(text,vocabTerms){
+  if(!vocabTerms||!vocabTerms.length)return text;
+  return text.split(/(\s+)/).map(tok=>{
+    if(!tok||/^\s+$/.test(tok))return tok;
+    const prefix=tok.match(/^[^A-Za-z0-9']+/)?.[0]||'';
+    const core=tok.slice(prefix.length).replace(/[^A-Za-z0-9']+$/,'');
+    const suffix=tok.slice(prefix.length+core.length);
+    if(!core)return tok;
+    return prefix+correctAsrVocabWord(core,vocabTerms)+suffix;
+  }).join('');
+}
+// Same known-name source convertToMixedCase/auto-capitalization already use — speaker
+// pool, metadata actors, personal dictionary — so this doesn't introduce a second,
+// diverging idea of "known names" into the tool.
+function asrVocabTerms(){
+  const raw=[...(S.speakerPool||[]),...((S.meta&&S.meta.actors)||[]),...(S.personalDictionary||[])].filter(Boolean);
+  // Correction runs one ASR word at a time, so a multi-word entry like a full actor name
+  // ("Sarah Michelle Gellar") has to be broken into its individual name tokens too, or it
+  // can never match anything — nothing in a transcript will ever equal the whole phrase.
+  const words=raw.flatMap(t=>t.split(/\s+/)).filter(w=>w.length>=3);
+  return [...new Set([...raw,...words])];
+}
+
+let whisperPipelinePromise=null;
+function loadWhisperPipeline(){
+  if(whisperPipelinePromise)return whisperPipelinePromise;
+  whisperPipelinePromise=(async()=>{
+    const mod=await import(LEGACI_DEPS.url('transformersJs'));
+    mod.env.allowLocalModels=false;
+    return await mod.pipeline('automatic-speech-recognition','Xenova/whisper-small');
+  })();
+  return whisperPipelinePromise;
+}
+// Resamples to 16kHz mono, matching what Transcribe's Whisper pipeline expects — a
+// separate decode from decodeFullAudioTrack() above, which deliberately keeps VAD's
+// audio at native sample rate. Two decodes of the same file, not a shared one; kept
+// separate so a change to one path can't silently affect the other.
+async function decodeAudioTo16kMono(file){
+  const arrayBuffer=await file.arrayBuffer();
+  const decodeCtx=new (window.AudioContext||window.webkitAudioContext)();
+  let audioBuffer;
+  try{ audioBuffer=await decodeCtx.decodeAudioData(arrayBuffer); }
+  finally{ decodeCtx.close&&decodeCtx.close(); }
+  const offlineCtx=new OfflineAudioContext(1,Math.ceil(audioBuffer.duration*16000),16000);
+  const src=offlineCtx.createBufferSource();
+  src.buffer=audioBuffer;
+  src.connect(offlineCtx.destination);
+  src.start(0);
+  const rendered=await offlineCtx.startRendering();
+  return rendered.getChannelData(0);
+}
+// Produces the same {start,end,text} shape referenceTextForWindow() already expects
+// from a manually-uploaded .vtt/.srt, so nothing downstream needs to know or care
+// which source it came from.
+async function generateAutoReferenceTranscript(file){
+  const pipe=await loadWhisperPipeline();
+  const audio=await decodeAudioTo16kMono(file);
+  const output=await pipe(audio,{chunk_length_s:30,stride_length_s:5,return_timestamps:true});
+  const vocab=asrVocabTerms();
+  return (output.chunks||[]).map(c=>({
+    start:c.timestamp[0]??0,
+    end:c.timestamp[1]??((c.timestamp[0]??0)+3),
+    text:correctAsrVocabText((c.text||'').trim(),vocab)
+  })).filter(c=>c.text);
 }
 function serializeVTT(cues){
   let out='WEBVTT\n\n';
@@ -1381,6 +1495,10 @@ document.getElementById('file-video').addEventListener('change',e=>{
   if(S.videoURL)URL.revokeObjectURL(S.videoURL);
   S.videoURL=URL.createObjectURL(f);
   S.videoFile=f;
+  // A previously auto-generated reference belongs to whatever video produced it — a new
+  // video means it's stale and would silently compare captions against the wrong audio.
+  // A manually-uploaded reference is left alone; the operator chose that one deliberately.
+  if(S.refTranscriptSource==='auto-whisper'){ S.refTranscript=null; S.refTranscriptSource=null; }
   video.src=S.videoURL;
   scanVideo.src=S.videoURL;
   document.getElementById('drop-video').classList.add('loaded');
@@ -2712,13 +2830,15 @@ const LEGACI_DEPS = {
     vadBase:   'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/',
     faceApi:   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
     faceModels:'https://justadudewhohacks.github.io/face-api.js/models',
-    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
+    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights',
+    transformersJs:'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js'
   },
   local: {
     tfjs:'vendor/tfjs-4.17.0.min.js', blazeface:'vendor/blazeface-0.1.0.min.js',
     ort:'vendor/ort-1.22.0.wasm.min.js', ortBase:'vendor/ort-1.22.0/',
     vad:'vendor/vad-web-0.0.29.min.js', vadBase:'vendor/vad-web-0.0.29/',
-    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models'
+    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models',
+    transformersJs:'vendor/transformers-2.17.2.min.js'
   },
   url(k){ return this.base ? this.base+'/'+this.local[k] : this.cdn[k]; }
 };
@@ -2985,6 +3105,22 @@ async function runCombinedVideoPass(){
       vadSegments=await computeVADSpeechSegments(S.videoFile);
     }catch(err){
       setProg('Voice activity model unavailable ('+err.message+') — falling back to the raw audio-energy check for speech detection.','info');
+    }
+  }
+  // Only fires when Transcript Mismatch is on, nobody uploaded a reference, a video is
+  // loaded, and the auto-generate option is checked — never silently, since this adds
+  // real time on top of everything else in this pass.
+  const autoRefWanted=document.getElementById('opt-compare-enabled').checked
+    && document.getElementById('opt-autoref-enabled').checked
+    && !S.refTranscript && S.videoFile;
+  if(autoRefWanted){
+    try{
+      setProg('No reference transcript loaded — generating one from the audio (Whisper, small)…','info');
+      S.refTranscript=await generateAutoReferenceTranscript(S.videoFile);
+      S.refTranscriptSource='auto-whisper';
+      document.getElementById('compare-status').textContent='Auto-generated reference from audio ('+S.refTranscript.length+' segment(s)) — machine-generated, not human-verified.';
+    }catch(err){
+      setProg('Auto-reference transcription unavailable ('+err.message+') — Transcript Mismatch check skipped this run; upload a reference manually if you need it.','info');
     }
   }
   ensureScanAudioGraph();
@@ -3722,8 +3858,12 @@ function buildChecklist(){
       if(refText.trim()){
         const captionText=cue.text.replace(HAS_ID,'').replace(/^-\s*/gm,'').replace(/\n/g,' ');
         const sim=wordDiffSimilarity(captionText,refText);
-        if(sim<compareThreshold)
-          add(gk,ref,'TRANSCRIPT_MISMATCH','complex','Caption disagrees with the reference transcript for this timespan (similarity '+Math.round(sim*100)+'%). Reference says: "'+refText.slice(0,120)+(refText.length>120?'…':'')+'" — check which one (if either) is right; the reference can be wrong too.');
+        if(sim<compareThreshold){
+          const srcNote=S.refTranscriptSource==='auto-whisper'
+            ? ' Reference was auto-generated from this video\'s audio (Whisper), not human-verified — a Whisper mishearing looks identical to a real caption error, so treat this as a weaker signal than an uploaded reference.'
+            : '';
+          add(gk,ref,'TRANSCRIPT_MISMATCH','complex','Caption disagrees with the reference transcript for this timespan (similarity '+Math.round(sim*100)+'%). Reference says: "'+refText.slice(0,120)+(refText.length>120?'…':'')+'" — check which one (if either) is right; the reference can be wrong too.'+srcNote);
+        }
       }
     }
     if(cue.faceMatchSuggestion)
