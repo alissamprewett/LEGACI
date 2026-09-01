@@ -554,7 +554,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
   </div>
 
   <div class="panelbox" id="comparepanel">
-    <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt) and flags captions whose text diverges significantly from what the reference has for the same timespan. This flags a DISAGREEMENT, not a confirmed error — the reference transcript can itself be wrong (ASR mishears things constantly), especially on names. Treat every flag as "these two disagree, a human should check," never as "the caption is wrong."</div>
+    <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt), or generates one from the video's audio. Nothing in this tool compares captions against it — the Transcript Mismatch check that used to do that has been removed — so loading a reference here currently has no effect on the analysis or on what gets flagged.</div>
     <div class="prow">
       <label class="drop" id="drop-reftranscript" style="flex:1">
         <span class="dk">FILE</span>
@@ -562,10 +562,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
         <input type="file" id="file-reftranscript" accept=".vtt,.srt">
       </label>
     </div>
-    <div class="opt"><label>Enable this check</label><input type="checkbox" id="opt-compare-enabled"></div>
-    <div class="opt"><label>Flag sensitivity (lower = stricter)</label><input type="number" id="opt-compare-threshold" value="0.5" step="0.05" min="0.1" max="0.9" style="width:70px"></div>
     <div class="opt"><label>No reference loaded? Generate one (Whisper)</label><input type="checkbox" id="opt-autoref-enabled"></div>
-    <div class="plabel" style="margin-top:4px">Only runs when this check is on above, a video is loaded, and no file was uploaded here — transcribes the audio (Whisper "small" model, same tier as Transcribe) and corrects names/terms against your Speaker Pool, Personal Dictionary, and any cast metadata before comparing. This is a machine-generated reference, not a human-verified one — treat mismatches the same way, as "these two disagree," never as a confirmed caption error. Adds real time to analysis; only turn on if you don't already have a transcript to upload.</div>
+    <div class="plabel" style="margin-top:4px">Only runs when a video is loaded and no file was uploaded here — transcribes the audio (Whisper "small" model, same tier as Transcribe) and corrects names/terms against your Speaker Pool, Personal Dictionary, and any cast metadata. This is a machine-generated reference, not a human-verified one. Adds real time to analysis, and nothing currently consumes the result, so leave it off unless that changes.</div>
     <div class="plabel" id="compare-status" style="margin-top:6px"></div>
   </div>
 
@@ -1085,52 +1083,27 @@ document.getElementById('file-reftranscript').addEventListener('change',e=>{
     S.refTranscriptSource='manual';
     document.getElementById('drop-reftranscript').classList.add('loaded');
     document.getElementById('reftranscript-name').textContent=f.name+' — '+cues.length+' segment(s)';
-    document.getElementById('compare-status').textContent='Loaded. Check "Enable this check" and re-run analysis to compare.';
+    document.getElementById('compare-status').textContent='Loaded. Note that nothing in this tool currently compares captions against it.';
   };
   reader.readAsText(f);
 });
-// Word-level edit distance (words as the unit, not characters) — a missing word is a
-// deletion, a misheard/mistyped word is a substitution. Similarity is normalized so it
-// stays comparable across short and long lines.
-function wordDiffSimilarity(a,b){
-  const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9' ]/g,' ').split(/\s+/).filter(Boolean);
-  const wa=norm(a), wb=norm(b);
-  if(!wa.length && !wb.length)return 1;
-  if(!wa.length || !wb.length)return 0;
-  const dp=Array.from({length:wa.length+1},()=>new Array(wb.length+1).fill(0));
-  for(let i=0;i<=wa.length;i++)dp[i][0]=i;
-  for(let j=0;j<=wb.length;j++)dp[0][j]=j;
-  for(let i=1;i<=wa.length;i++){
-    for(let j=1;j<=wb.length;j++){
-      if(wa[i-1]===wb[j-1])dp[i][j]=dp[i-1][j-1];
-      else dp[i][j]=1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
-    }
-  }
-  const dist=dp[wa.length][wb.length];
-  return 1-(dist/Math.max(wa.length,wb.length));
-}
-function referenceTextForWindow(start,end){
-  if(!S.refTranscript)return '';
-  return S.refTranscript.filter(s=>s.end>start && s.start<end).map(s=>s.text.trim()).join(' ').trim();
-}
-
 /* =========================================================
-   AUTO-GENERATED REFERENCE TRANSCRIPT (Whisper) — for the Transcript
-   Mismatch check, when nobody has a reference transcript to upload.
-   Runs the same Whisper pipeline Transcribe already uses, then corrects
-   the output's proper nouns against known vocabulary before handing it
-   to the comparison. Doesn't touch anything else in this check.
+   AUTO-GENERATED REFERENCE TRANSCRIPT (Whisper)
 
-   Why correction happens AFTER transcription, not by prompting the model
-   beforehand: priming Whisper with the caption's own dialogue text and
-   then comparing its output back against that same text would bias the
-   model toward reproducing what it was just told is there — exactly the
-   failure mode (a dropped or wrong word) this check exists to catch.
-   That would make the check less sensitive while looking like an
-   improvement (fewer flags). A post-hoc correction pass only touches
-   Whisper's well-documented weak point — misspelling names and unusual
-   terms it's never heard before — without telling it what the sentence
-   should say, so the transcription's judgment of content stays independent.
+   Transcribes the video's audio and corrects the output's proper nouns
+   against known vocabulary. This was built to feed the Transcript Mismatch
+   check; that check has been removed, so nothing in this file reads the
+   result today. Kept deliberately, with the pipeline intact, so a future
+   consumer (or an export) can use it without rebuilding any of this.
+
+   Why correction happens AFTER transcription rather than by prompting the
+   model beforehand: priming Whisper with the caption's own dialogue text
+   biases it toward reproducing what it was just told is there, which would
+   hide exactly the dropped-or-wrong-word cases a comparison would exist to
+   find. A post-hoc pass only touches Whisper's well-documented weak point —
+   misspelling names and unusual terms it has never heard — without telling
+   it what the sentence should say, so its judgment of content stays
+   independent. Worth preserving if a comparison is ever reintroduced.
 ========================================================= */
 function levenshteinChars(a,b){
   const dp=Array.from({length:a.length+1},()=>new Array(b.length+1).fill(0));
@@ -1210,9 +1183,8 @@ async function decodeAudioTo16kMono(file){
   const rendered=await offlineCtx.startRendering();
   return rendered.getChannelData(0);
 }
-// Produces the same {start,end,text} shape referenceTextForWindow() already expects
-// from a manually-uploaded .vtt/.srt, so nothing downstream needs to know or care
-// which source it came from.
+// Produces the same {start,end,text} shape a manually-uploaded .vtt/.srt yields,
+// so both sources stay interchangeable for anything that later consumes them.
 async function generateAutoReferenceTranscript(file){
   const pipe=await loadWhisperPipeline();
   const audio=await decodeAudioTo16kMono(file);
@@ -3107,20 +3079,22 @@ async function runCombinedVideoPass(){
       setProg('Voice activity model unavailable ('+err.message+') — falling back to the raw audio-energy check for speech detection.','info');
     }
   }
-  // Only fires when Transcript Mismatch is on, nobody uploaded a reference, a video is
-  // loaded, and the auto-generate option is checked — never silently, since this adds
-  // real time on top of everything else in this pass.
-  const autoRefWanted=document.getElementById('opt-compare-enabled').checked
-    && document.getElementById('opt-autoref-enabled').checked
+  // Only fires when the operator has explicitly checked the auto-generate option,
+  // nobody uploaded a reference, and a video is loaded — never silently, since this
+  // adds real time on top of everything else in this pass. The gate used to also
+  // require the Transcript Mismatch check to be on; that check is gone, so the
+  // option now stands on its own rather than depending on a control that no
+  // longer exists (which would have made it impossible to ever turn on).
+  const autoRefWanted=document.getElementById('opt-autoref-enabled').checked
     && !S.refTranscript && S.videoFile;
   if(autoRefWanted){
     try{
       setProg('No reference transcript loaded — generating one from the audio (Whisper, small)…','info');
       S.refTranscript=await generateAutoReferenceTranscript(S.videoFile);
       S.refTranscriptSource='auto-whisper';
-      document.getElementById('compare-status').textContent='Auto-generated reference from audio ('+S.refTranscript.length+' segment(s)) — machine-generated, not human-verified.';
+      document.getElementById('compare-status').textContent='Auto-generated reference from audio ('+S.refTranscript.length+' segment(s)) — machine-generated, not human-verified. Nothing currently compares captions against it.';
     }catch(err){
-      setProg('Auto-reference transcription unavailable ('+err.message+') — Transcript Mismatch check skipped this run; upload a reference manually if you need it.','info');
+      setProg('Auto-reference transcription unavailable ('+err.message+') — no reference was generated this run; upload one manually if you need it.','info');
     }
   }
   ensureScanAudioGraph();
@@ -3820,8 +3794,6 @@ function checkGrammarSpelling(text,protectedTerms){
 function buildChecklist(){
   const kidvidOn=document.getElementById('opt-kidvid').checked;
   const extraDashOn=document.getElementById('opt-extradash').checked;
-  const compareOn=document.getElementById('opt-compare-enabled').checked && S.refTranscript;
-  const compareThreshold=+document.getElementById('opt-compare-threshold').value||0.5;
   const grammarOn=document.getElementById('opt-grammar').checked;
   const grammarProtected=new Set((S.personalDictionary||[]).map(t=>t.toLowerCase()));
   const maxLenForDashSplit=+document.getElementById('opt-len').value||32;
@@ -3852,19 +3824,6 @@ function buildChecklist(){
     if(grammarOn){
       const bodyText=cue.text.replace(HAS_ID,'');
       checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
-    }
-    if(compareOn){
-      const refText=referenceTextForWindow(cue.start,cue.end);
-      if(refText.trim()){
-        const captionText=cue.text.replace(HAS_ID,'').replace(/^-\s*/gm,'').replace(/\n/g,' ');
-        const sim=wordDiffSimilarity(captionText,refText);
-        if(sim<compareThreshold){
-          const srcNote=S.refTranscriptSource==='auto-whisper'
-            ? ' Reference was auto-generated from this video\'s audio (Whisper), not human-verified — a Whisper mishearing looks identical to a real caption error, so treat this as a weaker signal than an uploaded reference.'
-            : '';
-          add(gk,ref,'TRANSCRIPT_MISMATCH','complex','Caption disagrees with the reference transcript for this timespan (similarity '+Math.round(sim*100)+'%). Reference says: "'+refText.slice(0,120)+(refText.length>120?'…':'')+'" — check which one (if either) is right; the reference can be wrong too.'+srcNote);
-        }
-      }
     }
     if(cue.faceMatchSuggestion)
       add(gk,ref,'FACE_MATCH_SUGGESTION','difficult','Character Library face match: "'+cue.faceMatchSuggestion.name+'" (distance '+cue.faceMatchSuggestion.distance.toFixed(2)+', lower is more confident). Not applied — type this name into the speaker ID field below if it looks right.');
