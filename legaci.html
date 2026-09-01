@@ -327,6 +327,40 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     </div>
   </div>
 
+  <div id="advancedInputsSection">
+    <h3>Advanced (optional)</h3>
+    <div class="stack">
+      <div class="prow">
+        <label class="drop" id="drop-scan" style="flex:1">
+          <span class="dk">FILE</span>
+          <span><span>Saved scan</span><span class="ds" id="scan-name">-scan.json from a previous run — skips the video scan</span></span>
+          <input type="file" id="file-scan" accept=".json">
+        </label>
+      </div>
+      <div class="prow">
+        <label class="drop" id="drop-placediff" style="flex:1">
+          <span class="dk">FILE</span>
+          <span><span>Compare placement against…</span><span class="ds" id="placediff-name">another cut of this file — shows what actually moved</span></span>
+          <input type="file" id="file-placediff" accept=".vtt,.srt">
+        </label>
+      </div>
+      <div class="opt"><label id="placediff-result" style="flex:1"></label><button class="pbtn small" id="btn-placediff-csv" disabled>Export diff .csv</button></div>
+      <div class="prow">
+        <label class="drop" id="drop-batch-subs" style="flex:1">
+          <span class="dk">BATCH</span>
+          <span><span>Caption files</span><span class="ds">several .vtt / .srt at once</span></span>
+          <input type="file" id="file-batch-subs" accept=".vtt,.srt" multiple>
+        </label>
+        <label class="drop" id="drop-batch-videos" style="flex:1">
+          <span class="dk">BATCH</span>
+          <span><span>Matching videos</span><span class="ds">paired on filename</span></span>
+          <input type="file" id="file-batch-videos" accept="video/*" multiple>
+        </label>
+      </div>
+      <div class="opt"><label>Run every queued file through the same analysis</label><button class="pbtn small primary" id="btn-batch-run">Run batch</button></div>
+    </div>
+  </div>
+
   <div class="stack">
     <div class="substep">with just a VTT: text fixes only. With video too: OST + off-screen-speaker + voice-fingerprint checks run in the same pass, automatically.</div>
     <button class="btn" id="btn-run" disabled>Run full analysis</button>
@@ -362,6 +396,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="opt"><label>Export as</label><select id="opt-exportformat"><option value="vtt">.vtt</option><option value="srt">.srt</option></select></div>
     <button class="btn ghost" id="btn-export" disabled>Export corrected file</button>
     <button class="btn quiet" id="btn-export-csv" disabled>Export issues report .csv</button>
+    <button class="btn quiet" id="btn-export-ooona" disabled>Export Ooona review .json</button>
+    <button class="btn quiet" id="btn-export-scan">Save scan (skip re-scanning)</button>
   </div>
 </aside>
 
@@ -908,6 +944,7 @@ document.querySelectorAll('.menudrop button[data-act]').forEach(btn=>{
     else if(act==='load-json')document.getElementById('file-json').click();
     else if(act==='export-file')document.getElementById('btn-export').click();
     else if(act==='export-csv')document.getElementById('btn-export-csv').click();
+    else if(act==='export-ooona')document.getElementById('btn-export-ooona').click();
     else if(act==='undo')undo();
     else if(act==='sync-zero')document.getElementById('sync-zero').click();
     else if(act==='focus-jump'){ expandAndScrollTo('tcbar'); document.getElementById('tc-jump').focus(); }
@@ -967,7 +1004,8 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
   refTranscript:null,
-  charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[]};
+  charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[],
+  ooonaProject:null,scanCacheLoaded:false,placementDiff:null};
 const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row',posTop:'Move current row to TOP',posBottom:'Move current row to BOTTOM'};
 
 /* =========================================================
@@ -1781,6 +1819,10 @@ function buildFixedCues(counts){
       if((c.settings||'')!==settings)counts.position++;
       ostSuggested = autoZone || manualZone || null;
       ostDetail = autoZone ? autoDetail : null;
+      // regionConfidence already existed in the ported detection module but was never
+      // actually wired to anything an operator could see — computed once here, lazily,
+      // rather than every time the checklist message gets rebuilt.
+      if(ostDetail && ostDetail.confidence==null && ostDetail.region) ostDetail.confidence = regionConfidence(ostDetail.region);
     }
 
     let lines=text.split('\n');
@@ -2109,7 +2151,15 @@ function cueConfidence(cue, regions){
 const confidenceBand = c => c>=75 ? "high" : c>=50 ? "medium" : "low";
 
 /* ================= frame analysis ================= */
-const ANALYSIS_W = 480;
+/**
+ * Analysis resolution. 480 was too coarse for HD delivery: a thin lower third
+ * merged with the clutter behind it into one blob, which the shape test then
+ * correctly discarded — taking the real text with it. That is the frame where a
+ * "MUSEUM CURATOR & FOLKLORIST" lower third under a caption went unflagged.
+ * At 960 the type separates from its background and the closing pass stops
+ * over-merging. Cost is not the constraint here; seeking the video is.
+ */
+const ANALYSIS_W = 960;
 const BLOCK = 8;
 
 /** Trim letterbox / pillarbox so every later measurement is against real picture. */
@@ -2329,7 +2379,8 @@ function gridToRegions(sg,thr=0.28,minRun=3,opts={}){
     });
   }
   const picW=sg.cols*bp, picH=sg.rows*bp;
-  const minIso=opts.minIsolation ?? 0.45;
+  // 0.45 let a bookshelf through at isolation 0.51; real lower thirds sit near 0.88
+  const minIso=opts.minIsolation ?? 0.52;
   const minScore=opts.minScore ?? 0;
   const boxes=closeRegions(out, bp*2.2, bp*1.1).filter(r=>r.w>=minRun*bp && r.score>=minScore);
   // The candidate sweep wants everything that might be text; the gates below
@@ -2500,11 +2551,28 @@ function ostLumaAt(el){
   for(let i=0,j=0;i<g.length;i++,j+=4) g[i]=(d[j]*77+d[j+1]*150+d[j+2]*29)>>8;
   return g;
 }
+/**
+ * The analysis canvas was fixed at 16:9. A letterboxed 2.39:1 file is fine —
+ * detectActivePicture finds the bars — but a NATIVE 4:3 proxy, which is common
+ * for archival material and older library titles, was being squashed sideways
+ * into a 16:9 buffer. That distorts every geometry test downstream: the
+ * wider-than-tall shape check, the caption rectangle, the overlap percentages.
+ * Results were quietly wrong rather than obviously broken. Size from the actual
+ * video instead.
+ */
+function sizeOstCanvas(el){
+  const vw=el&&el.videoWidth, vh=el&&el.videoHeight;
+  const ar=(vw&&vh)?vw/vh:16/9;
+  const h=Math.max(2,Math.round(ANALYSIS_W/ar));
+  if(ostAnalysisCanvas.height!==h){ ostAnalysisCanvas.width=ANALYSIS_W; ostAnalysisCanvas.height=h; }
+  return {w:ostAnalysisCanvas.width,h:ostAnalysisCanvas.height,aspect:ar};
+}
 /** Runs the full two-stage scan against Legaci's own scanVideo element,
  *  returning the same {regions, pic} shape the source tool produces. Mirrors
  *  that tool's runScan() step for step — the algorithm is untouched, only the
  *  video/progress plumbing is Legaci's own. */
 async function runOSTDetectionScan(){
+  sizeOstCanvas(scanVideo);
   const w=ostAnalysisCanvas.width, h=ostAnalysisCanvas.height;
   const duration=scanVideo.duration||0;
   if(!duration)return {regions:[],pic:{x:0,y:0,w,h}};
@@ -2556,8 +2624,30 @@ async function runOSTDetectionScan(){
   if(blocked)return {regions:[],pic,blocked:true};
 
   const samples=[...seen.values()].sort((a,b)=>a.t-b.t);
-  const regions=trackRegions(samples,samples.length,{pictureH:pic.h,coarseTotal:coarse.length});
+  let regions=trackRegions(samples,samples.length,{pictureH:pic.h,coarseTotal:coarse.length});
+  regions=snapRegionsToShotChanges(regions,S.shotChanges);
   return {regions,pic};
+}
+/**
+ * On-screen text almost always appears and disappears on a cut, so where a
+ * detected region's edge lands close to a known shot change, the shot change is
+ * the better number — sampling can only ever locate an edge to within half a
+ * sample interval, while a cut is exact.
+ */
+function snapRegionsToShotChanges(regions, shots, tol=1.2){
+  if(!shots||!shots.length)return regions;
+  const near=t=>{ let best=null,bd=tol;
+    for(const s of shots){ const d=Math.abs(s-t); if(d<bd){bd=d;best=s;} }
+    return best; };
+  return regions.map(r=>{
+    const a=near(r.t0), b=near(r.t1);
+    const t0=a!=null?a:r.t0, t1=b!=null?b:r.t1;
+    return (t1-t0)>0.2 ? {...r,t0,t1,snapped:(a!=null||b!=null)} : r;
+  });
+}
+function shotChangeNear(t, tol=0.4){
+  if(!S.shotChanges||!S.shotChanges.length)return false;
+  return S.shotChanges.some(s=>Math.abs(s-t)<=tol);
 }
 
 
@@ -2601,16 +2691,48 @@ function sampleAudioEnergyAndVoice(){
   return {energy,centroidHz,pitchHz,harmonicity};
 }
 
+/* =========================================================
+   EXTERNAL DEPENDENCIES
+   Every third-party asset this tool fetches, in one place. Several of these
+   are loaded straight off public CDNs and a personal GitHub Pages site, which
+   for a tool that runs against delivery masters is both an availability risk
+   (it breaks when they do) and a supply-chain one (you are executing someone
+   else's code). Set window.LEGACI_ASSET_BASE before this script to serve
+   mirrored copies from your own host instead; leave it unset and behaviour is
+   unchanged. Versions are pinned deliberately — do not float them.
+   ========================================================= */
+const LEGACI_DEPS = {
+  base: (typeof window!=='undefined' && window.LEGACI_ASSET_BASE || '').replace(/\/+$/,''),
+  cdn: {
+    tfjs:      'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js',
+    blazeface: 'https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js',
+    ort:       'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js',
+    ortBase:   'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
+    vad:       'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js',
+    vadBase:   'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/',
+    faceApi:   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+    faceModels:'https://justadudewhohacks.github.io/face-api.js/models',
+    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
+  },
+  local: {
+    tfjs:'vendor/tfjs-4.17.0.min.js', blazeface:'vendor/blazeface-0.1.0.min.js',
+    ort:'vendor/ort-1.22.0.wasm.min.js', ortBase:'vendor/ort-1.22.0/',
+    vad:'vendor/vad-web-0.0.29.min.js', vadBase:'vendor/vad-web-0.0.29/',
+    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models'
+  },
+  url(k){ return this.base ? this.base+'/'+this.local[k] : this.cdn[k]; }
+};
+
 let blazefaceModel=null, blazefaceLoading=null;
 function loadBlazeface(){
   if(blazefaceModel)return Promise.resolve(blazefaceModel);
   if(blazefaceLoading)return blazefaceLoading;
   blazefaceLoading=new Promise((resolve,reject)=>{
     const s1=document.createElement('script');
-    s1.src='https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js';
+    s1.src=LEGACI_DEPS.url('tfjs');
     s1.onload=()=>{
       const s2=document.createElement('script');
-      s2.src='https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js';
+      s2.src=LEGACI_DEPS.url('blazeface');
       s2.onload=async()=>{ try{ blazefaceModel=await blazeface.load(); resolve(blazefaceModel); } catch(err){reject(err);} };
       s2.onerror=()=>reject(new Error('face model blocked'));
       document.head.appendChild(s2);
@@ -2653,15 +2775,15 @@ function loadVAD(){
   if(vadLoading)return vadLoading;
   vadLoading=new Promise((resolve,reject)=>{
     const s1=document.createElement('script');
-    s1.src='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js';
+    s1.src=LEGACI_DEPS.url('ort');
     s1.onload=()=>{
       const s2=document.createElement('script');
-      s2.src='https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js';
+      s2.src=LEGACI_DEPS.url('vad');
       s2.onload=async()=>{
         try{
           vadInstance=await vad.NonRealTimeVAD.new({
-            onnxWASMBasePath:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
-            baseAssetPath:'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/'
+            onnxWASMBasePath:LEGACI_DEPS.url('ortBase'),
+            baseAssetPath:LEGACI_DEPS.url('vadBase')
           });
           resolve(vadInstance);
         }catch(err){reject(err);}
@@ -2873,12 +2995,19 @@ async function runCombinedVideoPass(){
   // (a cheap coarse sweep, then dense frames only near what it found) already covers
   // the entire runtime efficiently in one pass.
   let ostRegions=[], ostPic={x:0,y:0,w:ostAnalysisCanvas.width,h:ostAnalysisCanvas.height}, ostBlocked=false;
-  try{
-    const ostResult=await runOSTDetectionScan();
-    ostRegions=ostResult.regions; ostPic=ostResult.pic; ostBlocked=!!ostResult.blocked;
-    if(ostBlocked)setProg('Video blocks frame reading for on-screen-text detection (codec/DRM) — other checks still run; use manual OST zones below.','info');
-  }catch(err){
-    setProg('On-screen-text detection unavailable ('+err.message+') — other checks still run; use manual OST zones below.','info');
+  if(S.scanCacheLoaded && (S.ostRegions||[]).length){
+    // The whole point of the cache — skip the ~2,700 seeks a full scan costs on a long
+    // episode entirely, reusing what was already detected and saved from a prior run.
+    setProg('Using the loaded scan cache — skipping the video scan.','info');
+    ostRegions=S.ostRegions; ostPic=S.ostPic||ostPic;
+  } else {
+    try{
+      const ostResult=await runOSTDetectionScan();
+      ostRegions=ostResult.regions; ostPic=ostResult.pic; ostBlocked=!!ostResult.blocked;
+      if(ostBlocked)setProg('Video blocks frame reading for on-screen-text detection (codec/DRM) — other checks still run; use manual OST zones below.','info');
+    }catch(err){
+      setProg('On-screen-text detection unavailable ('+err.message+') — other checks still run; use manual OST zones below.','info');
+    }
   }
   S.ostRegions=ostRegions; S.ostPic=ostPic;
   S.vadSegments=vadSegments;
@@ -2908,7 +3037,7 @@ async function runCombinedVideoPass(){
         const placement=placementFromSettings(c.settings);
         const measureCue={start:c.start,end:c.end,lines:(c.origText||'').split('\n'),placement};
         const m=measure(measureCue,ostRegions,ostPic);
-        if(m.overlap>=8)S.detected[i]={zone:sideOf(placement),overlap:m.overlap,regionKind:m.region&&m.region.kind};
+        if(m.overlap>=8)S.detected[i]={zone:sideOf(placement),overlap:m.overlap,regionKind:m.region&&m.region.kind,region:m.region};
       }
 
       // sync check: is dialogue audible right before this cue starts, or right after it
@@ -3317,16 +3446,13 @@ let faceApiLoading=null;
 // The npm package only ships the JS code — model weight files are too large to publish
 // to npm and are hosted separately. Try the project's own model-hosting page first, then
 // a GitHub-mirror path as a fallback if that's moved or is unreachable.
-const FACE_MODEL_URLS=[
-  'https://justadudewhohacks.github.io/face-api.js/models',
-  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
-];
+const FACE_MODEL_URLS=[LEGACI_DEPS.url('faceModels'), LEGACI_DEPS.url('faceModelsAlt')];
 function ensureFaceApi(){
   if(S.faceApiReady)return Promise.resolve();
   if(faceApiLoading)return faceApiLoading;
   faceApiLoading=new Promise((resolve,reject)=>{
     const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+    s.src=LEGACI_DEPS.url('faceApi');
     s.onload=async()=>{
       let lastErr=null;
       for(const MODEL_URL of FACE_MODEL_URLS){
@@ -3651,7 +3777,16 @@ function buildChecklist(){
     const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
-    if(cue.ostSuggested==='middle')add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic (detected, or a manually-drawn zone) in the MIDDLE of the frame — this caption may need repositioning to avoid it, but there\'s no single obvious "move to the opposite side" fix like there is for a top/bottom overlap. Reposition by hand if this looks correct, or leave it if it\'s a false positive.');
+    if(cue.ostSuggested==='middle'){
+      // House spec forces horizontal centre, so a caption cannot dodge sideways
+      // and a graphic in the middle of frame has no in-file remedy at all. These
+      // used to sit in the same list as fixable overlaps where the only possible
+      // action was to dismiss them. They are their own thing: someone has to
+      // decide, off this tool, whether the graphic moves or the overlap is worn.
+      const dm=cue.ostDetail||{};
+      const cbit=dm.confidence!=null?' Detection confidence '+dm.confidence+'%.':'';
+      add(gk,ref,'OST_ESCALATE','difficult','On-screen text/graphic in the MIDDLE of the frame'+(dm.overlap!=null?' ('+Math.round(dm.overlap)+'% overlap)':'')+'.'+cbit+' Captions are centre-aligned by house spec, so there is no top/bottom or left/right move that clears this one — it cannot be fixed in the caption file. Escalate: either the graphic gets repositioned upstream, or the overlap is accepted on the record. Dismissing this only hides it.');
+    }
     else if(cue.ostSuggested){
       // Checks the cue's ACTUAL current position rather than trusting the frozen
       // suggestion alone — found by testing, not assumed: clicking "Move to TOP/BOTTOM"
@@ -3664,7 +3799,16 @@ function buildChecklist(){
         const detailBit = d&&d.overlap!=null
           ? ' ('+Math.round(d.overlap)+'% overlap'+(d.regionKind==='crawl'?', a drifting credit crawl':'')+')'
           : ' (manually-drawn zone)';
-        add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame'+detailBit+'. This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.');
+        // Confidence leads the message rather than decorating the end of it, so
+        // the queue can be worked worst-first and a weak finding reads as weak.
+        const confBit = d&&d.confidence!=null ? ' Detection confidence '+d.confidence+'%.' : '';
+        // Moving a caption on a cut is invisible; moving it mid-shot is not. The
+        // shot changes were already being detected and were going unused here.
+        const cutBit = (S.shotChanges&&S.shotChanges.length)
+          ? (shotChangeNear(cue.start) ? ' There is a shot change at this cue, so repositioning here will not be noticeable.'
+                                       : ' There is no cut at this cue, so the caption will visibly jump mid-shot — check the captions either side before moving just this one.')
+          : '';
+        add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame'+detailBit+'.'+confBit+' This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.'+cutBit);
       }
     }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
@@ -3764,6 +3908,12 @@ async function runFullAnalysis(){
   try{
     if(S.videoURL){
       await waitForScanVideoReady();
+      // Shot-change detection now runs BEFORE the combined video pass, not after — it used
+      // to run afterward, which meant S.shotChanges was still empty at the exact point the
+      // OST scan would have wanted to snap detected regions to it. Self-contained frame
+      // sampling with no dependency on anything the OST pass produces, so reordering it
+      // earlier is safe.
+      if(document.getElementById('opt-shotchange').checked && !(S.scanCacheLoaded && (S.shotChanges||[]).length))await scanForShotChanges();
       // build a provisional cue set first so combined pass has correct source alignment,
       // then rebuild once more after detection so positions reflect what was found.
       S.cues=buildFixedCues({tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0});
@@ -3771,7 +3921,6 @@ async function runFullAnalysis(){
       S.cues=buildFixedCues(counts);
       setProg('Scanning gaps between captions for missed dialogue/sound…','info');
       await scanGapsForMissingContent();
-      if(document.getElementById('opt-shotchange').checked)await scanForShotChanges();
     } else {
       S.cues=buildFixedCues(counts);
     }
@@ -3781,6 +3930,7 @@ async function runFullAnalysis(){
     render();
     document.getElementById('btn-export').disabled=false;
     document.getElementById('btn-export-csv').disabled=false;
+    document.getElementById('btn-export-ooona').disabled=false;
     setProg('Analysis complete — '+S.report.length+' item(s) need a human look.');
     checkRosterHandoff();
   } finally {
@@ -3954,6 +4104,295 @@ document.getElementById('btn-export-csv').addEventListener('click',()=>{
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'_issues.csv'; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 });
+
+function downloadBlob(content,name,mime){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+
+/* =========================================================
+   SCAN CACHE
+   An 86-minute episode costs ~2,700 seeks, a couple of minutes, and all of it
+   used to be thrown away when the tab closed. The detected regions are the
+   expensive part and they only depend on the video, not the caption file — so
+   they can be written out, handed to someone else, re-loaded after a caption
+   edit, and audited on their own.
+   ========================================================= */
+function scanCacheKey(){
+  const f=S.videoFile;
+  if(!f)return null;
+  return [f.name,f.size,Math.round((scanVideo&&scanVideo.duration)||0)].join('|');
+}
+function buildScanCache(){
+  return {
+    format:'legaci-scan-cache', version:1, generated:new Date().toISOString(),
+    video:scanCacheKey(), analysisW:ANALYSIS_W,
+    canvas:{w:ostAnalysisCanvas.width,h:ostAnalysisCanvas.height},
+    offset:S.offset||0,
+    pic:S.ostPic||null,
+    regions:(S.ostRegions||[]).map(r=>Object.assign({},r)),
+    shotChanges:(S.shotChanges||[]).slice()
+  };
+}
+function applyScanCache(j){
+  if(!j||j.format!=='legaci-scan-cache')throw new Error('Not a Legaci scan cache file.');
+  if(j.analysisW!==ANALYSIS_W)throw new Error('That cache was made at a different analysis resolution ('+j.analysisW+' vs '+ANALYSIS_W+') so the geometry would not line up. Re-scan instead.');
+  const key=scanCacheKey();
+  if(key&&j.video&&key!==j.video)throw new Error('That cache was made from a different video ('+j.video+').');
+  S.ostRegions=j.regions||[]; S.ostPic=j.pic||null;
+  S.shotChanges=j.shotChanges||[];
+  S.scanCacheLoaded=true;
+  return (j.regions||[]).length;
+}
+
+/* =========================================================
+   PLACEMENT DIFF
+   Compare the placement of this file against another cut of it — a vendor
+   delivery against the original, or a corrected file against what it corrected.
+   Answers the question "what actually moved, and did it need to?" without
+   anybody reading 1,800 cues by hand.
+   ========================================================= */
+function diffPlacement(baseCues, otherCues, tol){
+  tol=tol||0.25;
+  const rows=[]; let moved=0,same=0,unmatched=0;
+  const used=new Set();
+  for(const b of baseCues){
+    let hit=-1,bd=tol;
+    for(let i=0;i<otherCues.length;i++){
+      if(used.has(i))continue;
+      const d=Math.abs(otherCues[i].start-b.start);
+      if(d<bd){bd=d;hit=i;}
+    }
+    if(hit<0){ unmatched++; rows.push({start:b.start,end:b.end,base:b.settings||'',other:null,change:'no match in the other file'}); continue; }
+    used.add(hit);
+    const o=otherCues[hit];
+    const bp=resolveTopOrBottom(b.settings), op=resolveTopOrBottom(o.settings);
+    if(bp!==op){ moved++; rows.push({start:b.start,end:b.end,base:b.settings||'',other:o.settings||'',change:bp+' -> '+op}); }
+    else same++;
+  }
+  const extra=otherCues.length-used.size;
+  return {rows,moved,same,unmatched,extra,total:baseCues.length};
+}
+function renderPlacementDiff(d){
+  const pct=d.total?Math.round(d.moved/d.total*100):0;
+  let msg=d.moved+' of '+d.total+' cues sit on a different side in the two files ('+pct+'%).';
+  if(pct>50)msg+=' Moving most of a file is almost always worse for the viewer than moving the few that actually collide — worth checking how many of these were needed.';
+  if(d.unmatched)msg+=' '+d.unmatched+' cue(s) had no match by timecode.';
+  if(d.extra)msg+=' The other file has '+d.extra+' cue(s) not in this one.';
+  return msg;
+}
+
+/* =========================================================
+   BATCH QUEUE
+   Runs the same single-file pipeline over a list of caption/video pairs, one at
+   a time, writing each file's outputs as it finishes. Pairs are matched on the
+   filename stem. Nothing here is a second code path — it drives the same
+   analysis the single-file flow uses, so the two can never drift apart.
+   ========================================================= */
+const stemOf = nm => String(nm||'').replace(/\.[^.]+$/,'').replace(/[_-](corrected|final|v\d+)$/i,'');
+function pairBatchFiles(subs, vids){
+  const byStem=new Map();
+  for(const v of vids)byStem.set(stemOf(v.name).toLowerCase(),v);
+  return subs.map(sub=>({sub,vid:byStem.get(stemOf(sub.name).toLowerCase())||null}));
+}
+async function runBatch(pairs){
+  const done=[];
+  for(let i=0;i<pairs.length;i++){
+    const {sub,vid}=pairs[i];
+    setProg('Batch '+(i+1)+' of '+pairs.length+': '+sub.name+(vid?'':' (no matching video — text checks only)'),'info');
+    try{
+      const text=await sub.text();
+      S.vttRaw=text; S.src=parseVTT(text);
+      S.validated=new Set(); S.falseFlagged=new Set(); S.everSeen=new Set(); S.manualOverrides={};
+      S.detected={}; S.ost=[]; S.ostRegions=[]; S.shotChanges=[]; S.scanCacheLoaded=false;
+      document.getElementById('opt-exportname').value=stemOf(sub.name)+'_corrected';
+      if(vid){
+        if(S.videoURL)URL.revokeObjectURL(S.videoURL);
+        S.videoURL=URL.createObjectURL(vid); S.videoFile=vid;
+        video.src=S.videoURL; scanVideo.src=S.videoURL;
+        await waitForScanVideoReady();
+      } else { S.videoURL=null; S.videoFile=null; }
+      await runFullAnalysis();
+      const stem=stemOf(sub.name).replace(/[^A-Za-z0-9_-]/g,'_');
+      downloadBlob(serializeVTT(S.cues),stem+'_corrected.vtt','text/vtt');
+      downloadBlob(JSON.stringify(buildOoonaReview({project:S.ooonaProject}),null,2),stem+'-review.ooona.json','application/json');
+      if(vid)downloadBlob(JSON.stringify(buildScanCache(),null,2),stem+'-scan.json','application/json');
+      const flagged=Object.values(S.rowsByKey||{}).filter(r=>r.issues&&r.issues.length).length;
+      done.push({file:sub.name,cues:S.cues.length,flagged});
+    }catch(err){
+      done.push({file:sub.name,error:(err&&err.message)||String(err)});
+    }
+  }
+  const csv=['file,cues,flagged rows,error'].concat(
+    done.map(d=>[csvEscape(d.file),d.cues??'',d.flagged??'',csvEscape(d.error||'')].join(','))).join('\n');
+  downloadBlob(csv,'batch-summary.csv','text/csv');
+  setProg('Batch finished — '+done.filter(d=>!d.error).length+' of '+done.length+' file(s) processed. A summary .csv has been written alongside the per-file outputs.');
+  logEvent('legaci','batch',String(done.length));
+  return done;
+}
+
+/* =========================================================
+   OOONA REVIEW EXPORT
+   A review project, not a deliverable. Placement is written exactly as the
+   file has it — a suggestion is never written as a position, because a
+   reviewer who opened it and saw a caption at the top would conclude the
+   delivery already had it there. Cues with an unresolved OST_SUGGEST are
+   parked mid-frame instead, so Ooona's own NotBottomOrTop check raises them
+   as errors that have to be cleared by hand.
+   ========================================================= */
+const OOONA_TEMPLATE = {
+  fps:23.976, timecodeFormat:"24 fps", format:"VTT18", flavor:"VTT18", extension:"vtt",
+  screenLines:11, lineLength:32, maxParagraphLines:3, previewFontSize:36,
+  minSubDuration:1.00142, maxSubDuration:8.008004, timingFramesGap:0, lineGap:0,
+  mode:"Open", doubleHeight:false, readingSpeedCps:32,
+  safeArea:{left:10,right:10,bottom:10,top:10,units:"%",videoWidth:1920,videoHeight:1080,sameAsProject:false},
+  validation:{EmptyLine:true, NoText:true, NotBottomOrTop:true},
+  display:{outlineWidth:0, outlineType:"NoOutline"},
+  closedCaptions:{doubleControlCodes:false},
+  customVideoFormatWidth:"1920", customVideoFormatHeight:"1080"
+};
+/** Reproducible ids, so exporting the same file twice gives the same bytes. */
+function ooonaUuid(ref){
+  const hex="0123456789abcdef"; let out="";
+  for(let i=0;i<32;i++){ ref.s=(ref.s*1103515245+12345)&0x7fffffff; out+=hex[(ref.s>>>8)&15];
+    if(i===7||i===11||i===15||i===19) out+="-"; }
+  return out.slice(0,14)+"4"+out.slice(15,19)+"a"+out.slice(20);
+}
+/** Ooona counts rows 1 (top) to screenLines (bottom). */
+function ooonaStartLine(side,nLines,screenLines,park){
+  if(park) return Math.max(2,Math.min(screenLines-nLines,Math.round((screenLines-nLines)/2)+1));
+  return side==='top' ? 1 : Math.max(1,screenLines-nLines+1);
+}
+/** A cue is flagged when a detected zone still sits on the caption's own side. */
+function ooonaIsFlagged(cue){
+  if(!cue.ostSuggested) return false;
+  if(cue.ostSuggested==='middle') return true;
+  const wantsOpposite = cue.ostSuggested==='bottom' ? 'top' : 'bottom';
+  return resolveTopOrBottom(cue.settings)!==wantsOpposite;
+}
+function buildOoonaReview(opts){
+  opts=opts||{};
+  const project=opts.project||null, park=opts.park!==false;
+  const now=new Date().toISOString();
+  const settings=Object.assign({},OOONA_TEMPLATE,(project&&project.settings)||{});
+  settings.validation=Object.assign({},settings.validation||{},{EmptyLine:true,NoText:true,NotBottomOrTop:true});
+  const screenLines=(isFinite(settings.screenLines)&&settings.screenLines>2)?settings.screenLines:11;
+  const ref={s:20260831}, findings=[];
+  const paragraphs=S.cues.map((c,i)=>{
+    const lines=String(c.text||'').split('\n');
+    const side=resolveTopOrBottom(c.settings);
+    const flagged=ooonaIsFlagged(c);
+    const startLine=ooonaStartLine(side,lines.length,screenLines,flagged&&park);
+    if(flagged){
+      const d=c.ostDetail||{};
+      findings.push({
+        index:i+1, in:fmtTime(c.start), out:fmtTime(c.end), text:lines.join(' / '),
+        deliveredSettings:(c.settings||'').trim()||'(none)',
+        deliveredPosition:side,
+        detectedTextAt:c.ostSuggested,
+        suggestedPosition:c.ostSuggested==='middle'?'(no single obvious side)':(c.ostSuggested==='bottom'?'top':'bottom'),
+        suggestionApplied:false,
+        overlapPercent:d.overlap!=null?Math.round(d.overlap):null,
+        confidence:d.confidence!=null?d.confidence:null,
+        regionKind:d.regionKind||'ost',
+        parkedOnLine:(flagged&&park)?startLine:null,
+        reason:'caption may be covering on-screen text'
+      });
+    }
+    return {
+      id:ooonaUuid(ref), index:i+1, start:c.start, end:c.end,
+      align:'Center', startLine,
+      lines:lines.map((t,k)=>({index:startLine+k, text:t})),
+      lastUpdateTime:now
+    };
+  });
+  return {
+    app:'CaptionMaker', settings, currentTime:0,
+    name:((document.getElementById('opt-exportname')||{}).value||'corrected').trim()+'-REVIEW',
+    local:false,
+    information:S.cues.length+' subtitles — '+findings.length+' flagged for placement review',
+    originalId:null, lastSaved:now, isAI:false,
+    label:'LEGACI placement review — not for delivery',
+    version:'3.0',
+    customShotchanges:{added:[],removed:[]},
+    validation:null, dateCreated:now, id:ooonaUuid(ref),
+    subtitles:{paragraphs},
+    legaciReview:{
+      tool:'Legaci Placement', generated:now,
+      note:park
+        ? "Flagged cues are parked mid-frame so Ooona's NotBottomOrTop check raises them. Positions here are NOT delivery-ready — resolve each one and place it deliberately."
+        : 'Positions match the delivered file. Findings are listed below only.',
+      flagged:findings.length, cues:findings
+    }
+  };
+}
+
+document.getElementById('btn-export-scan').addEventListener('click',()=>{
+  if(!(S.ostRegions||[]).length && !(S.shotChanges||[]).length){ setProg('Nothing to save yet — run an analysis with a video loaded first.',true); return; }
+  const name=(document.getElementById('opt-exportname').value||'corrected').trim().replace(/[^A-Za-z0-9_-]/g,'_');
+  downloadBlob(JSON.stringify(buildScanCache(),null,2),name+'-scan.json','application/json');
+  logEvent('legaci','export','scan_cache');
+  setProg('Saved the scan — '+(S.ostRegions||[]).length+' detected region(s) and '+(S.shotChanges||[]).length+' shot change(s). Load it back to skip re-scanning this video.');
+});
+document.getElementById('file-scan').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const count=applyScanCache(JSON.parse(r.result));
+      document.getElementById('drop-scan').classList.add('loaded');
+      document.getElementById('scan-name').textContent=f.name+' — '+count+' region(s)';
+      setProg('Scan cache loaded — '+count+' region(s). Run the analysis and the video scan will be skipped.');
+    }catch(err){ setProg(err.message,true); }
+  };
+  r.readAsText(f);
+});
+document.getElementById('file-placediff').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  if(!S.src.length){ setProg('Load the caption file you want to compare against first.',true); return; }
+  const r=new FileReader();
+  r.onload=()=>{
+    const other=parseVTT(r.result);
+    const d=diffPlacement(S.src,other,0.25);
+    S.placementDiff=d;
+    document.getElementById('drop-placediff').classList.add('loaded');
+    document.getElementById('placediff-name').textContent=f.name+' — '+d.moved+' of '+d.total+' differ';
+    document.getElementById('placediff-result').textContent=renderPlacementDiff(d);
+    document.getElementById('btn-placediff-csv').disabled=!d.rows.length;
+    logEvent('legaci','placement_diff',String(d.moved));
+  };
+  r.readAsText(f);
+});
+document.getElementById('btn-placediff-csv').addEventListener('click',()=>{
+  const d=S.placementDiff; if(!d)return;
+  const csv=['in,out,this file,other file,change'].concat(d.rows.map(x=>
+    [fmtTime(x.start),fmtTime(x.end),csvEscape(x.base),csvEscape(x.other??''),csvEscape(x.change)].join(','))).join('\n');
+  downloadBlob(csv,'placement-diff.csv','text/csv');
+});
+document.getElementById('btn-batch-run').addEventListener('click',async()=>{
+  const subs=[...document.getElementById('file-batch-subs').files];
+  const vids=[...document.getElementById('file-batch-videos').files];
+  if(!subs.length){ setProg('Add some caption files to the batch first.',true); return; }
+  const pairs=pairBatchFiles(subs,vids);
+  const unpaired=pairs.filter(p=>!p.vid).length;
+  if(!confirm(pairs.length+' caption file(s) queued'+(unpaired?', '+unpaired+' with no matching video (text checks only)':'')+'.\n\nEach file writes a corrected caption file, an Ooona review project and a scan cache. Your browser will ask about multiple downloads. Continue?'))return;
+  document.getElementById('btn-batch-run').disabled=true;
+  try{ await runBatch(pairs); } finally { document.getElementById('btn-batch-run').disabled=false; }
+});
+document.getElementById('btn-export-ooona').addEventListener('click',()=>{
+  if(!S.cues.length){ setProg('Run the analysis first — there is nothing to review yet.',true); return; }
+  const j=buildOoonaReview({project:S.ooonaProject});
+  const name=(document.getElementById('opt-exportname').value||'corrected').trim().replace(/[^A-Za-z0-9_-]/g,'_');
+  downloadBlob(JSON.stringify(j,null,2),name+'-review.ooona.json','application/json');
+  logEvent('legaci','export','ooona_review');
+  const n=j.legaciReview.flagged;
+  setProg(n
+    ? 'Exported an Ooona review project. '+n+' flagged cue'+(n===1?'':'s')+' parked mid-frame so Ooona\'s NotBottomOrTop check raises '+(n===1?'it':'them')+' as an error to clear by hand. Every other cue is exactly where the file has it. Review copy — not for delivery.'
+    : 'Exported an Ooona review project. Nothing was flagged, so every cue sits exactly where the file has it.');
+});
+
+
 
 /* =========================================================
    RENDER — editable checklist
