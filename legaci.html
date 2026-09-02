@@ -3295,6 +3295,7 @@ async function scanGapsForMissingContent(){
   // higher bar, since "a whole line got skipped" is a different claim than "there was
   // a brief non-speech sound here."
   const SPEECH_GAP_MIN=1.5;
+  const LEAD_TOLERANCE=1.0; // seconds — speech ending this close to the next caption's start is onset lag, not a missing line
   const cues=S.cues.slice().sort((a,b)=>a.start-b.start);
   const gaps=[]; let cursor=0;
   cues.forEach(c=>{ if(c.start-cursor>MIN_GAP)gaps.push({start:cursor,end:c.start}); cursor=Math.max(cursor,c.end); });
@@ -3334,7 +3335,25 @@ async function scanGapsForMissingContent(){
         if(isNonSpeechEnergy){ if(harmonicity>=HARMONICITY_THRESH)musicHits++; else soundHits++; }
       }catch(e){}
     }
-    if(samples>0 && speechHits>=Math.ceil(samples/2) && dur>=SPEECH_GAP_MIN)S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
+    // A caption that starts a fraction of a second after speech begins is normal onset
+    // lag, not a missing line — real files commonly do this on purpose for readability.
+    // The point-samples above only answer "was there speech somewhere in this stretch";
+    // they say nothing about how close it was to the caption that follows. Checked
+    // directly against real VAD segment boundaries (more precise than the coarse
+    // samples): if speech in this gap runs right up to LEAD_TOLERANCE seconds of where
+    // the next caption starts, that caption is almost certainly the one catching it —
+    // a timing question, not a missing-caption one. A genuinely missing caption still
+    // leaves real silence — more than LEAD_TOLERANCE — between the end of the speech
+    // and the caption that (eventually, unrelatedly) follows.
+    let genuinelyMissing=true;
+    if(samples>0 && speechHits>=Math.ceil(samples/2) && S.vadSegments){
+      const overlapping=S.vadSegments.filter(s=>s.end>g.start && s.start<g.end);
+      if(overlapping.length){
+        const latestSpeechEnd=Math.max(...overlapping.map(s=>Math.min(s.end,g.end)));
+        genuinelyMissing = (g.end-latestSpeechEnd) > LEAD_TOLERANCE;
+      }
+    }
+    if(samples>0 && speechHits>=Math.ceil(samples/2) && dur>=SPEECH_GAP_MIN && genuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
     else if(samples>0 && musicHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
     else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
     // Was: fired unconditionally on any overlapping graphic, regardless of whether anyone
