@@ -2640,6 +2640,30 @@ function refineTimes(cues, regions, step=2.5, perCue=3){
   }
   return [...set].sort((a,b)=>a-b);
 }
+// The line above (`if(!live.some(...)) continue;`) is exactly the gap: a cue only gets
+// dense sampling if the coarse sweep already found something nearby. A brief on-screen
+// graphic that falls entirely between two coarse samples (confirmed: a quick text effect
+// that scored 0.6-0.84 on the block-text metric where it WAS visible — well above the
+// detection threshold — but the coarse sweep's own timestamps never landed inside its
+// cue's window at all, so the sweep never nominated anything for stage two to refine) is
+// invisible to the whole pipeline regardless of how well it would have scored. This adds
+// real samples for exactly those cues and no others — same density formula refineTimes
+// already uses, so cues the sweep did cover are completely unaffected and pay no extra
+// cost; only the genuine gap gets closed.
+function uncoveredCueTimes(cues, coarse, perCue=3){
+  const sorted=[...coarse].sort((a,b)=>a-b);
+  const q=t=>Math.round(t*100)/100;
+  const out=[];
+  for(const c of cues){
+    const covered=sorted.some(t=>t>=c.start && t<=c.end);
+    if(!covered){
+      const d=Math.max(0.05,c.end-c.start);
+      const n=Math.max(2,Math.min(perCue,Math.ceil(d*2)));
+      for(let i=0;i<n;i++) out.push(q(c.start+d*(i+0.5)/n));
+    }
+  }
+  return out;
+}
 /** Single-stage fallback: dense frames on every cue plus a coarse sweep. Used
  *  when a scan is run without a prior sweep to narrow things down. */
 function sampleTimes(cues, duration, perCue=3, coarse=4){
@@ -2738,6 +2762,13 @@ async function runOSTDetectionScan(){
   let refine=refineTimes(S.cues,rough,step,3);
   if(refine.length>naive.length)
     refine=[...new Set([...regionEdgeTimes(rough,step),...naive])].sort((a,b)=>a-b);
+  // Confirmed real miss: a brief on-screen graphic whose cue fell entirely between two
+  // coarse-sweep samples never got a single dense sample, no matter how well it would
+  // have scored. This closes exactly that gap and nothing else — cues the sweep already
+  // touched are untouched here, so this doesn't reopen the cost the two-stage design
+  // exists to avoid.
+  const gapCues=uncoveredCueTimes(S.cues,coarse,3);
+  if(gapCues.length)refine=[...new Set([...refine,...gapCues])].sort((a,b)=>a-b);
   await pass(refine,false,50,100);
   if(blocked)return {regions:[],pic,blocked:true};
 
@@ -2877,6 +2908,64 @@ function patchDiff(a,b){
   if(!a||!b||a.data.length!==b.data.length)return 1;
   let diff=0; for(let i=0;i<a.data.length;i+=4)diff+=Math.abs(a.data[i]-b.data[i]);
   return diff/(a.data.length/4)/255;
+}
+// detectMouthPatch (above) only ever reads preds[0] — the first face BlazeFace returns,
+// with no guarantee it's the same physical person from one call to the next. With two
+// people on screen, confirmed as a real miss: an off-camera speaker's cue went
+// unflagged because comparing "preds[0] at t1" to "preds[0] at t2" either (a) silently
+// compared two DIFFERENT people's mouths across samples — large pixel difference that's
+// just two different faces, not motion — or (b) locked onto one on-screen person's
+// incidental movement (reacting, laughing) while the actual speaker stayed unseen the
+// whole time. Neither failure is about missing a face; it's about not knowing WHICH
+// face is which from one sample to the next.
+async function detectMouthPatches(el){
+  fctx.drawImage(el,0,0,faceCanvas.width,faceCanvas.height);
+  const preds=await blazefaceModel.estimateFaces(faceCanvas,false);
+  const out=[];
+  for(const pred of preds){
+    const mouth=pred.landmarks&&pred.landmarks[3];
+    if(!mouth)continue;
+    const mx=Math.max(0,Math.round(mouth[0]-8)), my=Math.max(0,Math.round(mouth[1]-6));
+    out.push({x:mouth[0],y:mouth[1],
+      patch:fctx.getImageData(mx,my,Math.min(16,faceCanvas.width-mx),Math.min(12,faceCanvas.height-my))});
+  }
+  return out;
+}
+// Matches faces across the cue's sample times by mouth position, not array order — two
+// samples within one cue are a fraction of a second apart, so a real person's mouth
+// hasn't moved far, while two DIFFERENT people are reliably much further apart than
+// maxJump on a 320x180 analysis canvas. Deliberately simple (greedy nearest-neighbor,
+// no re-identification across cues) since this only needs to hold four samples' worth
+// of state for one cue at a time, not track anyone long-term.
+function trackMouthFaces(samples, maxJump=40){
+  const tracks=[];
+  for(const faces of samples){
+    const used=new Set();
+    for(const f of faces){
+      let best=-1,bestD=maxJump;
+      tracks.forEach((t,i)=>{
+        if(used.has(i))return;
+        const last=t.positions[t.positions.length-1];
+        const d=Math.hypot(last.x-f.x,last.y-f.y);
+        if(d<bestD){bestD=d;best=i;}
+      });
+      if(best>=0){tracks[best].positions.push(f);tracks[best].patches.push(f.patch);used.add(best);}
+      else tracks.push({positions:[f],patches:[f.patch]});
+    }
+  }
+  return tracks;
+}
+// Only suppresses the off-camera flag if some CONSISTENTLY TRACKED person's mouth
+// actually changed between two of their own samples — not just "some difference existed
+// somewhere," which is what the old first-face-only comparison amounted to.
+function anyTrackedFaceShowsMotion(tracks,threshold=0.02){
+  for(const t of tracks){
+    if(t.patches.length<2)continue;
+    for(let i=0;i<t.patches.length;i++)
+      for(let j=i+1;j<t.patches.length;j++)
+        if(patchDiff(t.patches[i],t.patches[j])>=threshold)return true;
+  }
+  return false;
 }
 
 /* =========================================================
@@ -3155,11 +3244,11 @@ async function runCombinedVideoPass(){
       setProg('Analyzing audio/face in the background — cue '+(i+1)+'/'+S.src.length+'… (your preview stays put — feel free to keep reviewing)','info');
       const dur=c.end-c.start;
       const times=[c.start+dur*0.2+S.offset, c.start+dur*0.4+S.offset, c.start+dur*0.6+S.offset, c.start+dur*0.8+S.offset];
-      let energies=[],voiceSamples=[],patches=[],faceSeen=false;
+      let energies=[],voiceSamples=[],faceSamples=[],faceSeen=false;
       for(const t of times){
         try{
           await seekAndWait(scanVideo,t);
-          if(faceOk){ try{ const p=await detectMouthPatch(scanVideo); if(p){faceSeen=true;patches.push(p);} }catch(e){} }
+          if(faceOk){ try{ const fs=await detectMouthPatches(scanVideo); if(fs.length){faceSeen=true;} faceSamples.push(fs); }catch(e){} }
           const v=sampleAudioEnergyAndVoice();
           energies.push(v.energy);
           voiceSamples.push(v);
@@ -3206,8 +3295,8 @@ async function runCombinedVideoPass(){
         : Math.max(...energies,0)>SPEECH_THRESH;
       if(text.trim() && !HAS_ID.test(text) && speechLikely){
         if(!faceSeen && faceOk)S.speakerFlags[i]={reason:'No face visible during dialogue — candidate off-screen speaker (or phone-call cutaway).'};
-        else if(faceSeen && patches.length===2 && patchDiff(patches[0],patches[1])<0.02)
-          S.speakerFlags[i]={reason:'Face on screen but mouth shows no motion during dialogue — candidate off-screen speaker.'};
+        else if(faceSeen && !anyTrackedFaceShowsMotion(trackMouthFaces(faceSamples)))
+          S.speakerFlags[i]={reason:'Face(s) on screen but no tracked person\'s mouth shows motion during dialogue — candidate off-screen speaker.'};
         const avgPitch=voiceSamples.reduce((s,v)=>s+v.pitchHz,0)/voiceSamples.length;
         const avgCentroid=voiceSamples.reduce((s,v)=>s+v.centroidHz,0)/voiceSamples.length;
         if(avgPitch>0)S.voiceFeatures[i]={pitchHz:avgPitch,centroidHz:avgCentroid};
