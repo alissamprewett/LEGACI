@@ -3372,7 +3372,13 @@ async function scanGapsForMissingContent(){
     // graphic with nothing to caption, which is the "ignore" case the message itself
     // already described, just no longer showing up as a flag to begin with.
     const hasSpeechEvidence = samples>0 && speechHits>=Math.ceil(samples/2);
-    if(hasSpeechEvidence){
+    // Was missing the same fix MISSING_CAPTION got: this used to fire on raw speech
+    // presence alone, so a caption starting ~0.5s after the speaker (normal onset lag)
+    // read as "graphic outlasting a missing caption" instead of what it actually was —
+    // a small sync gap the caption already resolves. Reuses the exact same
+    // genuinelyMissing check computed above, so both flags agree on what "genuinely
+    // missing" means instead of drifting apart.
+    if(hasSpeechEvidence && genuinelyMissing){
       const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
       if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
     }
