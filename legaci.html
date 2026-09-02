@@ -3295,7 +3295,7 @@ async function scanGapsForMissingContent(){
   // higher bar, since "a whole line got skipped" is a different claim than "there was
   // a brief non-speech sound here."
   const SPEECH_GAP_MIN=1.5;
-  const LEAD_TOLERANCE=1.0; // seconds — speech ending this close to the next caption's start is onset lag, not a missing line
+  const LEAD_TOLERANCE=1.0; // seconds — a hit ending this close to the next caption's start is onset lag, not a missing cue
   const cues=S.cues.slice().sort((a,b)=>a.start-b.start);
   const gaps=[]; let cursor=0;
   cues.forEach(c=>{ if(c.start-cursor>MIN_GAP)gaps.push({start:cursor,end:c.start}); cursor=Math.max(cursor,c.end); });
@@ -3303,7 +3303,7 @@ async function scanGapsForMissingContent(){
   for(const g of gaps){
     const dur=g.end-g.start;
     const n=Math.min(4,Math.max(1,Math.round(dur/3)));
-    let speechHits=0,soundHits=0,musicHits=0,samples=0;
+    let speechHits=0,soundHits=0,musicHits=0,samples=0,lastMusicHitT=-Infinity,lastSoundHitT=-Infinity;
     // Was: "pitch between 70-400Hz = speech, otherwise sound" — a crude range guess that
     // could misclassify low-pitched music or a high-pitched sound effect either way now
     // that a real speech-detection model (VAD) is available. Same graceful fallback to the
@@ -3332,19 +3332,23 @@ async function scanGapsForMissingContent(){
             if(v.pitchHz>=70&&v.pitchHz<=400){ speechHits++; } else { isNonSpeechEnergy=true; harmonicity=v.harmonicity; }
           }
         }
-        if(isNonSpeechEnergy){ if(harmonicity>=HARMONICITY_THRESH)musicHits++; else soundHits++; }
+        if(isNonSpeechEnergy){
+          const nativeT=t-S.offset;   // t above includes S.offset for video seeking; gaps/cues don't, so correct back
+          if(harmonicity>=HARMONICITY_THRESH){ musicHits++; lastMusicHitT=Math.max(lastMusicHitT,nativeT); }
+          else { soundHits++; lastSoundHitT=Math.max(lastSoundHitT,nativeT); }
+        }
       }catch(e){}
     }
-    // A caption that starts a fraction of a second after speech begins is normal onset
-    // lag, not a missing line — real files commonly do this on purpose for readability.
-    // The point-samples above only answer "was there speech somewhere in this stretch";
-    // they say nothing about how close it was to the caption that follows. Checked
-    // directly against real VAD segment boundaries (more precise than the coarse
-    // samples): if speech in this gap runs right up to LEAD_TOLERANCE seconds of where
-    // the next caption starts, that caption is almost certainly the one catching it —
-    // a timing question, not a missing-caption one. A genuinely missing caption still
-    // leaves real silence — more than LEAD_TOLERANCE — between the end of the speech
-    // and the caption that (eventually, unrelatedly) follows.
+    // A cue that starts a fraction of a second after a sound/speech event begins is
+    // normal onset lag, not a missing cue — real files commonly do this on purpose. The
+    // sampling above only answers "did something happen somewhere in this stretch"; it
+    // says nothing about how close it was to the caption/cue that follows. Speech gets
+    // the precise version, checked against real VAD segment boundaries (confirmed against
+    // a real false-flag: dialogue starting 0.2s before its caption was being read as a
+    // missing line). Music/sound get a coarser version of the same idea, built from the
+    // discrete sample timestamps instead — there's no continuous segment data for them,
+    // so this only catches lag when a sample happens to land near the gap's end; it won't
+    // be as reliable as the speech version until measured against a real file.
     let genuinelyMissing=true;
     if(samples>0 && speechHits>=Math.ceil(samples/2) && S.vadSegments){
       const overlapping=S.vadSegments.filter(s=>s.end>g.start && s.start<g.end);
@@ -3353,9 +3357,11 @@ async function scanGapsForMissingContent(){
         genuinelyMissing = (g.end-latestSpeechEnd) > LEAD_TOLERANCE;
       }
     }
+    const musicGenuinelyMissing=(g.end-lastMusicHitT)>LEAD_TOLERANCE;
+    const soundGenuinelyMissing=(g.end-lastSoundHitT)>LEAD_TOLERANCE;
     if(samples>0 && speechHits>=Math.ceil(samples/2) && dur>=SPEECH_GAP_MIN && genuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'speech'});
-    else if(samples>0 && musicHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
-    else if(samples>0 && soundHits>=Math.ceil(samples/2))S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
+    else if(samples>0 && musicHits>=Math.ceil(samples/2) && musicGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
+    else if(samples>0 && soundHits>=Math.ceil(samples/2) && soundGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
     // Was: fired unconditionally on any overlapping graphic, regardless of whether anyone
     // was even talking during that gap — which meant ordinary dialogue-free footage (end
     // credits, b-roll) got flagged just as often as a genuinely missed line, with nothing
@@ -3783,6 +3789,22 @@ const GRAMMAR_HOMOPHONE_PATTERNS=[
   {re:/\bwhose\b(?=\s+(?:is|are|was|were|going|gonna)\b)/gi,
     suggest:"who's",why:"followed by a verb — did you mean the contraction \"who's\"?"}
 ];
+// Walks the text tracking which numbered occurrence each " is (1st/3rd/5th... = opening,
+// 2nd/4th/6th... = closing), and only strips a stray space when it sits directly before a
+// closing quote. Returns the text unchanged if there's nothing to fix, so callers can just
+// compare fixed !== original rather than needing a separate detection regex.
+function fixStrayQuoteSpace(text){
+  let quoteCount=0, result='';
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(ch==='"'){
+      quoteCount++;
+      if(quoteCount%2===0) result=result.replace(/([.!?,])\s+$/,'$1');
+    }
+    result+=ch;
+  }
+  return result;
+}
 function checkGrammarSpelling(text,protectedTerms){
   const findings=[];
   // 1. Duplicate consecutive word (e.g. "we we", "that that") — skipped list covers
@@ -3804,11 +3826,17 @@ function checkGrammarSpelling(text,protectedTerms){
     }
     return m;
   });
-  // 3. Stray space before a closing quotation mark, e.g. `you. "` — offer the cleaned text.
-  if(/[.!?,]\s+"/.test(text)){
-    const cleaned=text.replace(/([.!?,])\s+"/g,'$1"');
-    findings.push({id:'STRAY_QUOTE_SPACE',message:'Stray space before a closing quotation mark. Suggest: "'+cleaned.replace(/"/g,'\\"')+'".'});
-  }
+  // 3. Stray space before a CLOSING quotation mark, e.g. `you. "` — straight quotes don't
+  // carry open/close information themselves, so a quote's position in the text is used
+  // instead: the 1st, 3rd, 5th... occurrence is an opening quote (a space before it, right
+  // after punctuation ending the previous sentence, is CORRECT — e.g. `"Wait!" he said.
+  // "Go."`), the 2nd, 4th, 6th... is a closing quote (a space before THAT one is the real
+  // error). The original version flagged any punctuation-space-quote pattern regardless of
+  // which side of a pair it fell on, so any caption with back-to-back quoted dialogue
+  // misfired — confirmed as the false-flag source from real usage data, 09-01.
+  const strayQuoteFixed=fixStrayQuoteSpace(text);
+  if(strayQuoteFixed!==text)
+    findings.push({id:'STRAY_QUOTE_SPACE',message:'Stray space before a closing quotation mark. Suggest: "'+strayQuoteFixed.replace(/"/g,'\\"')+'".'});
   // 4. Narrow, high-precision homophone-in-context checks — deliberately not a blanket
   // its/your/there scan (that's noisy: most occurrences of those words are correct).
   GRAMMAR_HOMOPHONE_PATTERNS.forEach(p=>{
