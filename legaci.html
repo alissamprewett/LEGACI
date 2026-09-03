@@ -852,6 +852,123 @@ function loadProfileFromStorage(){
     if(raw)applyProfile(JSON.parse(raw));
   }catch(e){}
 }
+
+/* =========================================================
+   WORK-SESSION AUTOSAVE — separate from the profile save above, which only
+   ever covered settings/preferences. This covers the actual work: cues with
+   their edits, validated/false-flag/selection state, and scan results, so an
+   accidental tab close or crash doesn't lose real progress. IndexedDB rather
+   than localStorage: a long episode's cues plus OST region data can get
+   large, localStorage caps out around 5-10MB and writes synchronously
+   (blocking the main thread on every save); IndexedDB has much higher limits
+   and is async, so autosave firing on every edit never causes a stutter.
+
+   Deliberately one current-session slot, not a per-file history — this
+   protects against losing the work in front of you right now, the same way
+   the settings profile is one current profile, not a version history.
+
+   Restoring never happens silently: on load, if a saved session is found, a
+   banner asks first (Resume / Discard) rather than replacing whatever the
+   operator is about to do — the same instinct behind a suggestion never
+   being auto-applied and the scan cache refusing a mismatched video.
+========================================================= */
+const AUTOSAVE_DB='legaci_autosave', AUTOSAVE_STORE='sessions', AUTOSAVE_KEY='current';
+function openAutosaveDB(){
+  return new Promise((resolve,reject)=>{
+    if(!window.indexedDB){reject(new Error('IndexedDB unavailable'));return;}
+    const req=indexedDB.open(AUTOSAVE_DB,1);
+    req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains(AUTOSAVE_STORE))req.result.createObjectStore(AUTOSAVE_STORE); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+// Same lightweight fingerprint idea as scanCacheKey() (filename + a couple of cheap
+// signals) — not a full content hash, just enough to catch "this is clearly a
+// different file" before ever offering to restore into it.
+function sessionKey(){
+  if(!S.vttFileName || !S.cues || !S.cues.length)return null;
+  const first=S.cues[0], last=S.cues[S.cues.length-1];
+  return [S.vttFileName, S.cues.length, first.start.toFixed(2), last.end.toFixed(2)].join('|');
+}
+function buildSessionSnapshot(){
+  const key=sessionKey();
+  if(!key)return null;
+  return {
+    sessionKey:key, savedAt:new Date().toISOString(), vttFileName:S.vttFileName,
+    src:S.src, cues:S.cues,
+    validated:[...S.validated], falseFlagged:[...S.falseFlagged], selectedRows:[...S.selectedRows],
+    detected:S.detected||{}, speakerFlags:S.speakerFlags||{}, voiceFeatures:S.voiceFeatures||{},
+    speakerClusters:S.speakerClusters||{}, clusterNames:S.clusterNames||{},
+    manualOverrides:S.manualOverrides||{}, annotations:S.annotations||{},
+    ostRegions:S.ostRegions||[], shotChanges:S.shotChanges||[], ostPic:S.ostPic||null,
+    scanCacheLoaded:!!S.scanCacheLoaded, offset:S.offset||0
+  };
+}
+let autosaveTimer=null;
+function autosaveSoon(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer=setTimeout(async()=>{
+    const snap=buildSessionSnapshot();
+    if(!snap)return; // nothing meaningful loaded yet — never save an empty/garbage session
+    try{
+      const db=await openAutosaveDB();
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(AUTOSAVE_STORE,'readwrite');
+        tx.objectStore(AUTOSAVE_STORE).put(snap,AUTOSAVE_KEY);
+        tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+      });
+    }catch(e){ /* best-effort — a storage failure should never interrupt editing */ }
+  }, 400); // same debounce window as the settings profile autosave above
+}
+async function loadSessionSnapshot(){
+  try{
+    const db=await openAutosaveDB();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(AUTOSAVE_STORE,'readonly');
+      const req=tx.objectStore(AUTOSAVE_STORE).get(AUTOSAVE_KEY);
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){ return null; }
+}
+async function clearSessionSnapshot(){
+  try{
+    const db=await openAutosaveDB();
+    const tx=db.transaction(AUTOSAVE_STORE,'readwrite');
+    tx.objectStore(AUTOSAVE_STORE).delete(AUTOSAVE_KEY);
+  }catch(e){}
+}
+function restoreSessionSnapshot(snap){
+  S.vttFileName=snap.vttFileName; S.src=snap.src; S.cues=snap.cues;
+  S.validated=new Set(snap.validated); S.falseFlagged=new Set(snap.falseFlagged); S.selectedRows=new Set(snap.selectedRows);
+  S.detected=snap.detected; S.speakerFlags=snap.speakerFlags; S.voiceFeatures=snap.voiceFeatures;
+  S.speakerClusters=snap.speakerClusters; S.clusterNames=snap.clusterNames;
+  S.manualOverrides=snap.manualOverrides; S.annotations=snap.annotations;
+  S.ostRegions=snap.ostRegions; S.shotChanges=snap.shotChanges; S.ostPic=snap.ostPic;
+  S.scanCacheLoaded=snap.scanCacheLoaded; S.offset=snap.offset;
+  document.getElementById('drop-vtt').classList.add('loaded');
+  const dsEl=document.querySelector('#drop-vtt .ds');
+  if(dsEl)dsEl.textContent=snap.vttFileName+' · '+S.src.length+' cues (restored)';
+  updateSyncDisplay();
+  checkReady();
+  buildChecklist(); render();
+  setProg('Restored unsaved work on '+snap.vttFileName+' from '+new Date(snap.savedAt).toLocaleString()+'. Video was not restored (browsers can\'t hold onto that reference) — reload it if checks need it.');
+}
+function showSessionRestoreBanner(snap){
+  const bar=document.createElement('div');
+  bar.style='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:var(--panel);border:1px solid var(--info);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);display:flex;gap:10px;align-items:center;font-size:13px;max-width:90vw';
+  bar.innerHTML='<span>Unsaved work found on <b>'+esc(snap.vttFileName)+'</b> from '+new Date(snap.savedAt).toLocaleString()+'.</span>'+
+    '<button class="pbtn small primary" id="session-resume">Resume</button>'+
+    '<button class="pbtn small" id="session-discard">Discard</button>';
+  document.body.appendChild(bar);
+  document.getElementById('session-resume').addEventListener('click',()=>{ restoreSessionSnapshot(snap); bar.remove(); });
+  document.getElementById('session-discard').addEventListener('click',()=>{ clearSessionSnapshot(); bar.remove(); });
+}
+async function checkForSavedSession(){
+  const snap=await loadSessionSnapshot();
+  if(snap)showSessionRestoreBanner(snap);
+}
+
 function exportProfile(){
   const blob=new Blob([JSON.stringify(buildProfile(),null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='legaci_profile.json'; a.click();
@@ -1474,6 +1591,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
   reader.onload=()=>{
     S.vttRaw=reader.result;
     S.vttFileName=f.name;
+    clearSessionSnapshot();
     S.src=parseVTT(S.vttRaw);
     S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0; S.parseUnusualRange=S.src._unusualRange||0;
     S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
@@ -5255,6 +5373,7 @@ document.getElementById('video-fullscreen').addEventListener('click',()=>{
 });
 
 function render(){
+  autosaveSoon();
   document.getElementById('empty').style.display='none';
   document.getElementById('mainhead').style.display='flex';
   document.getElementById('hotkeyHint').style.display='block';
@@ -5686,6 +5805,7 @@ PROFILE_SETTINGS_IDS.forEach(id=>{
   if(el)el.addEventListener('change',saveProfileSoon);
 });
 loadProfileFromStorage();
+checkForSavedSession();
 checkRosterHandoff();
 mergeSharedPoolIntoSpeakers();
 </script>
