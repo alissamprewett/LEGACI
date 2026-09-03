@@ -970,9 +970,19 @@ document.querySelectorAll('.menudrop button[data-act]').forEach(btn=>{
 function syncStickyOffsets(){
   const h=document.querySelector('header');
   const mb=document.querySelector('.menubar');
+  const vp=document.getElementById('videopane');
+  // .main only becomes a side-by-side grid at >=1180px (see @media rule above); below
+  // that, .mainLeft (videopane) and .mainRight (stickyControls) stack vertically in
+  // normal block flow instead. stickyControls used to always get the SAME top as
+  // videopane, which is correct ONLY side-by-side — stacked, it collided directly with
+  // videopane instead of sitting below it, which read as "the right column shrank" and
+  // "scrolling doesn't reach the review list" (the list was there; the sticky filter
+  // bar was sitting on top of it).
+  const stacked=window.innerWidth<1180;
   mb.style.top=h.offsetHeight+'px';
-  document.getElementById('videopane').style.top=(h.offsetHeight+mb.offsetHeight)+'px';
-  document.getElementById('stickyControls').style.top=(h.offsetHeight+mb.offsetHeight)+'px';
+  vp.style.top=(h.offsetHeight+mb.offsetHeight)+'px';
+  document.getElementById('stickyControls').style.top=
+    (h.offsetHeight+mb.offsetHeight+(stacked?vp.offsetHeight:0))+'px';
 }
 window.addEventListener('resize',syncStickyOffsets);
 syncStickyOffsets();
