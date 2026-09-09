@@ -238,7 +238,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
 <header>
   <div class="brand">Leg<em>aci</em></div>
-  <span class="verbadge">v1.2</span>
+  <span class="verbadge">v1.2.1</span>
   <div class="tag" id="readyTag">one pass: fix what's fixable, flag what isn't</div>
   <a class="back" href="index.html">← Back to hub</a>
 </header>
@@ -369,10 +369,10 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
   <div id="settingsSection">
     <h3>Run settings</h3>
     <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
-<div class="opt"><label>Max duration (s)</label><button class="infobtn" data-infofor="maxdur-hint">i</button><input type="number" id="opt-maxdur" value="7" min="4" max="10" step="0.5"></div>
-<div class="substep infotext" id="maxdur-hint">defaults to 7s. Overruns of half a second or less are trimmed silently; anything longer is flagged for review instead, because the fix is usually a split, not a trim — trimming a long cue's out-time hides the caption while the person is still talking. Ooona's Pluto preset lists 8.008s; set that here if your spec says so.</div>
-<div class="opt"><label>Max reading speed (CPS)</label><button class="infobtn" data-infofor="cps-hint">i</button><input type="number" id="opt-cps" value="25" min="12" max="40"></div>
-<div class="substep infotext" id="cps-hint">new in v1.2 — the live character budget already used 25 CPS as its reference; this turns it into a NEEDS REVIEW row too. Never auto-fixed: the right fix is a rewrite, a merge, or extended timing, and only a human can pick. Sound and music cues in brackets/♪ are skipped.</div>
+<div class="opt"><label>Max duration (s)</label><button class="infobtn" data-infofor="maxdur-hint">i</button><input type="number" id="opt-maxdur" value="8" min="4" max="10" step="0.5"></div>
+<div class="substep infotext" id="maxdur-hint">defaults to 8s — both Ooona Pluto CC projects we have checked carry maxSubDuration 8.008 (the old hard-coded 6.99 was trimming legitimate cues). Overruns of half a second or less are trimmed silently; anything longer is flagged for review instead, because the fix is usually a split, not a trim — trimming a long cue's out-time hides the caption while the person is still talking.</div>
+<div class="opt"><label>Max reading speed (CPS)</label><button class="infobtn" data-infofor="cps-hint">i</button><input type="number" id="opt-cps" value="30" min="12" max="40"></div>
+<div class="substep infotext" id="cps-hint">new in v1.2 — the live character budget uses 25 CPS as its comfortable reference; this row flags only the extremes. Default is 30 because in three human-approved Pluto deliveries the operators routinely left 25–30 CPS cues alone (median 16, ~7% above 25) and only reworked the fastest. Never auto-fixed: the right fix is a rewrite, a merge, or extended timing, and only a human can pick. Sound and music cues in brackets/♪ are skipped.</div>
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
     <div class="opt"><label>Flag unnecessary leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
     <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise. Catches a cue with only one dash-led line anywhere in it (including a single speaker's dialogue that wraps across multiple lines) — a dash marks a second speaker, so with no second one to distinguish, it likely isn't needed.</div>
@@ -2030,15 +2030,32 @@ function buildFixedCues(counts){
     // code extended regardless and then pushed the next cue's in-time later, which walked
     // the sync of everything after it. No room → flag it, leave timing alone.
     if(d<minDur){
-      const room = next ? next.start-cue.start-0.001 : Infinity;
+      const fps0=(S.meta&&S.meta.framerate)?S.meta.framerate:23.976;
+      const room = next ? next.start-cue.start-2/fps0 : Infinity;
       if(room>=minDur){ cue.end=cue.start+minDur; counts.duration++; }
-      else cue.durationFlag={kind:'short',d};
+      else if(d<minDur-0.07) cue.durationFlag={kind:'short',d}; // 2-frame tolerance: 28-frame cues at 29.97 pass QC in practice
     }
     else if(d>maxDur){
       if(d-maxDur<=MAX_TRIM){ cue.end=cue.start+maxDur; counts.duration++; }
       else cue.durationFlag={kind:'long',d,maxDur};
     }
-    if(next && next.start<cue.end+0.001) next.start=cue.end+0.001;
+    // v1.2.1: minimum gap is TWO FRAMES, not 1ms. In every human-approved Pluto file we
+    // measured (three episodes, ~1,800 cues) the gap between consecutive cues is exactly two
+    // frames (0.083s at 23.976, 0.067s at 29.97) wherever cues abut — that is Ooona's
+    // snapping behaviour and what the delivery check expects. Ooona closes a gap by pulling
+    // the OUT-time of the earlier cue back, never by pushing the next cue later (that would
+    // walk the sync of everything after it), so that is what happens here. If pulling the
+    // out-time back would drop the cue under the minimum duration, it's flagged instead.
+    if(next){
+      const fps=(S.meta&&S.meta.framerate)?S.meta.framerate:23.976;
+      const minGap=2/fps;
+      const gap=next.start-cue.end;
+      if(gap<minGap-0.002){
+        const newEnd=next.start-minGap;
+        if(newEnd-cue.start>=minDur-0.07){ cue.end=newEnd; counts.gap=(counts.gap||0)+1; }
+        else cue.gapFlag={gap,minGap};
+      }
+    }
   }
   return out;
 }
@@ -2408,6 +2425,12 @@ const BLOCK = 8;
  *   v1.2:               92% agreement, 89% precision on what it flags, 72% recall,
  *                       and the confidence % now tracks reality (high ≥75 → 96%
  *                       correct, medium → 80%, low → 61%).
+ *   v1.2.1:             re-fitted jointly with a second corrected episode ("100 Days to
+ *                       Indy" Pt 2 S1E3, 889 cues, 315 moved — motorsport graphics, italic
+ *                       lower thirds, results tables). Same thresholds held; only the track
+ *                       peak (0.30→0.28) and the coverage floor (25%→15%) moved. Result:
+ *                       92.7% on the first episode, 93.0% on the second (v1.1 scored 77%
+ *                       there), precision 86% / 97%.
  *
  * The per-frame score threshold and the track peak gate came DOWN (small type is
  * faint at 960px), the isolation gate went UP to pay for it. Change one without the
@@ -2416,11 +2439,11 @@ const BLOCK = 8;
 const OST_TUNING = Object.freeze({
   regionThr:0.22,      // per-frame block score to seed a region (was 0.28)
   minIsolation:0.80,   // region must sit apart from its surroundings (was 0.52)
-  minPeak:0.30,        // a track survives if any frame scored this well (was 0.50)
+  minPeak:0.28,        // a track survives if any frame scored this well (was 0.50)
   minRegionH:16,       // px at 960 wide — 8px-tall slivers were glass highlights, never type
   bandFrac:0.25,       // the bottom (or top) quarter of the active picture is the caption band
   bandInsideFrac:0.50, // ≥ this much of the region's height must sit inside the band
-  minCoverFrac:0.25,   // region must be on screen for ≥ this share of the cue…
+  minCoverFrac:0.15,   // region must be on screen for ≥ this share of the cue…
   minCoverSec:0.50,    //   …or ≥ this many seconds of it
   propagateGapSec:1.5  // carry a move forward onto the NEXT cue if it starts within this gap
 });
@@ -4154,6 +4177,8 @@ function buildChecklist(){
     const df=cue.durationFlag;
     if(df&&df.kind==='long')
       add(gk,ref,'DURATION_LONG','difficult','Cue runs '+df.d.toFixed(2)+'s, over the '+df.maxDur+'s maximum by more than half a second — not trimmed automatically. Split it (Split button below) or shorten the text; trimming the out-time alone would hide the caption while the person is still speaking.');
+    if(cue.gapFlag)
+      add(gk,ref,'GAP_SHORT','difficult','Only '+Math.round(Math.max(0,cue.gapFlag.gap)*1000)+'ms before the next cue — the spec (and Ooona) want a two-frame gap ('+Math.round(cue.gapFlag.minGap*1000)+'ms). Pulling this out-time back would drop the cue under 1s, so it was left alone: merge the two cues or shorten the next one\'s in-time by hand.');
     if(df&&df.kind==='short')
       add(gk,ref,'DURATION_SHORT','difficult','Cue is only '+df.d.toFixed(2)+'s and the next cue starts too soon to extend it to 1s without changing the following timing. Merge with a neighbour or retime by hand.');
     // v1.2 reading speed — the character budget was display-only; Pluto QC fails on it.
@@ -4316,7 +4341,7 @@ async function runFullAnalysis(){
   S.scanning=true;
   logEvent('legaci', 'run_analysis', S.videoURL ? 'with_video' : 'no_video');
   document.getElementById('btn-run').disabled=true;
-  const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0};
+  const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,gap:0,position:0,shortForms:0};
   try{
     if(S.videoURL){
       await waitForScanVideoReady();
@@ -4362,7 +4387,7 @@ function renderSummary(counts){
     (counts.mixedCase?counts.mixedCase+' cue(s) converted from ALL CAPS to mixed case · ':'')+
     (counts.spelling?counts.spelling+' cue(s) with common misspelling(s) fixed · ':'')+
     counts.wrapped+' line(s) rewrapped · '+counts.split+' event(s) split for &gt;3 lines · '+
-    counts.duration+' duration(s) clamped to 1–'+(document.getElementById('opt-maxdur').value||7)+'s · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
+    counts.duration+' duration(s) clamped to 1–'+(document.getElementById('opt-maxdur').value||8)+'s · '+counts.gap+' gap(s) opened to 2 frames · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
 }
 
 /* =========================================================
@@ -4653,12 +4678,18 @@ async function runBatch(pairs){
    parked mid-frame instead, so Ooona's own NotBottomOrTop check raises them
    as errors that have to be cleared by hand.
    ========================================================= */
+// v1.2.1: aligned with a real Pluto CC CaptionMaker project export (templateId below,
+// openSettings block, minSubDuration 1.001004, maxSubDuration 8.008004). Ooona's own
+// lineLength there is 37, but every human-approved delivery we measured wraps at 32 — the
+// tool keeps 32 for its own checks and leaves Ooona's wider limit as the project's value.
 const OOONA_TEMPLATE = {
   fps:23.976, timecodeFormat:"24 fps", format:"VTT18", flavor:"VTT18", extension:"vtt",
-  screenLines:11, lineLength:32, maxParagraphLines:3, previewFontSize:36,
-  minSubDuration:1.00142, maxSubDuration:8.008004, timingFramesGap:0, lineGap:0,
-  mode:"Open", doubleHeight:false, readingSpeedCps:32,
-  safeArea:{left:10,right:10,bottom:10,top:10,units:"%",videoWidth:1920,videoHeight:1080,sameAsProject:false},
+  templateId:"5aecb33d-5e99-44ac-9609-ec0e2563d3df",
+  screenLines:11, lineLength:37, maxParagraphLines:3, graphicalLineLengthFormat:"890",
+  openSettings:{minSubDuration:1.001004, maxSubDuration:8.008004, maxParagraphLines:3, lineLength:37},
+  minSubDuration:1.001004, maxSubDuration:8.008004, timingFramesGap:2, lineGap:0,
+  mode:"Open", doubleHeight:false, track2:null, track3:null, track4:null, targetTrack:-1,
+  safeArea:{left:10,right:10,bottom:10,top:10,units:"%",sameAsProject:false},
   validation:{EmptyLine:true, NoText:true, NotBottomOrTop:true},
   display:{outlineWidth:0, outlineType:"NoOutline"},
   closedCaptions:{doubleControlCodes:false},
@@ -4712,19 +4743,22 @@ function buildOoonaReview(opts){
         reason:'caption may be covering on-screen text'
       });
     }
-    return {
-      id:ooonaUuid(ref), index:i+1, start:c.start, end:c.end,
-      align:'Center', startLine,
-      lines:lines.map((t,k)=>({index:startLine+k, text:t})),
-      lastUpdateTime:now
-    };
+    // Real CaptionMaker paragraphs: bottom cues carry startLine (row counted from the top,
+    // screenLines=11 → a two-line caption starts on row 10); top cues carry vAlign:"Top" and
+    // number their lines from 1 with no startLine. Parked (flagged) cues keep startLine.
+    const p={ start:c.start, lastUpdateTime:now, ccStyle:'None', index:i+1, end:c.end, id:ooonaUuid(ref) };
+    if(side==='top' && !(flagged&&park)){ p.vAlign='Top'; p.lines=lines.map((t,k)=>({text:t, index:k+1})); }
+    else { p.startLine=startLine; p.lines=lines.map((t,k)=>({text:t, index:startLine+k})); }
+    return p;
   });
   return {
     app:'CaptionMaker', settings, currentTime:0,
     name:((document.getElementById('opt-exportname')||{}).value||'corrected').trim()+'-REVIEW',
     local:false,
     information:S.cues.length+' subtitles — '+findings.length+' flagged for placement review',
-    originalId:null, lastSaved:now, isAI:false,
+    originalId:null, lastSaved:now, importTime:now, isAI:false, progress:0, selectedIndex:0,
+    exportMetadata:{comments:null,originalTitle:null,producer:null,startOfMessage:null,tapeNumber:null,translatedEpisodeTitle:null,translatedTitle:null,translator:null},
+    filename:((document.getElementById('opt-exportname')||{}).value||'corrected').trim()+'.vtt',
     label:'LEGACI placement review — not for delivery',
     version:'3.0',
     customShotchanges:{added:[],removed:[]},
