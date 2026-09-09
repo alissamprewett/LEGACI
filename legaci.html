@@ -238,7 +238,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
 <header>
   <div class="brand">Leg<em>aci</em></div>
-  <span class="verbadge">v1.1</span>
+  <span class="verbadge">v1.2</span>
   <div class="tag" id="readyTag">one pass: fix what's fixable, flag what isn't</div>
   <a class="back" href="index.html">← Back to hub</a>
 </header>
@@ -369,6 +369,10 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
   <div id="settingsSection">
     <h3>Run settings</h3>
     <div class="opt"><label>Max chars/line</label><input type="number" id="opt-len" value="32" min="24" max="42"></div>
+<div class="opt"><label>Max duration (s)</label><button class="infobtn" data-infofor="maxdur-hint">i</button><input type="number" id="opt-maxdur" value="7" min="4" max="10" step="0.5"></div>
+<div class="substep infotext" id="maxdur-hint">defaults to 7s. Overruns of half a second or less are trimmed silently; anything longer is flagged for review instead, because the fix is usually a split, not a trim — trimming a long cue's out-time hides the caption while the person is still talking. Ooona's Pluto preset lists 8.008s; set that here if your spec says so.</div>
+<div class="opt"><label>Max reading speed (CPS)</label><button class="infobtn" data-infofor="cps-hint">i</button><input type="number" id="opt-cps" value="25" min="12" max="40"></div>
+<div class="substep infotext" id="cps-hint">new in v1.2 — the live character budget already used 25 CPS as its reference; this turns it into a NEEDS REVIEW row too. Never auto-fixed: the right fix is a rewrite, a merge, or extended timing, and only a human can pick. Sound and music cues in brackets/♪ are skipped.</div>
     <div class="opt"><label>Flag kids CTA text</label><input type="checkbox" id="opt-kidvid"></div>
     <div class="opt"><label>Flag unnecessary leading dashes</label><button class="infobtn" data-infofor="extradash-hint">i</button><input type="checkbox" id="opt-extradash"></div>
     <div class="substep infotext" id="extradash-hint">off by default — some shows style every line with a leading dash regardless of speaker count, which made this check noisy on real files. Turn on if your show's style guide says otherwise. Catches a cue with only one dash-led line anywhere in it (including a single speaker's dialogue that wraps across multiple lines) — a dash marks a second speaker, so with no second one to distinguish, it likely isn't needed.</div>
@@ -554,7 +558,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
   </div>
 
   <div class="panelbox" id="comparepanel">
-    <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt) and flags captions whose text diverges significantly from what the reference has for the same timespan. This flags a DISAGREEMENT, not a confirmed error — the reference transcript can itself be wrong (ASR mishears things constantly), especially on names. Treat every flag as "these two disagree, a human should check," never as "the caption is wrong."</div>
+    <div class="oh info">Loads a reference transcript (from Transcribe, or any timed .vtt/.srt), or generates one from the video's audio. Nothing in this tool compares captions against it — the Transcript Mismatch check that used to do that has been removed — so loading a reference here currently has no effect on the analysis or on what gets flagged.</div>
     <div class="prow">
       <label class="drop" id="drop-reftranscript" style="flex:1">
         <span class="dk">FILE</span>
@@ -562,10 +566,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
         <input type="file" id="file-reftranscript" accept=".vtt,.srt">
       </label>
     </div>
-    <div class="opt"><label>Enable this check</label><input type="checkbox" id="opt-compare-enabled"></div>
-    <div class="opt"><label>Flag sensitivity (lower = stricter)</label><input type="number" id="opt-compare-threshold" value="0.5" step="0.05" min="0.1" max="0.9" style="width:70px"></div>
-    <div class="opt"><label>No reference loaded? Generate one (Whisper)</label><input type="checkbox" id="opt-autoref-enabled"></div>
-    <div class="plabel" style="margin-top:4px">Only runs when this check is on above, a video is loaded, and no file was uploaded here — transcribes the audio (Whisper "small" model, same tier as Transcribe) and corrects names/terms against your Speaker Pool, Personal Dictionary, and any cast metadata before comparing. This is a machine-generated reference, not a human-verified one — treat mismatches the same way, as "these two disagree," never as a confirmed caption error. Adds real time to analysis; only turn on if you don't already have a transcript to upload.</div>
     <div class="plabel" id="compare-status" style="margin-top:6px"></div>
   </div>
 
@@ -802,7 +802,7 @@ document.addEventListener('mousedown',e=>{
    Export/Import as a file lets a profile move to another machine or get
    shared with a teammate.
 ========================================================= */
-const PROFILE_SETTINGS_IDS=['opt-len','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange','opt-autoref-enabled'];
+const PROFILE_SETTINGS_IDS=['opt-len','opt-maxdur','opt-cps','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
 function buildProfile(){
   const settings={};
   PROFILE_SETTINGS_IDS.forEach(id=>{
@@ -1132,7 +1132,7 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   selectedCueIndices:new Set(),lastClickedCueIdx:null,
   viewMode:'issues',searchMatches:[],searchMatchIdx:0,manualOverrides:{},lastClickedRi:null,annotations:{},history:[],
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
-  refTranscript:null,refTranscriptSource:null,
+  refTranscript:null,
   charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[],
   ooonaProject:null,scanCacheLoaded:false,placementDiff:null};
 const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row',posTop:'Move current row to TOP',posBottom:'Move current row to BOTTOM'};
@@ -1209,148 +1209,12 @@ document.getElementById('file-reftranscript').addEventListener('change',e=>{
   reader.onload=()=>{
     const cues=parseVTT(reader.result).map(c=>({start:c.start,end:c.end,text:(c.origText||'').replace(/<[^>]+>/g,' ')}));
     S.refTranscript=cues;
-    S.refTranscriptSource='manual';
     document.getElementById('drop-reftranscript').classList.add('loaded');
     document.getElementById('reftranscript-name').textContent=f.name+' — '+cues.length+' segment(s)';
-    document.getElementById('compare-status').textContent='Loaded. Check "Enable this check" and re-run analysis to compare.';
+    document.getElementById('compare-status').textContent='Loaded. Note that nothing in this tool currently compares captions against it.';
   };
   reader.readAsText(f);
 });
-// Word-level edit distance (words as the unit, not characters) — a missing word is a
-// deletion, a misheard/mistyped word is a substitution. Similarity is normalized so it
-// stays comparable across short and long lines.
-function wordDiffSimilarity(a,b){
-  const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9' ]/g,' ').split(/\s+/).filter(Boolean);
-  const wa=norm(a), wb=norm(b);
-  if(!wa.length && !wb.length)return 1;
-  if(!wa.length || !wb.length)return 0;
-  const dp=Array.from({length:wa.length+1},()=>new Array(wb.length+1).fill(0));
-  for(let i=0;i<=wa.length;i++)dp[i][0]=i;
-  for(let j=0;j<=wb.length;j++)dp[0][j]=j;
-  for(let i=1;i<=wa.length;i++){
-    for(let j=1;j<=wb.length;j++){
-      if(wa[i-1]===wb[j-1])dp[i][j]=dp[i-1][j-1];
-      else dp[i][j]=1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
-    }
-  }
-  const dist=dp[wa.length][wb.length];
-  return 1-(dist/Math.max(wa.length,wb.length));
-}
-function referenceTextForWindow(start,end){
-  if(!S.refTranscript)return '';
-  return S.refTranscript.filter(s=>s.end>start && s.start<end).map(s=>s.text.trim()).join(' ').trim();
-}
-
-/* =========================================================
-   AUTO-GENERATED REFERENCE TRANSCRIPT (Whisper) — for the Transcript
-   Mismatch check, when nobody has a reference transcript to upload.
-   Runs the same Whisper pipeline Transcribe already uses, then corrects
-   the output's proper nouns against known vocabulary before handing it
-   to the comparison. Doesn't touch anything else in this check.
-
-   Why correction happens AFTER transcription, not by prompting the model
-   beforehand: priming Whisper with the caption's own dialogue text and
-   then comparing its output back against that same text would bias the
-   model toward reproducing what it was just told is there — exactly the
-   failure mode (a dropped or wrong word) this check exists to catch.
-   That would make the check less sensitive while looking like an
-   improvement (fewer flags). A post-hoc correction pass only touches
-   Whisper's well-documented weak point — misspelling names and unusual
-   terms it's never heard before — without telling it what the sentence
-   should say, so the transcription's judgment of content stays independent.
-========================================================= */
-function levenshteinChars(a,b){
-  const dp=Array.from({length:a.length+1},()=>new Array(b.length+1).fill(0));
-  for(let i=0;i<=a.length;i++)dp[i][0]=i;
-  for(let j=0;j<=b.length;j++)dp[0][j]=j;
-  for(let i=1;i<=a.length;i++)
-    for(let j=1;j<=b.length;j++)
-      dp[i][j]= a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
-  return dp[a.length][b.length];
-}
-// Sentence-initial words are always capitalized regardless of whether they're a name —
-// without excluding common ones, "The" at a sentence start could get "corrected" into a
-// short vocab name that happens to be within edit distance 1. Only guards common short
-// words; anything longer is naturally protected by the distance cap below.
-const ASR_VOCAB_STOPWORDS=new Set(['i',"i'm","i've","i'll","i'd",'the','he','she','we','they','you','it','this','that','my','his','her','our','your','their','a','an','and','but','so','if','as','at','in','on','no','yes','ok','well','oh','hey','now','then','when','what','who','why','how']);
-function correctAsrVocabWord(word,vocabTerms){
-  if(!/^[A-Z]/.test(word))return word; // only touch tokens Whisper itself capitalized
-  const lower=word.toLowerCase();
-  if(ASR_VOCAB_STOPWORDS.has(lower))return word;
-  if(word.length<3)return word;
-  let best=null,bestDist=Infinity;
-  for(const term of vocabTerms){
-    const d=levenshteinChars(lower,term.toLowerCase());
-    if(d<bestDist){bestDist=d;best=term;}
-  }
-  const maxDist=word.length<=4?1:2; // only a genuinely close miss gets corrected
-  return (best&&bestDist>0&&bestDist<=maxDist) ? best : word;
-}
-function correctAsrVocabText(text,vocabTerms){
-  if(!vocabTerms||!vocabTerms.length)return text;
-  return text.split(/(\s+)/).map(tok=>{
-    if(!tok||/^\s+$/.test(tok))return tok;
-    const prefix=tok.match(/^[^A-Za-z0-9']+/)?.[0]||'';
-    const core=tok.slice(prefix.length).replace(/[^A-Za-z0-9']+$/,'');
-    const suffix=tok.slice(prefix.length+core.length);
-    if(!core)return tok;
-    return prefix+correctAsrVocabWord(core,vocabTerms)+suffix;
-  }).join('');
-}
-// Same known-name source convertToMixedCase/auto-capitalization already use — speaker
-// pool, metadata actors, personal dictionary — so this doesn't introduce a second,
-// diverging idea of "known names" into the tool.
-function asrVocabTerms(){
-  const raw=[...(S.speakerPool||[]),...((S.meta&&S.meta.actors)||[]),...(S.personalDictionary||[])].filter(Boolean);
-  // Correction runs one ASR word at a time, so a multi-word entry like a full actor name
-  // ("Sarah Michelle Gellar") has to be broken into its individual name tokens too, or it
-  // can never match anything — nothing in a transcript will ever equal the whole phrase.
-  const words=raw.flatMap(t=>t.split(/\s+/)).filter(w=>w.length>=3);
-  return [...new Set([...raw,...words])];
-}
-
-let whisperPipelinePromise=null;
-function loadWhisperPipeline(){
-  if(whisperPipelinePromise)return whisperPipelinePromise;
-  whisperPipelinePromise=(async()=>{
-    const mod=await import(LEGACI_DEPS.url('transformersJs'));
-    mod.env.allowLocalModels=false;
-    return await mod.pipeline('automatic-speech-recognition','Xenova/whisper-small');
-  })();
-  return whisperPipelinePromise;
-}
-// Resamples to 16kHz mono, matching what Transcribe's Whisper pipeline expects — a
-// separate decode from decodeFullAudioTrack() above, which deliberately keeps VAD's
-// audio at native sample rate. Two decodes of the same file, not a shared one; kept
-// separate so a change to one path can't silently affect the other.
-async function decodeAudioTo16kMono(file){
-  const arrayBuffer=await file.arrayBuffer();
-  const decodeCtx=new (window.AudioContext||window.webkitAudioContext)();
-  let audioBuffer;
-  try{ audioBuffer=await decodeCtx.decodeAudioData(arrayBuffer); }
-  finally{ decodeCtx.close&&decodeCtx.close(); }
-  const offlineCtx=new OfflineAudioContext(1,Math.ceil(audioBuffer.duration*16000),16000);
-  const src=offlineCtx.createBufferSource();
-  src.buffer=audioBuffer;
-  src.connect(offlineCtx.destination);
-  src.start(0);
-  const rendered=await offlineCtx.startRendering();
-  return rendered.getChannelData(0);
-}
-// Produces the same {start,end,text} shape referenceTextForWindow() already expects
-// from a manually-uploaded .vtt/.srt, so nothing downstream needs to know or care
-// which source it came from.
-async function generateAutoReferenceTranscript(file){
-  const pipe=await loadWhisperPipeline();
-  const audio=await decodeAudioTo16kMono(file);
-  const output=await pipe(audio,{chunk_length_s:30,stride_length_s:5,return_timestamps:true});
-  const vocab=asrVocabTerms();
-  return (output.chunks||[]).map(c=>({
-    start:c.timestamp[0]??0,
-    end:c.timestamp[1]??((c.timestamp[0]??0)+3),
-    text:correctAsrVocabText((c.text||'').trim(),vocab)
-  })).filter(c=>c.text);
-}
 function serializeVTT(cues){
   let out='WEBVTT\n\n';
   cues.forEach(c=>{out+=fmtTime(c.start)+' --> '+fmtTime(c.end)+(c.settings?' '+c.settings:'')+'\n'+c.text+'\n\n';});
@@ -1592,7 +1456,7 @@ document.getElementById('file-vtt').addEventListener('change',e=>{
     S.vttRaw=reader.result;
     S.vttFileName=f.name;
     clearSessionSnapshot();
-    S.src=parseVTT(S.vttRaw);
+    S.src=parseVTT(S.vttRaw); S.fileLineDialect=null;
     S.parseSkipped=S.src._skipped||0; S.parseFlipped=S.src._flipped||0; S.parseUnusualRange=S.src._unusualRange||0;
     S.detected={}; S.speakerFlags={}; S.voiceFeatures={}; S.speakerClusters={}; S.clusterNames={};
     S.validated=new Set(); S.falseFlagged=new Set(); S.everSeen=new Set(); S.speakerPool=[]; S.rowsByKey={}; S.selectedRows=new Set();
@@ -1623,10 +1487,6 @@ document.getElementById('file-video').addEventListener('change',e=>{
   if(S.videoURL)URL.revokeObjectURL(S.videoURL);
   S.videoURL=URL.createObjectURL(f);
   S.videoFile=f;
-  // A previously auto-generated reference belongs to whatever video produced it — a new
-  // video means it's stale and would silently compare captions against the wrong audio.
-  // A manually-uploaded reference is left alone; the operator chose that one deliberately.
-  if(S.refTranscriptSource==='auto-whisper'){ S.refTranscript=null; S.refTranscriptSource=null; }
   video.src=S.videoURL;
   scanVideo.src=S.videoURL;
   document.getElementById('drop-video').classList.add('loaded');
@@ -1639,17 +1499,44 @@ document.getElementById('file-video').addEventListener('change',e=>{
 /* =========================================================
    STEP 1 TEXT FIXES (deterministic, always runs first)
 ========================================================= */
+// Words a line should not end on when there is a choice — articles, short prepositions,
+// conjunctions and possessives read as a dangling fragment at a line break.
+const WRAP_AVOID_TRAILING=new Set(['a','an','the','and','but','or','of','to','in','on','at','for','with','by','from','as','my','his','her','our','your','their','its']);
+/**
+ * v1.2: balanced wrap. The old greedy wrap filled line 1 to the limit and left a stub on
+ * line 2 ("on a dream vacation to Costa" / "Rica"). Only runs when a line actually exceeds
+ * the limit; lines that already fit are never touched. Picks the split with the smallest
+ * length difference between the two halves, then penalises leaving a dangling article or
+ * preposition at the end of a line — the same two rules a human wrapper applies.
+ */
 function wrapLine(line,maxChars){
   if(line.length<=maxChars)return [line];
-  const words=line.split(' ');
+  const words=line.split(' ').filter(w=>w!=='');
+  if(words.some(w=>w.length>maxChars)){ // a single over-long token: fall back to greedy
+    const out=[]; let cur='';
+    words.forEach(w=>{ const test=cur?cur+' '+w:w; if(test.length<=maxChars)cur=test; else { if(cur)out.push(cur); cur=w; } });
+    if(cur)out.push(cur); return out;
+  }
+  if(line.length<=maxChars*2){
+    let best=null;
+    for(let i=1;i<words.length;i++){
+      const a=words.slice(0,i).join(' '), b=words.slice(i).join(' ');
+      if(a.length>maxChars||b.length>maxChars)continue;
+      let cost=Math.abs(a.length-b.length);
+      if(WRAP_AVOID_TRAILING.has(words[i-1].toLowerCase().replace(/[^a-z']/g,'')))cost+=8;
+      if(/[.!?,;:]$/.test(words[i-1]))cost-=4; // a natural pause is the best place to break
+      if(!best||cost<best.cost)best={cost,a,b};
+    }
+    if(best)return [best.a,best.b];
+  }
+  // three or more lines: greedy, then rebalance the last two the same way
   const out=[]; let cur='';
-  words.forEach(w=>{
-    if(w.length>maxChars){ if(cur)out.push(cur); out.push(w); cur=''; return; }
-    const test=cur?cur+' '+w:w;
-    if(test.length<=maxChars)cur=test;
-    else { if(cur)out.push(cur); cur=w; }
-  });
+  words.forEach(w=>{ const test=cur?cur+' '+w:w; if(test.length<=maxChars)cur=test; else { if(cur)out.push(cur); cur=w; } });
   if(cur)out.push(cur);
+  if(out.length>=2){
+    const tail=wrapLine(out[out.length-2]+' '+out[out.length-1],maxChars);
+    if(tail.length===2){ out.splice(out.length-2,2,...tail); }
+  }
   return out;
 }
 // Hard live cap for manual editing: re-wraps every line to the char limit and caps the
@@ -1849,7 +1736,14 @@ function autoFixText(rawText,counts){
     const prot=[];
     l=l.replace(/\.{3}/g,m=>{prot.push(m);return '\u0000E'+(prot.length-1)+'\u0000';});
     l=l.replace(/\b(?:[A-Z]\.){2,}/g,m=>{prot.push(m);return '\u0000A'+(prot.length-1)+'\u0000';});
-    l=l.replace(/([.!?])(?=\S)/g,'$1 ');
+    // v1.2: web addresses stay whole ("pluto.tv", "site.com") — protected the same way as ellipses.
+    l=l.replace(/\b[a-z0-9-]+\.(?:com|tv|net|org|co|io|gov|edu|us|uk)\b/gi,m=>{prot.push(m);return '\u0000A'+(prot.length-1)+'\u0000';});
+    // v1.2: was `([.!?])(?=\S)` — which put a space inside `said."` → `said. "` (and the
+    // grammar pass then flagged the very space this line had just introduced), and broke
+    // decimals/URLs/times: `$3.50` → `$3. 50`, `pluto.tv` → `pluto. tv`. Only insert a
+    // space when a letter follows directly, and never inside a digit.digit pair.
+    l=l.replace(/([.!?])(?=[A-Za-z\u00C0-\u024F])(?<!\d[.!?])/g,'$1 ');
+    l=l.replace(/(\d)([.!?])(?=[A-Za-z])/g,(m,a,b)=>a+b+' ');
     prot.forEach((v,idx)=>{l=l.replace(new RegExp('\u0000[EA]'+idx+'\u0000','g'),v);});
     return l;
   }).join('\n');
@@ -1860,7 +1754,9 @@ function autoFixText(rawText,counts){
   // touched at all, since the regex required a literal space character. Lines are already
   // trimmed by this point (the spacing step above), so a sentence-ending mark immediately
   // followed by a newline reliably means a new sentence starts on the next line.
-  t=t.replace(/(^|[.!?] |[.!?]\n)([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  // v1.2: an ellipsis is a trailing-off, not a sentence end — "I thought... maybe" keeps its
+  // lowercase continuation. Was capitalising after every "." including "…".
+  t=t.replace(/(^|(?<!\.\.)[.!?] |(?<!\.\.)[.!?]\n)([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
   // Known-name capitalization — reuses the exact same source convertToMixedCase already
   // draws from (speaker pool, metadata actors, personal dictionary), but non-destructively:
   // convertToMixedCase lowercases the whole cue first before re-capitalizing, which is
@@ -2002,6 +1898,36 @@ function resolveTopOrBottom(settingsStr){
 // ORIGINAL settings string first, before that happens, so a deliberate non-center position
 // (a caption legitimately shifted left/right, e.g. to dodge on-screen text) gets a flag
 // instead of silently disappearing with no notice at all.
+/**
+ * v1.2 — write placement back in the dialect the file arrived in. Ooona's VTT export
+ * (and the human-corrected files that come back from it) count rows from the bottom:
+ * `line:-2` for a two-line caption, `line:-1` for one line, `line:0` for the top row.
+ * Rewriting every one of those to `line:90%` made every cue in the file show as
+ * "position normalized", threw away the operator's row choice, and made the round-trip
+ * diff useless. Now: a cue whose side is unchanged keeps its own settings string
+ * (only a forced-centre cleanup is applied); a cue that actually moves is written in the
+ * same dialect as its neighbours.
+ */
+function fileLineDialect(){
+  if(S.fileLineDialect) return S.fileLineDialect;
+  let d='pct';
+  for(const c of (S.src||[])){
+    const s=c.settings||'';
+    if(/line:-?\d+(?![\d.%])/.test(s)){ d='int'; break; }
+    if(/line:-?[\d.]+%/.test(s)) d='pct';
+  }
+  S.fileLineDialect=d; return d;
+}
+function settingsForSide(side,text){
+  const nLines=Math.max(1,String(text||'').split('\n').filter(l=>l.trim()).length);
+  if(fileLineDialect()==='int') return side==='top' ? 'align:middle line:0' : 'line:-'+nLines;
+  return side==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+}
+/** Keep the cue's own line value; only strip a horizontal offset (house spec centres everything). */
+function normalizeKeepDialect(settingsStr){
+  let s=(settingsStr||'').replace(/\s*position:[^\s]+/g,'').replace(/align:(start|end|left|right|center)/g,'align:middle').trim().replace(/\s+/g,' ');
+  return s;
+}
 function detectOffCenterHorizontal(settingsStr){
   const s=settingsStr||'';
   if(/align:start/.test(s))return 'was left-aligned (align:start)';
@@ -2016,7 +1942,10 @@ function detectOffCenterHorizontal(settingsStr){
 function buildFixedCues(counts){
   const maxLen=+document.getElementById('opt-len').value;
   const useMixedCase=document.getElementById('opt-mixedcase').checked;
-  const minDur=1, maxDur=6.99;
+  const minDur=1;
+  const maxDur=Math.max(4,parseFloat(document.getElementById('opt-maxdur').value)||7);
+  const MAX_TRIM=0.5; // longer overruns are flagged (DURATION_LONG), not trimmed
+
   let out=[];
   let narratorEstablished=false;
   S.src.forEach((c,srcIdx)=>{
@@ -2024,7 +1953,7 @@ function buildFixedCues(counts){
     // ID appears, later italicized lines with no ID of their own are assumed to still be
     // the narrator (per house style) and shouldn't be flagged as missing a speaker ID.
     const origStripped=c.origText.replace(/<[^>]+>/g,'');
-    const isNarratorId=/^\s*(\(|\[)?\s*narrator\s*(\)|\])?\s*:/i.test(origStripped);
+    const isNarratorId=/^\s*(?:-\s*)?(?:(?:\(|\[)\s*narrator\s*(?:\)|\])\s*:?|narrator\s*:)/i.test(origStripped);
     const wasItalic=/<i\b[^>]*>/i.test(c.origText);
     const narratorContext=narratorEstablished && wasItalic;
     if(isNarratorId)narratorEstablished=true;
@@ -2061,8 +1990,9 @@ function buildFixedCues(counts){
       // so a human gets a chance to confirm that's fine to lose rather than it silently
       // vanishing with no flag at all.
       offCenterH=detectOffCenterHorizontal(c.settings);
-      settings = resolveTopOrBottom(c.settings)==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
-      if((c.settings||'')!==settings)counts.position++;
+      // v1.2: side unchanged → keep the file's own settings (dialect and row intact).
+      settings = normalizeKeepDialect(c.settings);
+      if(settings!==(c.settings||'').trim().replace(/\s+/g,' '))counts.position++;
       ostSuggested = autoZone || manualZone || null;
       ostDetail = autoZone ? autoDetail : null;
       // regionConfidence already existed in the ported detection module but was never
@@ -2095,9 +2025,19 @@ function buildFixedCues(counts){
   for(let i=0;i<out.length;i++){
     const cue=out[i];
     let d=cue.end-cue.start;
-    if(d<minDur){ cue.end=cue.start+minDur; counts.duration++; }
-    else if(d>maxDur){ cue.end=cue.start+maxDur; counts.duration++; }
     const next=out[i+1];
+    // v1.2: a short cue is only extended when there is room before the next cue — the old
+    // code extended regardless and then pushed the next cue's in-time later, which walked
+    // the sync of everything after it. No room → flag it, leave timing alone.
+    if(d<minDur){
+      const room = next ? next.start-cue.start-0.001 : Infinity;
+      if(room>=minDur){ cue.end=cue.start+minDur; counts.duration++; }
+      else cue.durationFlag={kind:'short',d};
+    }
+    else if(d>maxDur){
+      if(d-maxDur<=MAX_TRIM){ cue.end=cue.start+maxDur; counts.duration++; }
+      else cue.durationFlag={kind:'long',d,maxDur};
+    }
     if(next && next.start<cue.end+0.001) next.start=cue.end+0.001;
   }
   return out;
@@ -2259,6 +2199,55 @@ function measure(cue, regions, pic, prof=PROFILE){
   return {overlap:worst, region:who, coverage:cover, rect, from, to};
 }
 /**
+ * v1.2 placement decision — band-based, the way a human QC operator actually works.
+ *
+ * measure() asks "does the caption's own rectangle intersect the text?" — but the
+ * human-corrected episode showed that is not the question. A name label parked in the
+ * bottom-right of a PIP window never touches a centred caption's rectangle, and the
+ * operator moved the caption anyway: house practice is that the caption band is either
+ * clear or it isn't. So this asks "is there on-screen text in the caption band on this
+ * side of the frame?" and ignores where it sits left-to-right.
+ *
+ * Three filters carry the precision:
+ *   - the region has to be at least minRegionH tall (8px slivers were never type),
+ *   - at least bandInsideFrac of its height has to sit INSIDE the safe band — a shirt
+ *     logo or a UI strip hugging the very bottom edge is below where captions render,
+ *   - it has to be on screen for a meaningful share of the cue (coverage), so a label
+ *     that fades in during the last 200ms of a cue doesn't move that cue.
+ */
+function bandHit(cue, regions, pic, side, prof=PROFILE){
+  const T=OST_TUNING;
+  const bandTop = side==='bottom' ? pic.y+pic.h*(1-T.bandFrac) : pic.y;
+  const bandBot = side==='bottom' ? pic.y+pic.h*(1-prof.safeBottom) : pic.y+pic.h*T.bandFrac;
+  const dur=Math.max(0.05,cue.end-cue.start);
+  let best=null;
+  for(const r of regions){
+    if(r.kind==="bug" || r.h<T.minRegionH) continue;
+    const onFor=Math.min(r.t1,cue.end)-Math.max(r.t0,cue.start);
+    if(onFor<=0) continue;
+    const cover=onFor/dur;
+    if(cover<T.minCoverFrac && onFor<T.minCoverSec) continue;
+    const inside=Math.max(0,Math.min(r.y+r.h,bandBot)-Math.max(r.y,bandTop))/r.h;
+    if(inside<T.bandInsideFrac) continue;
+    if(!best || r.score>best.region.score) best={region:r, coverage:cover, inside, onFor};
+  }
+  return best;
+}
+/**
+ * Confidence for a band hit, 0–100, calibrated on the same episode: ≥75 was right 96%
+ * of the time, 50–74 → 80%, <50 → 61%. Score carries most of the weight, then how
+ * many frames saw it, then isolation, then how much of the cue it actually covers.
+ */
+function bandConfidence(hit){
+  if(!hit) return 0;
+  const r=hit.region;
+  const s=clamp01(((r.score??0)-0.25)/0.35);
+  const n=clamp01(((r.samples??1)-1)/5);
+  const i=clamp01(((r.isolation??1)-0.60)/0.40);
+  const c=clamp01(hit.coverage??0);
+  return Math.round(100*(0.45*s+0.25*n+0.15*i+0.15*c));
+}
+/**
  * The frame to show someone who wants to see the problem. Jumping to the cue's
  * in-time is wrong when the text appears part-way through it — you land on a
  * clean frame and the collision is invisible. This lands just inside the window
@@ -2407,6 +2396,34 @@ const confidenceBand = c => c>=75 ? "high" : c>=50 ? "medium" : "low";
  */
 const ANALYSIS_W = 960;
 const BLOCK = 8;
+/**
+ * v1.2 tuning — measured, not guessed. Every value below was fitted against a real
+ * episode ("I Met My Murderer Online" S1E5, 450 cues) where a human had already moved
+ * every caption that collided with on-screen text, then verified cue-by-cue:
+ *
+ *   as shipped (v1.1):  79% of cues placed on the same side the human chose,
+ *                       9% of the human's moves found (the small PIP name labels
+ *                       scored 0.30–0.45 and never cleared the old 0.50 peak gate;
+ *                       a sampling bug also starved whole stretches of the file).
+ *   v1.2:               92% agreement, 89% precision on what it flags, 72% recall,
+ *                       and the confidence % now tracks reality (high ≥75 → 96%
+ *                       correct, medium → 80%, low → 61%).
+ *
+ * The per-frame score threshold and the track peak gate came DOWN (small type is
+ * faint at 960px), the isolation gate went UP to pay for it. Change one without the
+ * other and the false-positive rate climbs fast.
+ */
+const OST_TUNING = Object.freeze({
+  regionThr:0.22,      // per-frame block score to seed a region (was 0.28)
+  minIsolation:0.80,   // region must sit apart from its surroundings (was 0.52)
+  minPeak:0.30,        // a track survives if any frame scored this well (was 0.50)
+  minRegionH:16,       // px at 960 wide — 8px-tall slivers were glass highlights, never type
+  bandFrac:0.25,       // the bottom (or top) quarter of the active picture is the caption band
+  bandInsideFrac:0.50, // ≥ this much of the region's height must sit inside the band
+  minCoverFrac:0.25,   // region must be on screen for ≥ this share of the cue…
+  minCoverSec:0.50,    //   …or ≥ this many seconds of it
+  propagateGapSec:1.5  // carry a move forward onto the NEXT cue if it starts within this gap
+});
 
 /** Trim letterbox / pillarbox so every later measurement is against real picture. */
 function detectActivePicture(gray,w,h,thr=26){
@@ -2625,8 +2642,12 @@ function gridToRegions(sg,thr=0.28,minRun=3,opts={}){
     });
   }
   const picW=sg.cols*bp, picH=sg.rows*bp;
-  // 0.45 let a bookshelf through at isolation 0.51; real lower thirds sit near 0.88
-  const minIso=opts.minIsolation ?? 0.52;
+  // 0.45 let a bookshelf through at isolation 0.51; real lower thirds sit near 0.88.
+  // v1.2: raised to 0.80 after measuring against a human-corrected episode — every real
+  // lower third and PIP name label in that file sat at isolation 0.85–1.0, while the
+  // remaining false regions (shirt logos, glass highlights, poster texture) were 0.35–0.75.
+  // A tighter isolation gate is what lets the score threshold below drop safely.
+  const minIso=opts.minIsolation ?? OST_TUNING.minIsolation;
   const minScore=opts.minScore ?? 0;
   const boxes=closeRegions(out, bp*2.2, bp*1.1).filter(r=>r.w>=minRun*bp && r.score>=minScore);
   // The candidate sweep wants everything that might be text; the gates below
@@ -2710,7 +2731,7 @@ function trackRegions(samples, totalSamples, opts={}){
   // on at least one frame. Real type always has a good frame somewhere; book
   // spines, tiled roofs and hedgerows hover just above the low bar and never
   // clear this one.
-  const minPeak = opts.minPeak ?? 0.50;
+  const minPeak = opts.minPeak ?? OST_TUNING.minPeak;
   const coarseTotal = opts.coarseTotal ?? totalSamples;
   return tracks.filter(t=>t.times.length>=minSamples && t.score>=minPeak).map((t,i)=>{
     const presence=t.coarseHits/Math.max(1,coarseTotal);
@@ -2767,30 +2788,6 @@ function refineTimes(cues, regions, step=2.5, perCue=3){
     for(let i=0;i<n;i++) set.add(q(c.start+d*(i+0.5)/n));
   }
   return [...set].sort((a,b)=>a-b);
-}
-// The line above (`if(!live.some(...)) continue;`) is exactly the gap: a cue only gets
-// dense sampling if the coarse sweep already found something nearby. A brief on-screen
-// graphic that falls entirely between two coarse samples (confirmed: a quick text effect
-// that scored 0.6-0.84 on the block-text metric where it WAS visible — well above the
-// detection threshold — but the coarse sweep's own timestamps never landed inside its
-// cue's window at all, so the sweep never nominated anything for stage two to refine) is
-// invisible to the whole pipeline regardless of how well it would have scored. This adds
-// real samples for exactly those cues and no others — same density formula refineTimes
-// already uses, so cues the sweep did cover are completely unaffected and pay no extra
-// cost; only the genuine gap gets closed.
-function uncoveredCueTimes(cues, coarse, perCue=3){
-  const sorted=[...coarse].sort((a,b)=>a-b);
-  const q=t=>Math.round(t*100)/100;
-  const out=[];
-  for(const c of cues){
-    const covered=sorted.some(t=>t>=c.start && t<=c.end);
-    if(!covered){
-      const d=Math.max(0.05,c.end-c.start);
-      const n=Math.max(2,Math.min(perCue,Math.ceil(d*2)));
-      for(let i=0;i<n;i++) out.push(q(c.start+d*(i+0.5)/n));
-    }
-  }
-  return out;
 }
 /** Single-stage fallback: dense frames on every cue plus a coarse sweep. Used
  *  when a scan is run without a prior sweep to narrow things down. */
@@ -2871,8 +2868,11 @@ async function runOSTDetectionScan(){
         const sg=scoreFrame(g,prev,w,h,pic);
         seen.set(times[i],{
           t:times[i], coarse:isCoarse,
-          regions:gridToRegions(sg,0.28,3),
-          cand:gridToRegions(sg,0.18,2,{gates:false})
+          regions:gridToRegions(sg,OST_TUNING.regionThr,3),
+          // Candidates feed only the refine-time planner. Without a size sanity check the
+          // low-threshold sweep merged into one whole-frame blob that then read as an
+          // always-on "bug" — and every cue under it was skipped by the refine pass.
+          cand:gridToRegions(sg,0.18,2,{gates:false}).filter(r=>r.w<pic.w*0.9 && r.h<pic.h*0.5)
         });
         prev=g;
       }catch(err){ if(err.message==='FRAME_BLOCKED'){blocked=true;return;} }
@@ -2886,17 +2886,11 @@ async function runOSTDetectionScan(){
   const hints=[...seen.values()].sort((a,b)=>a.t-b.t).map(s=>({...s,regions:s.cand}));
   const rough=trackRegions(hints,coarse.length,{pictureH:pic.h,coarseTotal:coarse.length,minSamples:1,persistThr:0.9,minPeak:0});
 
+  // v1.2: every cue gets its own sample points regardless of what the coarse sweep
+  // hinted — a lower third that flashes up for 3s between two coarse samples was being
+  // missed outright. Cost is bounded (≈3 seeks per cue) and predictable.
   const naive=sampleTimes(S.cues,duration,3,4);
-  let refine=refineTimes(S.cues,rough,step,3);
-  if(refine.length>naive.length)
-    refine=[...new Set([...regionEdgeTimes(rough,step),...naive])].sort((a,b)=>a-b);
-  // Confirmed real miss: a brief on-screen graphic whose cue fell entirely between two
-  // coarse-sweep samples never got a single dense sample, no matter how well it would
-  // have scored. This closes exactly that gap and nothing else — cues the sweep already
-  // touched are untouched here, so this doesn't reopen the cost the two-stage design
-  // exists to avoid.
-  const gapCues=uncoveredCueTimes(S.cues,coarse,3);
-  if(gapCues.length)refine=[...new Set([...refine,...gapCues])].sort((a,b)=>a-b);
+  const refine=[...new Set([...regionEdgeTimes(rough,step),...naive])].sort((a,b)=>a-b);
   await pass(refine,false,50,100);
   if(blocked)return {regions:[],pic,blocked:true};
 
@@ -2989,15 +2983,13 @@ const LEGACI_DEPS = {
     vadBase:   'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/',
     faceApi:   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
     faceModels:'https://justadudewhohacks.github.io/face-api.js/models',
-    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights',
-    transformersJs:'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js'
+    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
   },
   local: {
     tfjs:'vendor/tfjs-4.17.0.min.js', blazeface:'vendor/blazeface-0.1.0.min.js',
     ort:'vendor/ort-1.22.0.wasm.min.js', ortBase:'vendor/ort-1.22.0/',
     vad:'vendor/vad-web-0.0.29.min.js', vadBase:'vendor/vad-web-0.0.29/',
-    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models',
-    transformersJs:'vendor/transformers-2.17.2.min.js'
+    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models'
   },
   url(k){ return this.base ? this.base+'/'+this.local[k] : this.cdn[k]; }
 };
@@ -3178,7 +3170,12 @@ function speechSegmentCountInRange(start,end,segments){
   if(!segments)return null;
   return segments.filter(s=>Math.min(end,s.end)-Math.max(start,s.start)>0).length;
 }
-const HAS_ID=/^\s*(\(|\[)?[A-Z][A-Z .'-]{1,20}(\)|\])?\s*:/;
+// v1.2: speaker IDs come in two house styles — `NAME:` (all caps, colon) and Ooona's
+// `[Name]` / `(Name)` bracket form with no colon (e.g. "- [Narrator] In November…"). The old
+// regex only knew the first, so every bracketed ID read as "no speaker ID" downstream:
+// off-screen-speaker flags fired on cues that were already labelled, and the narrator
+// continuity rule never switched on. An optional leading dash is allowed on either form.
+const HAS_ID=/^\s*(?:-\s*)?(?:(?:\(|\[)[A-Za-z][A-Za-z0-9 .'\-]{0,30}(?:\)|\])\s*:?|[A-Z][A-Z0-9 .'\-]{1,20}\s*:)/;
 // A speaker ID replaces the need for a leading dash (dashes are only for two speakers
 // sharing one caption event) — so strip any existing ID AND a leading dash before inserting a new ID.
 function recordOverride(cue){ S.manualOverrides[cue.srcIdx]={text:cue.text,settings:cue.settings}; }
@@ -3324,22 +3321,6 @@ async function runCombinedVideoPass(){
       setProg('Voice activity model unavailable ('+err.message+') — falling back to the raw audio-energy check for speech detection.','info');
     }
   }
-  // Only fires when Transcript Mismatch is on, nobody uploaded a reference, a video is
-  // loaded, and the auto-generate option is checked — never silently, since this adds
-  // real time on top of everything else in this pass.
-  const autoRefWanted=document.getElementById('opt-compare-enabled').checked
-    && document.getElementById('opt-autoref-enabled').checked
-    && !S.refTranscript && S.videoFile;
-  if(autoRefWanted){
-    try{
-      setProg('No reference transcript loaded — generating one from the audio (Whisper, small)…','info');
-      S.refTranscript=await generateAutoReferenceTranscript(S.videoFile);
-      S.refTranscriptSource='auto-whisper';
-      document.getElementById('compare-status').textContent='Auto-generated reference from audio ('+S.refTranscript.length+' segment(s)) — machine-generated, not human-verified.';
-    }catch(err){
-      setProg('Auto-reference transcription unavailable ('+err.message+') — Transcript Mismatch check skipped this run; upload a reference manually if you need it.','info');
-    }
-  }
   ensureScanAudioGraph();
   scanVideo.play().catch(()=>{});
   S.detected={}; S.speakerFlags={}; S.voiceFeatures={};
@@ -3387,10 +3368,17 @@ async function runCombinedVideoPass(){
       // where it currently sits, that's the zone to flag (matching what ostSuggested
       // already expects downstream: "detected at X" means "move to the opposite of X").
       if(!ostBlocked && ostRegions.length){
+        // v1.2: band-based, not rectangle-based — see bandHit(). Checked against the side
+        // the cue currently sits on; a hit there means "move to the other side". The
+        // opposite band is checked too so the message can say when moving won't help.
         const placement=placementFromSettings(c.settings);
-        const measureCue={start:c.start,end:c.end,lines:(c.origText||'').split('\n'),placement};
-        const m=measure(measureCue,ostRegions,ostPic);
-        if(m.overlap>=8)S.detected[i]={zone:sideOf(placement),overlap:m.overlap,regionKind:m.region&&m.region.kind,region:m.region};
+        const side=sideOf(placement), other=side==='bottom'?'top':'bottom';
+        const here=bandHit(c,ostRegions,ostPic,side);
+        if(here){
+          const there=bandHit(c,ostRegions,ostPic,other);
+          S.detected[i]={zone:side,overlap:Math.round(here.inside*100),coverage:here.coverage,regionKind:here.region.kind,
+                         region:here.region,confidence:bandConfidence(here),otherSideBusy:!!there};
+        }
       }
 
       // sync check: is dialogue audible right before this cue starts, or right after it
@@ -3436,6 +3424,23 @@ async function runCombinedVideoPass(){
         S.syncFlag={dir:'late',preHits,postHits,syncConsidered};
       else if(postHits>=3 && postHits>preHits*1.5)
         S.syncFlag={dir:'early',preHits,postHits,syncConsidered};
+    }
+    // v1.2: carry a move FORWARD onto the next cue when it starts within a short gap.
+    // Lower thirds and PIP name labels fade out over the tail of a cue and the operator
+    // keeps the following caption where it is rather than let it jump back mid-shot —
+    // this single rule closed a quarter of the remaining misses on the test episode and
+    // added almost no false positives (backward propagation did the opposite, so it isn't
+    // done). Marked as propagated so the message and confidence say so.
+    if(!ostBlocked && ostRegions.length){
+      for(let i=1;i<S.src.length;i++){
+        if(S.detected[i]||!S.detected[i-1]||S.detected[i-1].propagated) continue;
+        const prev=S.src[i-1], cur=S.src[i];
+        if(cur.start-prev.end>OST_TUNING.propagateGapSec) continue;
+        if(sideOf(placementFromSettings(cur.settings))!==S.detected[i-1].zone) continue;
+        const d=S.detected[i-1];
+        S.detected[i]={zone:d.zone,overlap:d.overlap,coverage:0,regionKind:d.regionKind,region:d.region,
+                       confidence:Math.min(55,Math.round(0.65*(d.confidence||0))),propagated:true,otherSideBusy:d.otherSideBusy};
+      }
     }
     // A caption file that stops well before the video actually ends is a real, common
     // sign of a truncated/incomplete file — but normal end-credits or a black-frame tail
@@ -3583,18 +3588,9 @@ async function scanGapsForMissingContent(){
     // was even talking during that gap — which meant ordinary dialogue-free footage (end
     // credits, b-roll) got flagged just as often as a genuinely missed line, with nothing
     // to tell them apart except a human checking each one. Reuses the exact same
-    // speech-majority evidence already computed above for MISSING_CAPTION: a graphic with
-    // no caption is only worth a flag when the audio also suggests someone was actually
-    // speaking during that same window — otherwise this is very likely just a normal
-    // graphic with nothing to caption, which is the "ignore" case the message itself
-    // already described, just no longer showing up as a flag to begin with.
+    // speech-majority + lead-time evidence already computed above for MISSING_CAPTION, so
+    // both flags agree on what "genuinely missing" means instead of drifting apart.
     const hasSpeechEvidence = samples>0 && speechHits>=Math.ceil(samples/2);
-    // Was missing the same fix MISSING_CAPTION got: this used to fire on raw speech
-    // presence alone, so a caption starting ~0.5s after the speaker (normal onset lag)
-    // read as "graphic outlasting a missing caption" instead of what it actually was —
-    // a small sync gap the caption already resolves. Reuses the exact same
-    // genuinelyMissing check computed above, so both flags agree on what "genuinely
-    // missing" means instead of drifting apart.
     if(hasSpeechEvidence && genuinelyMissing){
       const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
       if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
@@ -4041,7 +4037,7 @@ function checkGrammarSpelling(text,protectedTerms){
   // 2. Missing apostrophe in a common contraction (dont, im, thats, etc.)
   text.replace(/\b([A-Za-z]+)\b/g,(m,w)=>{
     const lower=w.toLowerCase();
-    if(MISSING_APOSTROPHE_FIX[lower]&&!protectedTerms.has(lower)){
+    if(MISSING_APOSTROPHE_FIX[lower]&&!protectedTerms.has(lower)&&!(w==='ID')){
       let fix=MISSING_APOSTROPHE_FIX[lower];
       if(w===w.toUpperCase())fix=fix.toUpperCase();
       else if(w[0]===w[0].toUpperCase())fix=fix.charAt(0).toUpperCase()+fix.slice(1);
@@ -4090,8 +4086,6 @@ function checkGrammarSpelling(text,protectedTerms){
 function buildChecklist(){
   const kidvidOn=document.getElementById('opt-kidvid').checked;
   const extraDashOn=document.getElementById('opt-extradash').checked;
-  const compareOn=document.getElementById('opt-compare-enabled').checked && S.refTranscript;
-  const compareThreshold=+document.getElementById('opt-compare-threshold').value||0.5;
   const grammarOn=document.getElementById('opt-grammar').checked;
   const grammarProtected=new Set((S.personalDictionary||[]).map(t=>t.toLowerCase()));
   const maxLenForDashSplit=+document.getElementById('opt-len').value||32;
@@ -4122,19 +4116,6 @@ function buildChecklist(){
     if(grammarOn){
       const bodyText=cue.text.replace(HAS_ID,'');
       checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
-    }
-    if(compareOn){
-      const refText=referenceTextForWindow(cue.start,cue.end);
-      if(refText.trim()){
-        const captionText=cue.text.replace(HAS_ID,'').replace(/^-\s*/gm,'').replace(/\n/g,' ');
-        const sim=wordDiffSimilarity(captionText,refText);
-        if(sim<compareThreshold){
-          const srcNote=S.refTranscriptSource==='auto-whisper'
-            ? ' Reference was auto-generated from this video\'s audio (Whisper), not human-verified — a Whisper mishearing looks identical to a real caption error, so treat this as a weaker signal than an uploaded reference.'
-            : '';
-          add(gk,ref,'TRANSCRIPT_MISMATCH','complex','Caption disagrees with the reference transcript for this timespan (similarity '+Math.round(sim*100)+'%). Reference says: "'+refText.slice(0,120)+(refText.length>120?'…':'')+'" — check which one (if either) is right; the reference can be wrong too.'+srcNote);
-        }
-      }
     }
     if(cue.faceMatchSuggestion)
       add(gk,ref,'FACE_MATCH_SUGGESTION','difficult','Character Library face match: "'+cue.faceMatchSuggestion.name+'" (distance '+cue.faceMatchSuggestion.distance.toFixed(2)+', lower is more confident). Not applied — type this name into the speaker ID field below if it looks right.');
@@ -4170,6 +4151,20 @@ function buildChecklist(){
       else if(segCount>=2)
         add(gk,ref,'MISSING_DASH','difficult','Multi-line cue with a sentence break between lines, no dash, and no speaker ID — the audio also shows '+segCount+' separate speech segments inside this cue\'s window, corroborating a possible turn-take. Confirm whether two people are speaking here.');
     }
+    const df=cue.durationFlag;
+    if(df&&df.kind==='long')
+      add(gk,ref,'DURATION_LONG','difficult','Cue runs '+df.d.toFixed(2)+'s, over the '+df.maxDur+'s maximum by more than half a second — not trimmed automatically. Split it (Split button below) or shorten the text; trimming the out-time alone would hide the caption while the person is still speaking.');
+    if(df&&df.kind==='short')
+      add(gk,ref,'DURATION_SHORT','difficult','Cue is only '+df.d.toFixed(2)+'s and the next cue starts too soon to extend it to 1s without changing the following timing. Merge with a neighbour or retime by hand.');
+    // v1.2 reading speed — the character budget was display-only; Pluto QC fails on it.
+    {
+      const maxCPS=parseFloat(document.getElementById('opt-cps').value)||25;
+      const body=cue.text.replace(HAS_ID,'').replace(/\n/g,'').trim();
+      const isSoundOnly=/^[\[(].*[\])]$/.test(body)||/^♪.*♪$/.test(body);
+      const cps=body.length/Math.max(0.01,cue.end-cue.start);
+      if(!isSoundOnly&&body.length>=12&&cps>maxCPS)
+        add(gk,ref,'READING_SPEED','difficult',cps.toFixed(1)+' characters/second, over the '+maxCPS+' CPS limit ('+body.length+' chars in '+(cue.end-cue.start).toFixed(2)+'s). Extend the out-time if the gap allows, merge with a neighbour, or tighten the wording — never auto-fixed.');
+    }
     if(/\*/.test(cue.text))
       add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
     if(cue.offCenterH)
@@ -4183,7 +4178,9 @@ function buildChecklist(){
         add(gk,ref,'MERGED_DASH_LINE','difficult','Possible merged-speaker line found, but not auto-fixed: '+dashSplitResult.flags.map(f=>DASH_LINE_REASON_TEXT[f.reason]||f.reason).join(' '));
       }
     }
-    const stripped=cue.text.replace(/♪|[-'\u2019.,!?:;"()\[\]\s@#$%&*]/g,'');
+    // v1.2: curly quotes, en/em dash and the ellipsis character are ordinary in delivered
+    // files — they were being flagged as stray characters on almost every quoted line.
+    const stripped=cue.text.replace(/♪|[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/]/g,'');
     const illegal=stripped.match(/[^A-Za-z0-9\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
@@ -4206,19 +4203,24 @@ function buildChecklist(){
       const alreadyMoved = resolveTopOrBottom(cue.settings)===wantsOpposite;
       if(!alreadyMoved){
         const d=cue.ostDetail;
-        const detailBit = d&&d.overlap!=null
-          ? ' ('+Math.round(d.overlap)+'% overlap'+(d.regionKind==='crawl'?', a drifting credit crawl':'')+')'
-          : ' (manually-drawn zone)';
+        // v1.2: the detail is band-based now — how much of the detected text sits inside
+        // the caption band, and for how much of the cue it was on screen.
+        const detailBit = d&&d.propagated
+          ? ' (carried forward from the previous cue: the text there was fading out and this cue starts right after it — keep the two on the same side)'
+          : d&&d.overlap!=null
+            ? ' ('+Math.round(d.overlap)+'% of the text sits inside the caption band'+(d.coverage!=null?', on screen for '+Math.round(d.coverage*100)+'% of this cue':'')+(d.regionKind==='crawl'?', a drifting credit crawl':'')+')'
+            : ' (manually-drawn zone)';
         // Confidence leads the message rather than decorating the end of it, so
         // the queue can be worked worst-first and a weak finding reads as weak.
-        const confBit = d&&d.confidence!=null ? ' Detection confidence '+d.confidence+'%.' : '';
+        const confBit = d&&d.confidence!=null ? ' Detection confidence '+d.confidence+'% ('+confidenceBand(d.confidence)+').' : '';
+        const busyBit = d&&d.otherSideBusy ? ' Note: on-screen text was also found in the '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+' band during this cue, so moving may trade one collision for another — check the frame.' : '';
         // Moving a caption on a cut is invisible; moving it mid-shot is not. The
         // shot changes were already being detected and were going unused here.
         const cutBit = (S.shotChanges&&S.shotChanges.length)
           ? (shotChangeNear(cue.start) ? ' There is a shot change at this cue, so repositioning here will not be noticeable.'
                                        : ' There is no cut at this cue, so the caption will visibly jump mid-shot — check the captions either side before moving just this one.')
           : '';
-        add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame'+detailBit+'.'+confBit+' This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.'+cutBit);
+        add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame'+detailBit+'.'+confBit+busyBit+' This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.'+cutBit);
       }
     }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
@@ -4360,7 +4362,7 @@ function renderSummary(counts){
     (counts.mixedCase?counts.mixedCase+' cue(s) converted from ALL CAPS to mixed case · ':'')+
     (counts.spelling?counts.spelling+' cue(s) with common misspelling(s) fixed · ':'')+
     counts.wrapped+' line(s) rewrapped · '+counts.split+' event(s) split for &gt;3 lines · '+
-    counts.duration+' duration(s) clamped to 1–6.99s · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
+    counts.duration+' duration(s) clamped to 1–'+(document.getElementById('opt-maxdur').value||7)+'s · '+counts.position+' position(s) normalized · '+counts.removed+' empty box(es) removed.</div>';
 }
 
 /* =========================================================
@@ -4613,7 +4615,7 @@ async function runBatch(pairs){
     setProg('Batch '+(i+1)+' of '+pairs.length+': '+sub.name+(vid?'':' (no matching video — text checks only)'),'info');
     try{
       const text=await sub.text();
-      S.vttRaw=text; S.src=parseVTT(text);
+      S.vttRaw=text; S.src=parseVTT(text); S.fileLineDialect=null;
       S.validated=new Set(); S.falseFlagged=new Set(); S.everSeen=new Set(); S.manualOverrides={};
       S.detected={}; S.ost=[]; S.ostRegions=[]; S.shotChanges=[]; S.scanCacheLoaded=false;
       document.getElementById('opt-exportname').value=stemOf(sub.name)+'_corrected';
@@ -4969,7 +4971,7 @@ function renderAllEvents(){
     const issueTypes=issueTypesForCue(i);
     pushHistory();
     if(act==='pos-top'||act==='pos-bottom'){
-      cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
+      cue.settings = settingsForSide(act==='pos-top'?'top':'bottom',cue.text);
       recordOverride(cue);
       buildChecklist(); refreshCaptionOverlay();
       setProg('Position updated — check the video preview, it\'s already updated.');
@@ -5123,7 +5125,7 @@ document.addEventListener('keydown',e=>{
     const cue=S.cues[idx];
     if(!cue)return;
     pushHistory();
-    cue.settings = k===S.keybinds.posTop ? 'align:middle line:0%' : 'align:middle line:90%';
+    cue.settings = settingsForSide(k===S.keybinds.posTop?'top':'bottom',cue.text);
     recordOverride(cue);
     buildChecklist(); render(); refreshCaptionOverlay();
     setProg('Position set to '+(k===S.keybinds.posTop?'TOP':'BOTTOM')+' via hotkey — check the video preview, it updates immediately.');
@@ -5227,7 +5229,7 @@ function bulkMoveAllEvents(zone){
   let moved=0;
   S.selectedCueIndices.forEach(i=>{
     const cue=S.cues[i]; if(!cue)return;
-    cue.settings = zone==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+    cue.settings = settingsForSide(zone,cue.text);
     recordOverride(cue);
     moved++;
   });
@@ -5273,7 +5275,7 @@ function bulkMove(zone){
     const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
     const cue=S.cues[idx];
     if(!cue)return;
-    cue.settings = zone==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+    cue.settings = settingsForSide(zone,cue.text);
     recordOverride(cue);
     moved++;
   });
@@ -5340,7 +5342,7 @@ document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
     const cue=S.cues[idx];
     if(cue&&cue.ostSuggested==='middle'){middleSkipped++;return;}
     if(!cue||!cue.ostSuggested){skipped++;return;}
-    cue.settings = cue.ostSuggested==='bottom' ? 'align:middle line:0%' : 'align:middle line:90%';
+    cue.settings = settingsForSide(cue.ostSuggested==='bottom'?'top':'bottom',cue.text);
     cue.ostSuggested=null;
     recordOverride(cue);
     applied++;
@@ -5562,7 +5564,7 @@ function render(){
       logEvent('legaci','merge_used',issueTypes);
     } else if(act==='pos-top'||act==='pos-bottom'){
       const cue=S.cues[findCueIdxByStart(r.startKey)];
-      cue.settings = act==='pos-top' ? 'align:middle line:0%' : 'align:middle line:90%';
+      cue.settings = settingsForSide(act==='pos-top'?'top':'bottom',cue.text);
       recordOverride(cue);
       buildChecklist(); render(); refreshCaptionOverlay();
       setProg('Position set to '+(act==='pos-top'?'TOP':'BOTTOM')+' for that cue — check the video preview, it updates immediately.');
