@@ -202,6 +202,12 @@ video{width:100%;display:block;border-radius:13px}
 
 .checklist{display:flex;flex-direction:column;gap:8px;max-width:900px}
 .item{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:13px 16px;transition:border-color .12s,transform .12s,box-shadow .12s;box-shadow:var(--shadow-sm)}
+@keyframes legaciBlockedFlash{
+  0%,100%{border-color:var(--line)}
+  15%,45%{border-color:var(--err);box-shadow:0 0 0 3px rgba(198,40,40,.15)}
+}
+.item.blocked-flash{animation:legaciBlockedFlash 1.1s ease}
+.item .blocked-note{background:rgba(198,40,40,.08);border:1px solid var(--err);border-radius:10px;padding:8px 10px;margin-top:8px;font-size:12.5px;color:var(--err)}
 .item:hover{border-color:var(--line2);box-shadow:var(--shadow-md)}
 .item.active{border-color:var(--yellow)}
 .item.playing{box-shadow:inset 3px 0 0 var(--info),0 0 0 1px var(--info);background:#eef6ff}
@@ -1314,7 +1320,7 @@ const S={vttRaw:null,videoURL:null,src:[],cues:[],report:[],activeReportIdx:-1,
   keybinds:{prevFlagged:'ArrowLeft',nextFlagged:'ArrowRight',prevIssueType:'[',nextIssueType:']',playPause:' ',validate:'v',posTop:'1',posBottom:'2'},
   refTranscript:null,
   charLibrary:{show:'',voices:[],faces:[]},faceApiReady:false,shotChanges:[],personalDictionary:[],shortForms:[],
-  ooonaProject:null,scanCacheLoaded:false,placementDiff:null};
+  ooonaProject:null,scanCacheLoaded:false,placementDiff:null,fragmentEnd:null};
 const HOTKEY_LABELS={prevFlagged:'Previous flagged event',nextFlagged:'Next flagged event',prevIssueType:'Previous issue type',nextIssueType:'Next issue type',playPause:'Play / pause video',validate:'Validate current row',posTop:'Move current row to TOP',posBottom:'Move current row to BOTTOM'};
 
 /* =========================================================
@@ -5626,8 +5632,8 @@ document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   setProg('Applied '+applied+' OST suggestion(s)'+(skipped?' · '+skipped+' selected row(s) had no OST suggestion, skipped':'')+(middleSkipped?' · '+middleSkipped+' middle-zone detection(s) skipped — no single correct direction, reposition those by hand':'')+'.');
   logEvent('legaci','bulk_apply_suggested',applied+'_applied_'+skipped+'_skipped_'+middleSkipped+'_middle');
 });
-document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.max(0,video.currentTime-10); });
-document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL)video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); });
+document.getElementById('skip-back10').addEventListener('click',()=>{ if(S.videoURL){video.currentTime=Math.max(0,video.currentTime-10); S.fragmentEnd=null;} });
+document.getElementById('skip-fwd10').addEventListener('click',()=>{ if(S.videoURL){video.currentTime=Math.min(video.duration||1e9,video.currentTime+10); S.fragmentEnd=null;} });
 document.getElementById('video-playpause').addEventListener('click',()=>{
   if(!S.videoURL)return;
   if(video.paused)video.play().catch(()=>{}); else video.pause();
@@ -5637,6 +5643,19 @@ video.addEventListener('click',()=>{
   if(video.paused)video.play().catch(()=>{}); else video.pause();
 });
 video.addEventListener('play',()=>{ document.getElementById('video-playpause').textContent='⏸ Pause'; });
+// Plays just the selected row's fragment, matching Ooona: once a row is selected,
+// pressing play runs to that cue's own end and stops there instead of continuing
+// into whatever comes next. fragmentEnd is cleared by any other seek (skip buttons,
+// timeline scrub, manual timecode jump) so a stale boundary can never cause a
+// surprise pause somewhere unrelated later. One-shot: pausing here clears it, so a
+// second press of play after the auto-pause resumes normal, unbounded playback
+// rather than being trapped at the same boundary again.
+video.addEventListener('timeupdate',()=>{
+  if(S.fragmentEnd!=null && !video.paused && video.currentTime>=S.fragmentEnd){
+    video.pause();
+    S.fragmentEnd=null;
+  }
+});
 video.addEventListener('pause',()=>{ document.getElementById('video-playpause').textContent='▶ Play'; });
 document.getElementById('video-mute').addEventListener('click',()=>{
   video.muted=!video.muted;
@@ -5797,7 +5816,7 @@ function render(){
         return;
       }
       S.lastClickedRi=ri;
-      selectReportRow(ri);
+      selectReportRow(ri, false);
     }));
     scope.querySelectorAll('input.bulk-select').forEach(cb=>cb.addEventListener('click',e=>{
       e.stopPropagation();
@@ -5832,6 +5851,12 @@ function render(){
       const idx=r.stackStartA!=null?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
       if(S.cues[idx])S.annotations[S.cues[idx].srcIdx]=inp.value;
     }));
+// The global status line (setProg) is easy to miss for this specific case: the row that
+// got blocked can be scrolled well out of view, or its message can get overwritten within
+// moments by a concurrent background-scan progress tick — both plausible explanations for
+// "I clicked validate/false-flag and nothing happened," confirmed as a real report twice.
+// This puts the same explanation directly at the row itself instead, where it can't be
+// missed regardless of scroll position or what else is happening on the page.
     scope.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',e=>{
       e.stopPropagation();
       const ri=+btn.dataset.ri, act=btn.dataset.act, r=S.currentVisible[ri];
@@ -5952,7 +5977,9 @@ function render(){
         // Blocking outright when more than one issue remains, rather than just warning,
         // since the whole point is that a partial fix should never look like a full one.
         if((r.issues||[]).length>1){
-          setProg('This row still has '+r.issues.length+' separate issues — validating would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+          const msg='This row still has '+r.issues.length+' separate issues — validating would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.';
+          setProg(msg,true);
+          flashRowBlocked(btn.closest('.item'),msg);
           return;
         }
         S.validated.add(r.key);
@@ -5966,7 +5993,9 @@ function render(){
         // a high validate count on some issue type could mean it's usually right or
         // usually wrong, with no way to tell which from the numbers alone.
         if((r.issues||[]).length>1){
-          setProg('This row still has '+r.issues.length+' separate issues — marking one as a false flag would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+          const msg='This row still has '+r.issues.length+' separate issues — marking one as a false flag would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.';
+          setProg(msg,true);
+          flashRowBlocked(btn.closest('.item'),msg);
           return;
         }
         S.validated.add(r.key);
@@ -6021,7 +6050,24 @@ video.addEventListener('loadedmetadata',()=>{ document.getElementById('tcbar').s
    TIMECODE BAR — scrubber, flagged-event ticks, jump box,
    and prev/next-flagged navigation shared with row clicks
 ========================================================= */
-function selectReportRow(idx){
+// The global status line (setProg) is easy to miss for this specific case: the row that
+// got blocked can be scrolled well out of view, or its message can get overwritten within
+// moments by a concurrent background-scan progress tick — both plausible explanations for
+// "I clicked validate/false-flag and nothing happened," confirmed as a real report twice.
+// This puts the same explanation directly at the row itself instead, where it can't be
+// missed regardless of scroll position or what else is happening on the page.
+function flashRowBlocked(rowEl, message){
+  if(!rowEl)return;
+  rowEl.querySelectorAll('.blocked-note').forEach(n=>n.remove());
+  const note=document.createElement('div');
+  note.className='blocked-note';
+  note.textContent=message;
+  rowEl.appendChild(note);
+  rowEl.classList.remove('blocked-flash'); void rowEl.offsetWidth; // restart the animation if it's already mid-flash
+  rowEl.classList.add('blocked-flash');
+  setTimeout(()=>{ note.remove(); },5000);
+}
+function selectReportRow(idx, scroll=true){
   const visible=S.currentVisible||S.report;
   if(!visible.length)return;
   idx=Math.max(0,Math.min(idx,visible.length-1));
@@ -6032,10 +6078,17 @@ function selectReportRow(idx){
   if(S.videoURL){
     video.currentTime=Math.max(0,ref.start+S.offset+0.01);
     video.pause();
+    // Selecting a row means "I want to look at THIS moment" — playing from here should
+    // play just that cue, like Ooona's fragment playback, not run on into whatever comes
+    // next. Cleared by any other seek (skip buttons, timeline scrub) so it never causes a
+    // surprise pause somewhere unrelated later.
+    S.fragmentEnd=ref.end+S.offset;
   }
   document.getElementById('nav-pos').textContent=(idx+1)+'/'+visible.length;
-  const active=document.querySelector('.item.active');
-  if(active)active.scrollIntoView({behavior:'smooth',block:'center'});
+  if(scroll){
+    const active=document.querySelector('.item.active');
+    if(active)active.scrollIntoView({behavior:'smooth',block:'center'});
+  }
 }
 document.getElementById('nav-prev').addEventListener('click',()=>{const v=S.currentVisible||S.report; selectReportRow(S.activeReportIdx<=0?v.length-1:S.activeReportIdx-1);});
 document.getElementById('nav-next').addEventListener('click',()=>{const v=S.currentVisible||S.report; selectReportRow(S.activeReportIdx<0?0:S.activeReportIdx+1);});
@@ -6068,6 +6121,7 @@ document.getElementById('tcbarTrack').addEventListener('click',e=>{
   const rect=e.currentTarget.getBoundingClientRect();
   const pct=Math.min(1,Math.max(0,(e.clientX-rect.left)/rect.width));
   video.currentTime=pct*video.duration;
+  S.fragmentEnd=null;
   logEvent('legaci','video_scrubbed','');
 });
 function parseJumpTimecode(str){
@@ -6092,6 +6146,7 @@ document.getElementById('tc-jump-go').addEventListener('click',()=>{
   if(t==null){setProg('Enter a timecode like 00:12:34.500 or a plain seconds value.',true);return;}
   if(!S.videoURL){setProg('Load a video to jump to a timecode.',true);return;}
   video.currentTime=Math.max(0,t);
+  S.fragmentEnd=null;
 });
 document.getElementById('tc-jump').addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('tc-jump-go').click(); });
 renderDictPanel();
