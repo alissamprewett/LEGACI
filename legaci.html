@@ -238,7 +238,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
 <header>
   <div class="brand">Leg<em>aci</em></div>
-  <span class="verbadge">v1.2.1</span>
+  <span class="verbadge">v1.4.1</span>
   <div class="tag" id="readyTag">one pass: fix what's fixable, flag what isn't</div>
   <a class="back" href="index.html">← Back to hub</a>
 </header>
@@ -291,6 +291,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <button data-act="jump" data-target="hotkeypanel">Hotkeys</button>
       <button data-act="jump" data-target="dictpanel">Personal dictionary</button>
       <button data-act="jump" data-target="shortformspanel">Short forms &amp; autocorrect</button>
+      <button data-act="jump" data-target="calibpanel">Calibration (compare with a corrected file)</button>
     </div>
   </div>
   <div class="menuwrap">
@@ -596,6 +597,16 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="plabel" id="charlib-status" style="margin-top:8px"></div>
   </div>
 
+  <div class="panelbox" id="calibpanel">
+    <div class="oh info">Load the human-corrected version of the file that is open right now. Legaci compares its own OST placement suggestions against where the operator actually put each caption and reports agreement, precision and recall — overall and per confidence band. This is the same measurement the v1.2 tuning was fitted with; run it on every corrected episode and the numbers tell you the moment a new show type breaks an assumption.</div>
+    <label class="drop" id="drop-calib" style="margin-top:8px">
+      <input type="file" id="file-calib" accept=".vtt,.srt">
+      <span class="dk">CORRECTED</span>
+      <span><span class="dl">Corrected caption file</span><span class="ds" id="calib-sub">same episode, after human QC</span></span>
+    </label>
+    <div class="prow" style="margin-top:8px"><button class="pbtn small primary" id="calib-run" disabled>Measure against this file</button><button class="pbtn small" id="calib-csv" disabled>Export cue-level comparison (.csv)</button></div>
+    <div class="ctxbox show" id="calib-out" style="margin-top:10px;display:none">nothing measured yet</div>
+  </div>
   <div class="panelbox" id="dictpanel">
     <div class="oh info">A list of proper nouns (character names, places, show-specific terms) that get protected from the ALL CAPS → mixed case conversion, so they come out correctly capitalized instead of just title-cased. Also excluded from the common-misspellings auto-fix, in case a name or invented term happens to look like one. Export/import as a plain text file — one term per line — to reuse across episodes of the same show.</div>
     <div class="prow">
@@ -662,6 +673,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       <button class="pbtn small" id="bulk-add-dash">+ Add leading dash</button>
       <button class="pbtn small" id="bulk-remove-dash">− Remove leading dash</button>
       <button class="pbtn small" id="bulk-apply-suggested">Apply each row's own OST suggestion</button>
+      <button class="pbtn small primary" id="bulk-apply-high" title="Applies every OST move suggested with confidence ≥75% — measured 96% correct on two human-corrected episodes. Medium and low stay as individual decisions.">Confirm all HIGH-confidence moves</button>
       <button class="pbtn small validate" id="bulk-validate">✓ Validate selected</button>
       <button class="pbtn small falseflag" id="bulk-falseflag">✕ False flag selected</button>
     </div>
@@ -697,6 +709,175 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
 
 <footer>LEGACI · TEXT + VIDEO/AUDIO ANALYSIS RUNS LOCALLY IN BROWSER · NO NETWORK CALLS</footer>
 
+<!-- LEGACI-RULES-BEGIN -->
+<script>
+/* INLINED FROM legaci-rules.js — sha1 9d944d84c0dd — DO NOT EDIT HERE, edit legaci-rules.js and run build.py */
+/* =========================================================================
+   LEGACI SHARED RULES — one source of truth for the Pluto TV CC spec logic that
+   both Legaci (the QC editor) and Legaci Caption Auditor (the vendor pre-flight)
+   apply. Edit THIS file, then run build.py, which inlines it into both HTML files
+   between the LEGACI-RULES markers with a checksum. Never edit the inlined copy.
+
+   Every value here is measured, not assumed:
+     · 32 chars/line, 3 lines             — every human-approved Pluto delivery checked
+     · 1.001s min / 8.008s max duration   — Ooona Pluto CC CaptionMaker project settings
+     · 2-frame minimum gap                — 100% of abutting pairs in ~1,800 approved cues
+     · line:-N / align:middle line:0      — Ooona VTT18 placement dialect in approved files
+     · 30 CPS advisory                    — approved files median 16–17; operators leave ≤30
+   ========================================================================= */
+const LEGACI_SPEC = Object.freeze({
+  maxCharsPerLine:32, maxLines:3,
+  minDurationSec:1.001, maxDurationSec:8.008,
+  minGapFrames:2, defaultFps:23.976,
+  durationToleranceFrames:2,          // 28-frame cues at 29.97 pass QC in practice
+  cpsAdvisory:30, cpsComfortable:25,
+  ooonaTemplateId:'5aecb33d-5e99-44ac-9609-ec0e2563d3df',
+  ooonaScreenLines:11, ooonaLineLength:37   // Ooona's own wider limit; deliveries still wrap at 32
+});
+
+/* ---- text patterns ---- */
+// Speaker IDs in both house styles: `NAME:` (caps + colon) and Ooona's `[Name]` / `(Name)`
+// bracket form with no colon (e.g. "- [Narrator] In November…"). Optional leading dash.
+const HAS_ID=/^\s*(?:-\s*)?(?:(?:\(|\[)[A-Za-z][A-Za-z0-9 .'\-]{0,30}(?:\)|\])\s*:?|[A-Z][A-Z0-9 .'\-]{1,20}\s*:)/;
+// A cue that is nothing but a bracketed sound/music description.
+const SOUND_CUE=/^\s*(?:-\s*)?[\[(][^\])]*[\])]\s*$/;
+// Characters that may appear in delivered caption text. Curly quotes, en/em dash and the
+// ellipsis character are routine in approved files and must not be flagged.
+const ALLOWED_CHARS=/[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/♪A-Za-z0-9\u00C0-\u024F]/g;
+// Web addresses that the sentence-spacing fix must leave alone.
+const URL_LIKE=/\b[a-z0-9-]+\.(?:com|tv|net|org|co|io|gov|edu|us|uk)\b/gi;
+
+/* ---- line wrapping ---- */
+// Words a line should not end on when there is a choice — a dangling article or
+// preposition at a line break reads as a fragment.
+const WRAP_AVOID_TRAILING=new Set(['a','an','the','and','but','or','of','to','in','on','at','for','with','by','from','as','my','his','her','our','your','their','its']);
+/**
+ * Balanced wrap. Only runs when a line exceeds the limit; lines that fit are never touched.
+ * Two-line case: pick the split with the smallest length difference, penalise a dangling
+ * article/preposition, reward breaking after a natural pause. Three-plus lines: greedy,
+ * then rebalance the last two the same way.
+ */
+function wrapLine(line,maxChars){
+  if(line.length<=maxChars)return [line];
+  const words=line.split(' ').filter(w=>w!=='');
+  const greedy=()=>{ const out=[]; let cur=''; words.forEach(w=>{ const test=cur?cur+' '+w:w; if(test.length<=maxChars)cur=test; else { if(cur)out.push(cur); cur=w; } }); if(cur)out.push(cur); return out; };
+  if(words.some(w=>w.length>maxChars)) return greedy();
+  if(line.length<=maxChars*2){
+    let best=null;
+    for(let i=1;i<words.length;i++){
+      const a=words.slice(0,i).join(' '), b=words.slice(i).join(' ');
+      if(a.length>maxChars||b.length>maxChars)continue;
+      let cost=Math.abs(a.length-b.length);
+      if(WRAP_AVOID_TRAILING.has(words[i-1].toLowerCase().replace(/[^a-z']/g,'')))cost+=8;
+      if(/[.!?,;:]$/.test(words[i-1]))cost-=4;
+      if(!best||cost<best.cost)best={cost,a,b};
+    }
+    if(best)return [best.a,best.b];
+  }
+  // Three or more lines: dynamic programme over break points. Cost = squared slack on every
+  // line but the last (keeps lines even), +8 for ending a line on a dangling word, −6 for
+  // ending on clause punctuation — so "And at 18 years old, / he started working…" wins
+  // over a break in the middle of the clause. Falls back to greedy for very long text.
+  if(words.length<=60){
+    const n=words.length; const len=(i,j)=>words.slice(i,j).join(' ').length;
+    const best=new Array(n+1).fill(null); best[0]={cost:0,prev:-1};
+    for(let j=1;j<=n;j++){
+      for(let i=j-1;i>=0;i--){
+        const L=len(i,j); if(L>maxChars) break;
+        if(!best[i]) continue;
+        let cost=best[i].cost+(j===n?0:(maxChars-L)**2+10*maxChars); // each extra line costs; only break when the text needs it
+        const last=words[j-1];
+        if(j!==n&&WRAP_AVOID_TRAILING.has(last.toLowerCase().replace(/[^a-z']/g,''))) cost+=8*maxChars;
+        if(j!==n&&/[.!?,;:]$/.test(last)) cost-=6*maxChars;
+        if(!best[j]||cost<best[j].cost) best[j]={cost,prev:i};
+      }
+    }
+    if(best[n]){ const out=[]; let j=n; while(j>0){ const i=best[j].prev; out.unshift(words.slice(i,j).join(' ')); j=i; } return out; }
+  }
+  return greedy();
+}
+
+/**
+ * Re-flow a cue's lines into at most `maxLines` balanced lines. Lines that start a new
+ * speaker ("- ") or a speaker ID stay as segment boundaries; everything else in a segment
+ * is joined and re-wrapped. Returns the original lines if the text cannot fit.
+ */
+function reflowLines(lines,maxChars,maxLines){
+  const segs=[]; 
+  for(const l of lines){
+    const t=l.trim(); if(!t) continue;
+    if(!segs.length||/^-\s/.test(t)||HAS_ID.test(t)) segs.push([t]); else segs[segs.length-1].push(t);
+  }
+  const out=[];
+  for(const seg of segs){
+    const joined=seg.join(' ').replace(/\s+/g,' ');
+    out.push(...wrapLine(joined,maxChars));
+  }
+  return out.length&&out.length<=maxLines&&out.every(l=>l.length<=maxChars) ? out : lines;
+}
+
+/* ---- placement dialect ---- */
+/** 'int' when the file uses Ooona's row-count form (line:-2 / line:0), otherwise 'pct'. */
+function detectLineDialect(cues){
+  for(const c of (cues||[])){
+    const s=c.settings||'';
+    if(/line:-?\d+(?![\d.%])/.test(s)) return 'int';
+  }
+  return 'pct';
+}
+/** Settings string that puts a caption on `side` in the given dialect; bottom = line:-N where N is the line count. */
+function settingsForSideIn(dialect,side,text){
+  const nLines=Math.max(1,String(text||'').split('\n').filter(l=>l.trim()).length);
+  if(dialect==='int') return side==='top' ? 'align:middle line:0' : 'line:-'+nLines;
+  return side==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
+}
+/** Keep a cue's own vertical setting; strip horizontal offsets (house spec centres everything). */
+function normalizeKeepDialect(settingsStr){
+  return (settingsStr||'').replace(/\s*position:[^\s]+/g,'').replace(/align:(start|end|left|right|center)/g,'align:middle').trim().replace(/\s+/g,' ');
+}
+/** 'top' | 'bottom' from a raw WebVTT settings string (percent or row-count dialect). */
+function sideFromSettings(settingsStr){
+  const s=settingsStr||'';
+  let m=s.match(/line:(-?[\d.]+)%/); if(m) return +m[1]<50?'top':'bottom';
+  m=s.match(/line:(-?\d+)/); if(m) return +m[1]<0?'bottom':'top';
+  return 'bottom';
+}
+
+/* ---- timing ---- */
+/**
+ * Two-frame gap rule. Returns the fixes that would bring every consecutive pair to at
+ * least `minGap` seconds by pulling the EARLIER cue's out-time back (Ooona's behaviour —
+ * the next in-time is never moved, so nothing downstream shifts). Pairs where the pull
+ * would drop the cue under `minDur - tol` are returned as `blocked` for a human.
+ * Pure: mutates nothing.
+ */
+function computeGapFixes(cues,minGap,minDur,tol){
+  const fixes=[], blocked=[];
+  for(let i=0;i<cues.length-1;i++){
+    const c=cues[i], n=cues[i+1];
+    if(c.start==null||c.end==null||n.start==null) continue;
+    const gap=n.start-c.end;
+    if(gap>=minGap-0.002) continue;
+    const newEnd=n.start-minGap;
+    if(newEnd-c.start>=minDur-tol) fixes.push({i,gap,oldEnd:c.end,newEnd});
+    else blocked.push({i,gap,minGap});
+  }
+  return {fixes,blocked};
+}
+/** Characters per second for a cue body, with speaker ID and line breaks removed. */
+function readingSpeed(text,durationSec){
+  const body=String(text||'').replace(/<[^>]+>/g,'').replace(HAS_ID,'').replace(/\n/g,'').trim();
+  return {chars:body.length,cps:body.length/Math.max(0.01,durationSec)};
+}
+/** Write a time back in the same style a sample used (hh:mm:ss.mmm / mm:ss.mmm / comma for SRT). */
+function fmtTimeLike(sample,s){
+  const pad=(v,l=2)=>String(v).padStart(l,'0');
+  const comma=sample.includes(','); const hasH=(sample.match(/:/g)||[]).length>=2;
+  const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=Math.floor(s%60),ms=Math.round((s-Math.floor(s))*1000);
+  return (hasH?pad(h)+':':'')+pad(m)+':'+pad(sec)+(comma?',':'.')+pad(ms,3);
+}
+</script>
+<!-- LEGACI-RULES-END -->
 <script>
 /* =========================================================
    LEGACI ANALYTICS — structure/behavior only, never content.
@@ -741,7 +922,8 @@ const FLOATWIN_TITLES={
   clusterpanel:'Voice-Based Speaker Labels', syncpanel:'Sync', castpanel:'Character Search',
   rosterlinkpanel:'Roster Link',
   scriptpanel:'Script & Transcript Reference', comparepanel:'Transcript Compare',
-  charlibpanel:'Character Library', dictpanel:'Personal Dictionary', shortformspanel:'Short Forms & Autocorrect'
+  charlibpanel:'Character Library', dictpanel:'Personal Dictionary', shortformspanel:'Short Forms & Autocorrect',
+  calibpanel:'Calibration — measure against a corrected file'
 };
 let floatZ=200;
 function convertToFloatWin(id){
@@ -1445,7 +1627,7 @@ document.getElementById('file-json').addEventListener('change',e=>{
 /* =========================================================
    FILES
 ========================================================= */
-function checkReady(){ document.getElementById('btn-run').disabled=!S.src.length; }
+function checkReady(){ document.getElementById('btn-run').disabled=!S.src.length; const cb=document.getElementById('calib-run'); if(cb)cb.disabled=!(S.src.length&&calibCues); }
 document.getElementById('file-vtt').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
   S.sourceFormat=/\.srt$/i.test(f.name)?'srt':'vtt';
@@ -1499,46 +1681,7 @@ document.getElementById('file-video').addEventListener('change',e=>{
 /* =========================================================
    STEP 1 TEXT FIXES (deterministic, always runs first)
 ========================================================= */
-// Words a line should not end on when there is a choice — articles, short prepositions,
-// conjunctions and possessives read as a dangling fragment at a line break.
-const WRAP_AVOID_TRAILING=new Set(['a','an','the','and','but','or','of','to','in','on','at','for','with','by','from','as','my','his','her','our','your','their','its']);
-/**
- * v1.2: balanced wrap. The old greedy wrap filled line 1 to the limit and left a stub on
- * line 2 ("on a dream vacation to Costa" / "Rica"). Only runs when a line actually exceeds
- * the limit; lines that already fit are never touched. Picks the split with the smallest
- * length difference between the two halves, then penalises leaving a dangling article or
- * preposition at the end of a line — the same two rules a human wrapper applies.
- */
-function wrapLine(line,maxChars){
-  if(line.length<=maxChars)return [line];
-  const words=line.split(' ').filter(w=>w!=='');
-  if(words.some(w=>w.length>maxChars)){ // a single over-long token: fall back to greedy
-    const out=[]; let cur='';
-    words.forEach(w=>{ const test=cur?cur+' '+w:w; if(test.length<=maxChars)cur=test; else { if(cur)out.push(cur); cur=w; } });
-    if(cur)out.push(cur); return out;
-  }
-  if(line.length<=maxChars*2){
-    let best=null;
-    for(let i=1;i<words.length;i++){
-      const a=words.slice(0,i).join(' '), b=words.slice(i).join(' ');
-      if(a.length>maxChars||b.length>maxChars)continue;
-      let cost=Math.abs(a.length-b.length);
-      if(WRAP_AVOID_TRAILING.has(words[i-1].toLowerCase().replace(/[^a-z']/g,'')))cost+=8;
-      if(/[.!?,;:]$/.test(words[i-1]))cost-=4; // a natural pause is the best place to break
-      if(!best||cost<best.cost)best={cost,a,b};
-    }
-    if(best)return [best.a,best.b];
-  }
-  // three or more lines: greedy, then rebalance the last two the same way
-  const out=[]; let cur='';
-  words.forEach(w=>{ const test=cur?cur+' '+w:w; if(test.length<=maxChars)cur=test; else { if(cur)out.push(cur); cur=w; } });
-  if(cur)out.push(cur);
-  if(out.length>=2){
-    const tail=wrapLine(out[out.length-2]+' '+out[out.length-1],maxChars);
-    if(tail.length===2){ out.splice(out.length-2,2,...tail); }
-  }
-  return out;
-}
+// wrapLine + WRAP_AVOID_TRAILING now come from the shared LEGACI RULES block (see build.py).
 // Hard live cap for manual editing: re-wraps every line to the char limit and caps the
 // whole cue at 3 lines. Anything that would make a 4th line is dropped, not silently
 // allowed — this runs on every keystroke/paste in an editable caption textarea.
@@ -1700,7 +1843,23 @@ function splitCueAtCursor(cueIdx,cursorPos){
   const cueB={...cue,start:cueA.end+0.001,text:after};
   return [cueA,cueB];
 }
-function autoFixText(rawText,counts){
+// v1.4.1: does the previous cue's text end a sentence? Decides whether the NEXT cue may
+// start with a capital. Measured against a human-corrected episode (S1E6): 210 of 394
+// cues — every mid-sentence continuation ("with his girlfriend, Nataly.") — had been
+// capitalised by the old rule, which treated the start of every cue as a sentence start.
+// Sentence-final punctuation, optionally followed by a closing quote/bracket, or a cue that
+// is only a bracketed sound cue, or no previous cue at all → the next cue may capitalise.
+// An ellipsis is a trailing-off, so the continuation stays lowercase.
+function endsSentence(prevText){
+  if(prevText==null) return true;
+  const t=String(prevText).replace(/<[^>]+>/g,'').trim();
+  if(!t) return true;
+  if(/^[\[(][^\])]*[\])]$/.test(t)) return true;            // sound/music cue only
+  if(/♪\s*$/.test(t)) return true;
+  if(/(\.\.\.|…)["”’')\]]*$/.test(t)) return false;
+  return /[.!?]["”’')\]]*$/.test(t);
+}
+function autoFixText(rawText,counts,ctx={}){
   let t=rawText;
   const before=t;
   // Invisible/control characters that have no legitimate place in caption text — zero-width
@@ -1756,7 +1915,10 @@ function autoFixText(rawText,counts){
   // followed by a newline reliably means a new sentence starts on the next line.
   // v1.2: an ellipsis is a trailing-off, not a sentence end — "I thought... maybe" keeps its
   // lowercase continuation. Was capitalising after every "." including "…".
-  t=t.replace(/(^|(?<!\.\.)[.!?] |(?<!\.\.)[.!?]\n)([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  // Mid-cue: capitalise after sentence-final punctuation. Cue start: only when the previous
+  // cue actually ended a sentence (ctx.prevEndsSentence) — see endsSentence() above.
+  t=t.replace(/((?<!\.\.)[.!?] |(?<!\.\.)[.!?]\n)([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  if(ctx.prevEndsSentence!==false) t=t.replace(/^([a-z])/,m=>m.toUpperCase());
   // Known-name capitalization — reuses the exact same source convertToMixedCase already
   // draws from (speaker pool, metadata actors, personal dictionary), but non-destructively:
   // convertToMixedCase lowercases the whole cue first before re-capitalizing, which is
@@ -1908,26 +2070,13 @@ function resolveTopOrBottom(settingsStr){
  * (only a forced-centre cleanup is applied); a cue that actually moves is written in the
  * same dialect as its neighbours.
  */
+// v1.5: the dialect logic itself lives in the shared LEGACI RULES block; these are the
+// Legaci-state-aware wrappers around it.
 function fileLineDialect(){
   if(S.fileLineDialect) return S.fileLineDialect;
-  let d='pct';
-  for(const c of (S.src||[])){
-    const s=c.settings||'';
-    if(/line:-?\d+(?![\d.%])/.test(s)){ d='int'; break; }
-    if(/line:-?[\d.]+%/.test(s)) d='pct';
-  }
-  S.fileLineDialect=d; return d;
+  S.fileLineDialect=detectLineDialect(S.src||[]); return S.fileLineDialect;
 }
-function settingsForSide(side,text){
-  const nLines=Math.max(1,String(text||'').split('\n').filter(l=>l.trim()).length);
-  if(fileLineDialect()==='int') return side==='top' ? 'align:middle line:0' : 'line:-'+nLines;
-  return side==='top' ? 'align:middle line:0%' : 'align:middle line:90%';
-}
-/** Keep the cue's own line value; only strip a horizontal offset (house spec centres everything). */
-function normalizeKeepDialect(settingsStr){
-  let s=(settingsStr||'').replace(/\s*position:[^\s]+/g,'').replace(/align:(start|end|left|right|center)/g,'align:middle').trim().replace(/\s+/g,' ');
-  return s;
-}
+function settingsForSide(side,text){ return settingsForSideIn(fileLineDialect(),side,text); }
 function detectOffCenterHorizontal(settingsStr){
   const s=settingsStr||'';
   if(/align:start/.test(s))return 'was left-aligned (align:start)';
@@ -1948,6 +2097,7 @@ function buildFixedCues(counts){
 
   let out=[];
   let narratorEstablished=false;
+  let prevOrigText=null; // for cue-start capitalisation context
   S.src.forEach((c,srcIdx)=>{
     // Track italics + narrator-continuity BEFORE tags get stripped: once a "NARRATOR:"
     // ID appears, later italicized lines with no ID of their own are assumed to still be
@@ -1966,7 +2116,8 @@ function buildFixedCues(counts){
       ostSuggested=null; ostDetail=null; offCenterH=null; // a manual override means the person already decided position
       if(!text.trim()){ counts.removed++; return; }
     } else {
-      text=autoFixText(c.origText,counts);
+      text=autoFixText(c.origText,counts,{prevEndsSentence:endsSentence(prevOrigText)});
+      prevOrigText=c.origText;
       if(useMixedCase){ const before=text; text=convertToMixedCase(text); if(text!==before)counts.mixedCase=(counts.mixedCase||0)+1; }
       if(document.getElementById('opt-spelling').checked){
         const spellResult=fixCommonMisspellings(text);
@@ -2009,6 +2160,11 @@ function buildFixedCues(counts){
     lines.forEach(l=>{ const w=wrapLine(l,maxLen); if(w.length>1)counts.wrapped++; wrapped.push(...w); });
     lines=wrapped;
 
+    // v1.4.1: when wrapping pushes a cue past 3 lines, re-flow the whole cue first and only
+    // split if it truly cannot fit. The human-corrected S1E6 kept "And at 18 years old, / he
+    // started working full-time / at a local prison during the" as one 3-line cue; the old
+    // code split it into a 1-second one-liner plus a two-liner (10 such cases in one file).
+    if(lines.length>3){ const rf=reflowLines(lines,maxLen,3); if(rf.length<=3){ lines=rf; counts.wrapped++; } }
     const chunks=[];
     for(let i=0;i<lines.length;i+=3)chunks.push(lines.slice(i,i+3));
     if(chunks.length>1)counts.split++;
@@ -2431,6 +2587,11 @@ const BLOCK = 8;
  *                       peak (0.30→0.28) and the coverage floor (25%→15%) moved. Result:
  *                       92.7% on the first episode, 93.0% on the second (v1.1 scored 77%
  *                       there), precision 86% / 97%.
+ *
+ *   v1.4 (measured, NOT adopted): a two-tier isolation gate that let big confident text
+ *                       through at lower isolation — (score≥0.5 ∧ iso≥0.70) ∨ (score≥0.28 ∧
+ *                       iso≥0.80) — gained 0.1–0.5% on the motorsport episode and lost
+ *                       0.7–2% on the documentary. Net negative; the single 0.80 gate stays.
  *
  * The per-frame score threshold and the track peak gate came DOWN (small type is
  * faint at 960px), the isolation gate went UP to pay for it. Change one without the
@@ -2861,13 +3022,58 @@ function sizeOstCanvas(el){
  *  returning the same {regions, pic} shape the source tool produces. Mirrors
  *  that tool's runScan() step for step — the algorithm is untouched, only the
  *  video/progress plumbing is Legaci's own. */
+/* =========================================================
+   v1.3 — SCAN SPEED
+   Where the time in a scan actually goes, measured on a 41-minute proxy:
+     · ~1,650 seeks at 50–100ms each              → the bulk of wall-clock time
+     · block scoring on the main thread            → the UI freeze during a scan
+   What helps and what doesn't:
+     · Sequential decode (playback + requestVideoFrameCallback) does NOT beat seeking
+       for this sampling density — one sample every ~1.5s means real-time playback at
+       16× costs about the same as the seeks it replaces, and WebCodecs needs an MP4
+       demuxer this single-file tool can't ship. Not adopted.
+     · Fewer frames: the coarse sweep is now only taken in stretches with no captions
+       (the per-cue samples already cover everything else) — ~20% fewer seeks.
+     · Static frames: if a sampled frame is near-identical to the previous sample (a
+       held interview shot), its grid is reused instead of rescored.
+     · Off-thread scoring: block scoring runs in a Web Worker built from the same
+       functions, so the review list stays usable while a scan runs. Falls back to
+       inline scoring where Workers are unavailable. Results are bit-identical.
+   ========================================================= */
+let scoreWorker=null, scoreWorkerBusy=null;
+function getScoreWorker(){
+  if(scoreWorker!==null) return scoreWorker||null;
+  try{
+    const src='const BLOCK='+BLOCK+';\nconst bell='+bell.toString()+';\n'+blockTextScore.toString()+'\n'+scoreFrame.toString()+
+      '\nlet prev=null;\nself.onmessage=e=>{ const {gray,w,h,pic,reuse}=e.data; const g=new Uint8ClampedArray(gray);'+
+      ' const sg=scoreFrame(g,prev,w,h,pic); prev=g; self.postMessage(sg,[sg.grid.buffer]); };';
+    scoreWorker=new Worker(URL.createObjectURL(new Blob([src],{type:'application/javascript'})));
+  }catch(e){ scoreWorker=false; }
+  return scoreWorker||null;
+}
+function scoreFrameAsync(gray,prev,w,h,pic){
+  const wk=getScoreWorker();
+  if(!wk) return Promise.resolve(scoreFrame(gray,prev,w,h,pic));
+  return new Promise((resolve,reject)=>{
+    wk.onmessage=e=>resolve(e.data); wk.onerror=err=>{ scoreWorker=false; resolve(scoreFrame(gray,prev,w,h,pic)); };
+    const copy=new Uint8ClampedArray(gray); // worker keeps its own prev; main thread keeps its copy for the static-frame test
+    wk.postMessage({gray:copy.buffer,w,h,pic},[copy.buffer]);
+  });
+}
+/** Mean absolute difference between two luma frames on a sparse stride, 0–255. */
+function frameDelta(a,b){
+  if(!a||!b||a.length!==b.length) return 255;
+  let s=0,n=0; for(let i=0;i<a.length;i+=97){ s+=Math.abs(a[i]-b[i]); n++; }
+  return s/Math.max(1,n);
+}
+const STATIC_FRAME_DELTA=1.5; // below this the frame is a held shot: reuse the previous grid
 async function runOSTDetectionScan(){
   sizeOstCanvas(scanVideo);
   const w=ostAnalysisCanvas.width, h=ostAnalysisCanvas.height;
   const duration=scanVideo.duration||0;
   if(!duration)return {regions:[],pic:{x:0,y:0,w,h}};
   const step=duration>900 ? 3 : 2.5;
-  let prev=null, blocked=false;
+  let prev=null, prevSg=null, blocked=false, reused=0;
   const seen=new Map();
 
   const probes=[];
@@ -2888,7 +3094,9 @@ async function runOSTDetectionScan(){
       try{
         await seekAndWait(scanVideo,times[i]+S.offset);
         const g=ostLumaAt(scanVideo);
-        const sg=scoreFrame(g,prev,w,h,pic);
+        let sg;
+        if(prevSg && frameDelta(g,prev)<STATIC_FRAME_DELTA){ sg=prevSg; reused++; }
+        else { sg=await scoreFrameAsync(g,prev,w,h,pic); prevSg=sg; }
         seen.set(times[i],{
           t:times[i], coarse:isCoarse,
           regions:gridToRegions(sg,OST_TUNING.regionThr,3),
@@ -2903,7 +3111,8 @@ async function runOSTDetectionScan(){
     }
   };
 
-  const coarse=coarseTimes(duration,step);
+  // v1.3: coarse samples only where no caption will be sampled anyway (gaps > step)
+  const coarse=coarseTimes(duration,step).filter(t=>!S.cues.some(c=>t>c.start-step/2 && t<c.end+step/2));
   await pass(coarse,true,0,50);
   if(blocked)return {regions:[],pic,blocked:true};
   const hints=[...seen.values()].sort((a,b)=>a.t-b.t).map(s=>({...s,regions:s.cand}));
@@ -2920,6 +3129,7 @@ async function runOSTDetectionScan(){
   const samples=[...seen.values()].sort((a,b)=>a.t-b.t);
   let regions=trackRegions(samples,samples.length,{pictureH:pic.h,coarseTotal:coarse.length});
   regions=snapRegionsToShotChanges(regions,S.shotChanges);
+  S.lastScanStats={frames:seen.size,reused,coarse:coarse.length};
   return {regions,pic};
 }
 /**
@@ -3198,7 +3408,7 @@ function speechSegmentCountInRange(start,end,segments){
 // regex only knew the first, so every bracketed ID read as "no speaker ID" downstream:
 // off-screen-speaker flags fired on cues that were already labelled, and the narrator
 // continuity rule never switched on. An optional leading dash is allowed on either form.
-const HAS_ID=/^\s*(?:-\s*)?(?:(?:\(|\[)[A-Za-z][A-Za-z0-9 .'\-]{0,30}(?:\)|\])\s*:?|[A-Z][A-Z0-9 .'\-]{1,20}\s*:)/;
+// HAS_ID now comes from the shared LEGACI RULES block.
 // A speaker ID replaces the need for a leading dash (dashes are only for two speakers
 // sharing one caption event) — so strip any existing ID AND a leading dash before inserting a new ID.
 function recordOverride(cue){ S.manualOverrides[cue.srcIdx]={text:cue.text,settings:cue.settings}; }
@@ -3399,8 +3609,14 @@ async function runCombinedVideoPass(){
         const here=bandHit(c,ostRegions,ostPic,side);
         if(here){
           const there=bandHit(c,ostRegions,ostPic,other);
+          // v1.4: when BOTH bands carry text, moving only helps if the other side is the
+          // lesser collision. Weight = score × coverage (how strong, for how long). If the
+          // other band is at least as busy, the cue stays put and is flagged for a human
+          // rather than suggested a move that trades one collision for another.
+          const weight=h=>(h.region.score||0)*Math.max(0.1,h.coverage||0);
+          const stay = there && weight(there)>=weight(here)*0.9;
           S.detected[i]={zone:side,overlap:Math.round(here.inside*100),coverage:here.coverage,regionKind:here.region.kind,
-                         region:here.region,confidence:bandConfidence(here),otherSideBusy:!!there};
+                         region:here.region,confidence:bandConfidence(here),otherSideBusy:!!there,bothBusyStay:stay};
         }
       }
 
@@ -4238,7 +4454,9 @@ function buildChecklist(){
         // Confidence leads the message rather than decorating the end of it, so
         // the queue can be worked worst-first and a weak finding reads as weak.
         const confBit = d&&d.confidence!=null ? ' Detection confidence '+d.confidence+'% ('+confidenceBand(d.confidence)+').' : '';
-        const busyBit = d&&d.otherSideBusy ? ' Note: on-screen text was also found in the '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+' band during this cue, so moving may trade one collision for another — check the frame.' : '';
+        const busyBit = d&&d.bothBusyStay
+          ? ' Both bands carry on-screen text during this cue and the '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+' is at least as busy — moving would not help, so no move is suggested. Check the frame and shorten or retime if the collision matters.'
+          : d&&d.otherSideBusy ? ' Note: on-screen text was also found in the '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+' band during this cue, but it is the lesser collision — the move still helps.' : '';
         // Moving a caption on a cut is invisible; moving it mid-shot is not. The
         // shot changes were already being detected and were going unused here.
         const cutBit = (S.shotChanges&&S.shotChanges.length)
@@ -5366,6 +5584,76 @@ document.getElementById('bulk-add-dash').addEventListener('click',()=>bulkToggle
 document.getElementById('bulk-remove-dash').addEventListener('click',()=>bulkToggleDash('remove'));
 document.getElementById('bulk-add-dash-all-events').addEventListener('click',()=>bulkToggleDash('add'));
 document.getElementById('bulk-remove-dash-all-events').addEventListener('click',()=>bulkToggleDash('remove'));
+/* =========================================================
+   v1.4 — CALIBRATION PANEL
+   The offline harness that produced the v1.2 numbers, inside the tool. Truth = the
+   side each caption sits on in the human-corrected file; prediction = the side the
+   source file had it on, flipped where Legaci suggested a move. Cues are aligned by
+   index when the two files have the same cue count, otherwise by nearest in-time.
+   ========================================================= */
+var calibCues=null, calibRows=null;
+document.getElementById('file-calib').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ calibCues=parseVTT(String(r.result)); document.getElementById('drop-calib').classList.add('loaded'); document.getElementById('calib-sub').textContent=f.name+' · '+calibCues.length+' cues'; document.getElementById('calib-run').disabled=!(S.src&&S.src.length); }catch(err){ setProg('Could not read the corrected file: '+err.message,true); } };
+  r.readAsText(f);
+});
+function calibAlign(){
+  const src=S.src||[]; const out=[];
+  if(calibCues.length===src.length){ src.forEach((c,i)=>out.push([i,calibCues[i]])); return out; }
+  let j=0;
+  src.forEach((c,i)=>{ while(j<calibCues.length-1 && Math.abs(calibCues[j+1].start-c.start)<Math.abs(calibCues[j].start-c.start)) j++;
+    if(Math.abs(calibCues[j].start-c.start)<=0.5) out.push([i,calibCues[j]]); });
+  return out;
+}
+document.getElementById('calib-run').addEventListener('click',()=>{
+  if(!calibCues||!S.src||!S.src.length) return;
+  const pairs=calibAlign(); const bands={high:[0,0],medium:[0,0],low:[0,0]};
+  let tp=0,fp=0,fn=0,tn=0; calibRows=[];
+  pairs.forEach(([i,cc])=>{
+    const c=S.src[i]; const srcSide=sideOf(placementFromSettings(c.settings));
+    const truth=sideOf(placementFromSettings(cc.settings));
+    const d=S.detected[i]; const moved=!!(d&&!d.bothBusyStay);
+    const pred=moved?(srcSide==='bottom'?'top':'bottom'):srcSide;
+    const humanMoved=truth!==srcSide;
+    if(moved&&humanMoved)tp++; else if(moved&&!humanMoved)fp++; else if(!moved&&humanMoved)fn++; else tn++;
+    if(moved){ const b=confidenceBand(d.confidence||0); bands[b][0]++; if(humanMoved)bands[b][1]++; }
+    calibRows.push({cue:i+1,in:fmtTime(c.start),out:fmtTime(c.end),source:srcSide,legaci:pred,human:truth,confidence:d?d.confidence:'' ,propagated:d&&d.propagated?'yes':'',result:moved&&humanMoved?'TP':moved?'FP':humanMoved?'FN':'TN',text:c.text.replace(/\n/g,' / ')});
+  });
+  const n=pairs.length||1, acc=(tp+tn)/n, prec=tp/Math.max(1,tp+fp), rec=tp/Math.max(1,tp+fn);
+  const pct=v=>Math.round(v*1000)/10+'%';
+  const out=document.getElementById('calib-out'); out.style.display='block';
+  out.innerHTML='<b>'+pairs.length+'</b> cues aligned'+(pairs.length!==S.src.length?' of '+S.src.length:'')+' · human moved <b>'+(tp+fn)+'</b>, Legaci suggested <b>'+(tp+fp)+'</b><br>'+
+    'Agreement <b>'+pct(acc)+'</b> · precision <b>'+pct(prec)+'</b> · recall <b>'+pct(rec)+'</b> (TP '+tp+' · FP '+fp+' · FN '+fn+' · TN '+tn+')<br>'+
+    Object.entries(bands).map(([b,[k,ok]])=>b+': '+k+' flagged, '+(k?pct(ok/Math.max(1,k)):'—')+' correct').join(' · ')+
+    (S.lastScanStats?'<br>scan: '+S.lastScanStats.frames+' frames scored, '+S.lastScanStats.reused+' reused as static':'')+
+    '<br><span style="color:var(--faint)">Reference from the fitted episodes: agreement 92.7% / 93.0%, high band ≥96% correct. A big drop on a new show means the tuning needs a look, not the operator.</span>';
+  document.getElementById('calib-csv').disabled=false;
+  logEvent('legaci','calibration','measure',Math.round(acc*100));
+});
+document.getElementById('calib-csv').addEventListener('click',()=>{
+  if(!calibRows) return;
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const cols=['cue','in','out','source','legaci','human','confidence','propagated','result','text'];
+  downloadBlob('\uFEFF'+[cols.join(',')].concat(calibRows.map(r=>cols.map(k=>q(r[k])).join(','))).join('\r\n'),'legaci-calibration.csv','text/csv;charset=utf-8');
+});
+// v1.4: triage. High-confidence suggestions (≥75) were right 96% of the time on the two
+// corrected episodes; clearing them in one click leaves the operator's attention for the
+// medium and low bands where the judgement calls actually are. Still a human click — no
+// suggestion is ever applied on its own.
+document.getElementById('bulk-apply-high').addEventListener('click',()=>{
+  pushHistory();
+  let applied=0;
+  S.cues.forEach((cue,i)=>{
+    const d=cue.ostDetail; if(!cue.ostSuggested||cue.ostSuggested==='middle'||!d||d.propagated||d.bothBusyStay) return;
+    if((d.confidence||0)<75) return;
+    cue.settings=settingsForSide(cue.ostSuggested==='bottom'?'top':'bottom',cue.text);
+    cue.ostSuggested=null; recordOverride(cue); applied++;
+  });
+  buildChecklist(); render();
+  setProg(applied?'Applied '+applied+' high-confidence move(s). Medium and low-confidence suggestions are still waiting for a decision.':'No high-confidence (≥75%) OST suggestions outstanding.');
+  logEvent('legaci','bulk','apply_high_confidence',applied);
+});
 document.getElementById('bulk-apply-suggested').addEventListener('click',()=>{
   pushHistory();
   let applied=0,skipped=0,middleSkipped=0;
@@ -5446,7 +5734,12 @@ function render(){
     return;
   }
 
-  visible.forEach((r,ri)=>{
+  // v1.3: chunked rendering. A 900-cue file used to build every card, textarea and
+  // highlight overlay up front; now the first chunk is built immediately and the rest
+  // arrive as the list is scrolled (IntersectionObserver sentinel). Handlers are bound
+  // per chunk, so nothing is double-bound and nothing further down is missing them.
+  const RENDER_CHUNK=150; let nextRow=0;
+  const buildRow=(r,ri,scope)=>{
     const el=document.createElement('div');
     el.className='item'+(ri===S.activeReportIdx?' active':'');
     el.dataset.select=ri;
@@ -5475,14 +5768,14 @@ function render(){
 
     if(isGap){
       body+='<div class="plabel">No caption event here to edit — this is a gap/timeline finding. Check the audio at this timecode and add a caption event manually in your VTT if needed, then re-run.</div>';
-      el.innerHTML=body; box.appendChild(el); return;
+      el.innerHTML=body; scope.appendChild(el); return;
     }
 
     const idxA = isStack ? findCueIdxByStart(r.stackStartA) : findCueIdxByStart(r.startKey);
     const idxB = isStack ? findCueIdxByStart(r.stackStartB) : null;
     const cueA = S.cues[idxA];
     const cueB = isStack ? S.cues[idxB] : null;
-    if(!cueA){ el.innerHTML=body; box.appendChild(el); return; } // stale, will self-clean next build
+    if(!cueA){ el.innerHTML=body; scope.appendChild(el); return; } // stale, will self-clean next build
 
     if(isStack){
       body+='<div class="rowlabel">Cue A</div><textarea spellcheck="true" class="txt-edit" data-cue="'+idxA+'">'+esc(cueA.text)+'</textarea>'+
@@ -5522,208 +5815,223 @@ function render(){
       '<button class="pbtn small" data-act="apply-spk" data-ri="'+ri+'">Apply</button></div>';
 
     el.innerHTML=body;
-    box.appendChild(el);
-  });
-
-  // Clicking anywhere in the card (except an interactive control) seeks to that event.
-  // Shift-click selects a range for bulk actions; Ctrl/Cmd-click toggles one row in/out
-  // of the selection without disturbing the rest — same convention as a file manager.
-  box.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{
-    if(e.target.closest('button,textarea,select,input'))return;
-    const ri=+el.dataset.select;
-    if(e.shiftKey && S.lastClickedRi!=null){
-      const [a,b]=[S.lastClickedRi,ri].sort((x,y)=>x-y);
-      for(let k=a;k<=b;k++){ if(S.currentVisible[k])S.selectedRows.add(S.currentVisible[k].key); }
-      render();
-      return;
-    }
-    if(e.ctrlKey||e.metaKey){
-      const key=S.currentVisible[ri].key;
-      if(S.selectedRows.has(key))S.selectedRows.delete(key); else S.selectedRows.add(key);
+    scope.appendChild(el);
+  };
+  const renderChunk=()=>{
+    const scope=document.createElement('div'); scope.className='chunk';
+    // the active (hotkey-navigated) row must exist in the DOM so scrollIntoView can reach it
+    const mustReach=(nextRow===0&&S.activeReportIdx!=null)?S.activeReportIdx+20:0;
+    const end=Math.min(visible.length,Math.max(nextRow+RENDER_CHUNK,mustReach));
+    for(let ri=nextRow;ri<end;ri++) buildRow(visible[ri],ri,scope);
+    nextRow=end; box.appendChild(scope);
+  
+    // Clicking anywhere in the card (except an interactive control) seeks to that event.
+    // Shift-click selects a range for bulk actions; Ctrl/Cmd-click toggles one row in/out
+    // of the selection without disturbing the rest — same convention as a file manager.
+    scope.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{
+      if(e.target.closest('button,textarea,select,input'))return;
+      const ri=+el.dataset.select;
+      if(e.shiftKey && S.lastClickedRi!=null){
+        const [a,b]=[S.lastClickedRi,ri].sort((x,y)=>x-y);
+        for(let k=a;k<=b;k++){ if(S.currentVisible[k])S.selectedRows.add(S.currentVisible[k].key); }
+        render();
+        return;
+      }
+      if(e.ctrlKey||e.metaKey){
+        const key=S.currentVisible[ri].key;
+        if(S.selectedRows.has(key))S.selectedRows.delete(key); else S.selectedRows.add(key);
+        S.lastClickedRi=ri;
+        render();
+        return;
+      }
       S.lastClickedRi=ri;
-      render();
-      return;
-    }
-    S.lastClickedRi=ri;
-    selectReportRow(ri);
-  }));
-  box.querySelectorAll('input.bulk-select').forEach(cb=>cb.addEventListener('click',e=>{
-    e.stopPropagation();
-    if(e.target.checked)S.selectedRows.add(e.target.dataset.key);
-    else S.selectedRows.delete(e.target.dataset.key);
-    renderBulkBar();
-  }));
-  box.querySelectorAll('select.spk-select').forEach(sel=>sel.addEventListener('change',()=>{
-    const newInp=document.querySelector('[data-newspk="'+sel.dataset.ri+'"]');
-    newInp.style.display = sel.value==='__new__' ? 'inline-block' : 'none';
-  }));
-  renderTicks();
-  box.querySelectorAll('textarea.txt-edit').forEach(ta=>{
-    updateHighlightOverlay(ta,+document.getElementById('opt-len').value||32);
-    ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; S.lastViewedCueIdx=+ta.dataset.cue; });
-    ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
-    ta.addEventListener('blur',()=>{
-      if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
-    });
-    ta.addEventListener('input',()=>{
-    const cue=S.cues[+ta.dataset.cue];
-    const maxLen=+document.getElementById('opt-len').value||32;
-    cue.text=ta.value;
-    recordOverride(cue);
-    refreshCaptionOverlay();
-    updateHighlightOverlay(ta,maxLen);
-    const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
-    if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
-  });});
-  box.querySelectorAll('[data-note-ri]').forEach(inp=>inp.addEventListener('input',()=>{
-    const r=S.currentVisible[+inp.dataset.noteRi];
-    const idx=r.stackStartA!=null?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
-    if(S.cues[idx])S.annotations[S.cues[idx].srcIdx]=inp.value;
-  }));
-  box.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',e=>{
-    e.stopPropagation();
-    const ri=+btn.dataset.ri, act=btn.dataset.act, r=S.currentVisible[ri];
-    const issueTypes=(r.issues||[]).map(i=>i.id).join(',')||'none';
-    pushHistory();
-    if(act==='merge-dash'||act==='merge-nodash'){
-      const a=findCueIdxByStart(r.stackStartA), b=findCueIdxByStart(r.stackStartB);
-      const lineA=S.cues[a].text.split('\n'), lineB=S.cues[b].text.split('\n');
-      const merged = act==='merge-dash'
-        ? [...lineA.map(l=>l.startsWith('-')?l:'- '+l), ...lineB.map(l=>l.startsWith('-')?l:'- '+l)]
-        : [...lineA, ...lineB];
-      S.cues[a]={...S.cues[a],text:merged.join('\n')};
-      S.cues.splice(b,1);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg('Merged — '+(act==='merge-dash'?'dash added to both speakers.':'no dash, same speaker.')+' Note: a merge does not survive clicking "Run full analysis" again — it rebuilds from the original file. Export before re-running if you want to keep it.');
-      logEvent('legaci','merge_used',issueTypes);
-    } else if(act==='pos-top'||act==='pos-bottom'){
-      const cue=S.cues[findCueIdxByStart(r.startKey)];
-      cue.settings = settingsForSide(act==='pos-top'?'top':'bottom',cue.text);
-      recordOverride(cue);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg('Position set to '+(act==='pos-top'?'TOP':'BOTTOM')+' for that cue — check the video preview, it updates immediately.');
-      logEvent('legaci','position_button',issueTypes);
-    } else if(act==='toggle-italic'||act==='toggle-bold'){
-      const cue=S.cues[findCueIdxByStart(r.startKey)];
-      toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
-      buildChecklist(); render(); refreshCaptionOverlay();
-      logEvent('legaci',act==='toggle-italic'?'italic_toggle':'bold_toggle',issueTypes);
-    } else if(act==='word-next'||act==='word-prev'){
-      const idx=findCueIdxByStart(r.startKey);
-      const cue=S.cues[idx];
-      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
-      const moved=moveWordBetweenLines(cue.text,ta?ta.selectionStart:0,act==='word-next'?'next':'prev');
-      if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
-      cue.text=moved; recordOverride(cue);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      logEvent('legaci','word_nudge',issueTypes);
-    } else if(act==='linebreak'){
-      const idx=findCueIdxByStart(r.startKey);
-      const cue=S.cues[idx];
-      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
-      const cursor=ta?ta.selectionStart:cue.text.length;
+      selectReportRow(ri);
+    }));
+    scope.querySelectorAll('input.bulk-select').forEach(cb=>cb.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(e.target.checked)S.selectedRows.add(e.target.dataset.key);
+      else S.selectedRows.delete(e.target.dataset.key);
+      renderBulkBar();
+    }));
+    scope.querySelectorAll('select.spk-select').forEach(sel=>sel.addEventListener('change',()=>{
+      const newInp=document.querySelector('[data-newspk="'+sel.dataset.ri+'"]');
+      newInp.style.display = sel.value==='__new__' ? 'inline-block' : 'none';
+    }));
+    renderTicks();
+    scope.querySelectorAll('textarea.txt-edit').forEach(ta=>{
+      updateHighlightOverlay(ta,+document.getElementById('opt-len').value||32);
+      ta.addEventListener('focus',()=>{ pushHistory(); ta.dataset.editStartValue=ta.value; ta.dataset.keystrokeCount=0; S.lastViewedCueIdx=+ta.dataset.cue; });
+      ta.addEventListener('keydown',()=>{ ta.dataset.keystrokeCount=(+ta.dataset.keystrokeCount||0)+1; });
+      ta.addEventListener('blur',()=>{
+        if(ta.value!==ta.dataset.editStartValue)logEvent('legaci','text_edited',issueTypesForCue(+ta.dataset.cue)+'|keystrokes:'+(ta.dataset.keystrokeCount||0));
+      });
+      ta.addEventListener('input',()=>{
+      const cue=S.cues[+ta.dataset.cue];
       const maxLen=+document.getElementById('opt-len').value||32;
-      const withBreak=insertLineBreakAtCursor(cue.text,cursor);
-      const {text,overflow}=enforceCaptionLimits(withBreak,maxLen);
-      cue.text=text; recordOverride(cue);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
-      logEvent('legaci','linebreak_inserted',issueTypes);
-    } else if(act==='apply-dash-split'){
-      const idx=findCueIdxByStart(r.startKey);
-      const cue=S.cues[idx];
-      const gk='c'+r.startKey.toFixed(3);
-      const proposal=S.dashSplitProposals[gk];
-      if(!proposal||!proposal.changed){setProg('That split is no longer available — the text may have changed since it was proposed.',true);return;}
-      cue.text=proposal.lines.join('\n');
+      cue.text=ta.value;
       recordOverride(cue);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg('Split applied — two speakers\' merged line separated onto their own lines.');
-      logEvent('legaci','dash_split_applied',issueTypes);
-    } else if(act==='suggest-dash-split'){
-      const idx=findCueIdxByStart(r.startKey);
-      const cue=S.cues[idx];
-      const maxLen=+document.getElementById('opt-len').value||32;
-      // A one-time starting point, not a decision — forces a split at every embedded
-      // dash regardless of confidence, then rewraps to fit. Lands in the textarea for
-      // the operator to look at and adjust with the same tools as any manual edit;
-      // never applied on its own.
-      const suggested=rewrapDashLines(cue.text.split('\n'),maxLen).join('\n');
-      cue.text=suggested;
-      recordOverride(cue);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg('Suggested split filled in — review it, this ignored the usual confidence check on purpose. Adjust as needed before moving on.',true);
-      logEvent('legaci','dash_split_suggested',issueTypes);
-    } else if(act==='split'){
-      const idx=findCueIdxByStart(r.startKey);
-      const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
-      const cue=S.cues[idx];
-      const cursor=ta?ta.selectionStart:Math.floor(cue.text.length/2);
-      const parts=splitCueAtCursor(idx,cursor);
-      if(!parts){setProg('Put the cursor where you want the split — not at the very start or end.',true);return;}
-      S.cues.splice(idx,1,parts[0],parts[1]);
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
-      logEvent('legaci','split_used',issueTypes);
-    } else if(act==='apply-spk'){
-      const sel=document.querySelector('select[data-ri="'+ri+'"]');
-      const newInp=document.querySelector('[data-newspk="'+ri+'"]');
-      const name = sel.value==='__new__' ? (newInp.value||'').trim() : sel.value;
-      if(!name){setProg('Choose or type a speaker name first.',true);return;}
-      const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
-      const cue=S.cues[idx];
-      setSpeakerId(cue,name);
-      addToPool(name.toUpperCase());
-      // propagate to every other cue the voice-fingerprint scan grouped with this one
-      const cl=S.speakerClusters[cue.srcIdx];
-      let propagated=0;
-      if(cl){
-        S.clusterNames[cl]=name;
-        S.cues.forEach(other=>{
-          if(other===cue)return;
-          if(S.speakerClusters[other.srcIdx]!==cl)return;
-          const placeholderRe=new RegExp('^\\s*'+cl+'\\s*:\\s*','i');
-          if(placeholderRe.test(other.text)){ other.text=other.text.replace(placeholderRe,''); setSpeakerId(other,name); propagated++; }
-          else if(!HAS_ID.test(other.text)){ setSpeakerId(other,name); propagated++; }
-        });
+      refreshCaptionOverlay();
+      updateHighlightOverlay(ta,maxLen);
+      const metaEl=document.querySelector('.livemeta[data-metafor="'+ta.dataset.cue+'"]');
+      if(metaEl)metaEl.innerHTML=renderCaptionMeta(cue.text,cue.end-cue.start,maxLen,MAXCPS_REF);
+    });});
+    scope.querySelectorAll('[data-note-ri]').forEach(inp=>inp.addEventListener('input',()=>{
+      const r=S.currentVisible[+inp.dataset.noteRi];
+      const idx=r.stackStartA!=null?findCueIdxByStart(r.stackStartB):findCueIdxByStart(r.startKey);
+      if(S.cues[idx])S.annotations[S.cues[idx].srcIdx]=inp.value;
+    }));
+    scope.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const ri=+btn.dataset.ri, act=btn.dataset.act, r=S.currentVisible[ri];
+      const issueTypes=(r.issues||[]).map(i=>i.id).join(',')||'none';
+      pushHistory();
+      if(act==='merge-dash'||act==='merge-nodash'){
+        const a=findCueIdxByStart(r.stackStartA), b=findCueIdxByStart(r.stackStartB);
+        const lineA=S.cues[a].text.split('\n'), lineB=S.cues[b].text.split('\n');
+        const merged = act==='merge-dash'
+          ? [...lineA.map(l=>l.startsWith('-')?l:'- '+l), ...lineB.map(l=>l.startsWith('-')?l:'- '+l)]
+          : [...lineA, ...lineB];
+        S.cues[a]={...S.cues[a],text:merged.join('\n')};
+        S.cues.splice(b,1);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg('Merged — '+(act==='merge-dash'?'dash added to both speakers.':'no dash, same speaker.')+' Note: a merge does not survive clicking "Run full analysis" again — it rebuilds from the original file. Export before re-running if you want to keep it.');
+        logEvent('legaci','merge_used',issueTypes);
+      } else if(act==='pos-top'||act==='pos-bottom'){
+        const cue=S.cues[findCueIdxByStart(r.startKey)];
+        cue.settings = settingsForSide(act==='pos-top'?'top':'bottom',cue.text);
+        recordOverride(cue);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg('Position set to '+(act==='pos-top'?'TOP':'BOTTOM')+' for that cue — check the video preview, it updates immediately.');
+        logEvent('legaci','position_button',issueTypes);
+      } else if(act==='toggle-italic'||act==='toggle-bold'){
+        const cue=S.cues[findCueIdxByStart(r.startKey)];
+        toggleWrapTag(cue, act==='toggle-italic'?'i':'b');
+        buildChecklist(); render(); refreshCaptionOverlay();
+        logEvent('legaci',act==='toggle-italic'?'italic_toggle':'bold_toggle',issueTypes);
+      } else if(act==='word-next'||act==='word-prev'){
+        const idx=findCueIdxByStart(r.startKey);
+        const cue=S.cues[idx];
+        const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+        const moved=moveWordBetweenLines(cue.text,ta?ta.selectionStart:0,act==='word-next'?'next':'prev');
+        if(moved==null){setProg('Nothing to move there — cursor needs to be on a line with a neighbor in that direction.',true);return;}
+        cue.text=moved; recordOverride(cue);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        logEvent('legaci','word_nudge',issueTypes);
+      } else if(act==='linebreak'){
+        const idx=findCueIdxByStart(r.startKey);
+        const cue=S.cues[idx];
+        const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+        const cursor=ta?ta.selectionStart:cue.text.length;
+        const maxLen=+document.getElementById('opt-len').value||32;
+        const withBreak=insertLineBreakAtCursor(cue.text,cursor);
+        const {text,overflow}=enforceCaptionLimits(withBreak,maxLen);
+        cue.text=text; recordOverride(cue);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        if(overflow)setProg('Line break added, but this event was already at 3 lines — the overflow had to be trimmed. Consider Split instead.',true);
+        logEvent('legaci','linebreak_inserted',issueTypes);
+      } else if(act==='apply-dash-split'){
+        const idx=findCueIdxByStart(r.startKey);
+        const cue=S.cues[idx];
+        const gk='c'+r.startKey.toFixed(3);
+        const proposal=S.dashSplitProposals[gk];
+        if(!proposal||!proposal.changed){setProg('That split is no longer available — the text may have changed since it was proposed.',true);return;}
+        cue.text=proposal.lines.join('\n');
+        recordOverride(cue);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg('Split applied — two speakers\' merged line separated onto their own lines.');
+        logEvent('legaci','dash_split_applied',issueTypes);
+      } else if(act==='suggest-dash-split'){
+        const idx=findCueIdxByStart(r.startKey);
+        const cue=S.cues[idx];
+        const maxLen=+document.getElementById('opt-len').value||32;
+        // A one-time starting point, not a decision — forces a split at every embedded
+        // dash regardless of confidence, then rewraps to fit. Lands in the textarea for
+        // the operator to look at and adjust with the same tools as any manual edit;
+        // never applied on its own.
+        const suggested=rewrapDashLines(cue.text.split('\n'),maxLen).join('\n');
+        cue.text=suggested;
+        recordOverride(cue);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg('Suggested split filled in — review it, this ignored the usual confidence check on purpose. Adjust as needed before moving on.',true);
+        logEvent('legaci','dash_split_suggested',issueTypes);
+      } else if(act==='split'){
+        const idx=findCueIdxByStart(r.startKey);
+        const ta=document.querySelector('textarea.txt-edit[data-cue="'+idx+'"]');
+        const cue=S.cues[idx];
+        const cursor=ta?ta.selectionStart:Math.floor(cue.text.length/2);
+        const parts=splitCueAtCursor(idx,cursor);
+        if(!parts){setProg('Put the cursor where you want the split — not at the very start or end.',true);return;}
+        S.cues.splice(idx,1,parts[0],parts[1]);
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg('Split into two events. Note: like a merge, a manual split does not survive clicking "Run full analysis" again — export first if you want to keep it.',true);
+        logEvent('legaci','split_used',issueTypes);
+      } else if(act==='apply-spk'){
+        const sel=document.querySelector('select[data-ri="'+ri+'"]');
+        const newInp=document.querySelector('[data-newspk="'+ri+'"]');
+        const name = sel.value==='__new__' ? (newInp.value||'').trim() : sel.value;
+        if(!name){setProg('Choose or type a speaker name first.',true);return;}
+        const idx = r.stackStartA!=null ? findCueIdxByStart(r.stackStartB) : findCueIdxByStart(r.startKey);
+        const cue=S.cues[idx];
+        setSpeakerId(cue,name);
+        addToPool(name.toUpperCase());
+        // propagate to every other cue the voice-fingerprint scan grouped with this one
+        const cl=S.speakerClusters[cue.srcIdx];
+        let propagated=0;
+        if(cl){
+          S.clusterNames[cl]=name;
+          S.cues.forEach(other=>{
+            if(other===cue)return;
+            if(S.speakerClusters[other.srcIdx]!==cl)return;
+            const placeholderRe=new RegExp('^\\s*'+cl+'\\s*:\\s*','i');
+            if(placeholderRe.test(other.text)){ other.text=other.text.replace(placeholderRe,''); setSpeakerId(other,name); propagated++; }
+            else if(!HAS_ID.test(other.text)){ setSpeakerId(other,name); propagated++; }
+          });
+        }
+        buildChecklist(); render(); refreshCaptionOverlay();
+        setProg(cl
+          ? 'Speaker ID "'+name.toUpperCase()+'" applied here + propagated to '+propagated+' other cue(s) the voice scan grouped as the same speaker. Check the video preview — it\'s already updated.'
+          : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
+        logEvent('legaci','speaker_field_edited',issueTypes);
+      } else if(act==='validate'){
+        // Both Validate and False-flag clear the WHOLE row, not a single issue within it —
+        // found from real usage data that this was silently dropping other, untouched
+        // issues on the same cue (a row flagged for both OST_SUGGEST and ASTERISK would
+        // lose the ASTERISK flag entirely the moment OST_SUGGEST alone got addressed).
+        // Blocking outright when more than one issue remains, rather than just warning,
+        // since the whole point is that a partial fix should never look like a full one.
+        if((r.issues||[]).length>1){
+          setProg('This row still has '+r.issues.length+' separate issues — validating would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+          return;
+        }
+        S.validated.add(r.key);
+        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
+        buildChecklist(); render();
+        setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
+      } else if(act==='false-flag'){
+        // Deliberately separate from Validate, both in the UI and in what gets logged —
+        // "I fixed a real issue" and "this was never a real issue" were previously
+        // indistinguishable in the data (both just fired flag_validated), which meant
+        // a high validate count on some issue type could mean it's usually right or
+        // usually wrong, with no way to tell which from the numbers alone.
+        if((r.issues||[]).length>1){
+          setProg('This row still has '+r.issues.length+' separate issues — marking one as a false flag would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
+          return;
+        }
+        S.validated.add(r.key);
+        S.falseFlagged.add(r.key);
+        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
+        buildChecklist(); render();
+        setProg('Marked as a false flag — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
       }
-      buildChecklist(); render(); refreshCaptionOverlay();
-      setProg(cl
-        ? 'Speaker ID "'+name.toUpperCase()+'" applied here + propagated to '+propagated+' other cue(s) the voice scan grouped as the same speaker. Check the video preview — it\'s already updated.'
-        : 'Speaker ID "'+name.toUpperCase()+'" applied to this cue only — no voice-fingerprint group found for it (load the video and re-run to enable grouping other events under this same speaker). Check the video preview — it\'s already updated.');
-      logEvent('legaci','speaker_field_edited',issueTypes);
-    } else if(act==='validate'){
-      // Both Validate and False-flag clear the WHOLE row, not a single issue within it —
-      // found from real usage data that this was silently dropping other, untouched
-      // issues on the same cue (a row flagged for both OST_SUGGEST and ASTERISK would
-      // lose the ASTERISK flag entirely the moment OST_SUGGEST alone got addressed).
-      // Blocking outright when more than one issue remains, rather than just warning,
-      // since the whole point is that a partial fix should never look like a full one.
-      if((r.issues||[]).length>1){
-        setProg('This row still has '+r.issues.length+' separate issues — validating would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
-        return;
-      }
-      S.validated.add(r.key);
-      logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
-      buildChecklist(); render();
-      setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
-    } else if(act==='false-flag'){
-      // Deliberately separate from Validate, both in the UI and in what gets logged —
-      // "I fixed a real issue" and "this was never a real issue" were previously
-      // indistinguishable in the data (both just fired flag_validated), which meant
-      // a high validate count on some issue type could mean it's usually right or
-      // usually wrong, with no way to tell which from the numbers alone.
-      if((r.issues||[]).length>1){
-        setProg('This row still has '+r.issues.length+' separate issues — marking one as a false flag would clear all of them at once, including ones not yet addressed. Resolve or dismiss them individually first.',true);
-        return;
-      }
-      S.validated.add(r.key);
-      S.falseFlagged.add(r.key);
-      logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
-      buildChecklist(); render();
-      setProg('Marked as a false flag — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
+    }));
+    if(nextRow<visible.length){
+      const sentinel=document.createElement('div'); sentinel.className='substep'; sentinel.style.padding='10px 0'; sentinel.textContent=(visible.length-nextRow)+' more row(s) load as you scroll…';
+      box.appendChild(sentinel);
+      if('IntersectionObserver' in window){ const io=new IntersectionObserver(en=>{ if(en.some(x=>x.isIntersecting)){ io.disconnect(); sentinel.remove(); renderChunk(); } },{rootMargin:'600px'}); io.observe(sentinel); }
+      else { sentinel.remove(); renderChunk(); }
     }
-  }));
+  };
+  renderChunk();
 }
 
 /* =========================================================
