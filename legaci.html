@@ -2936,7 +2936,7 @@ function trackRegions(samples, totalSamples, opts={}){
   // pre-refine tracking pass genuinely only has coarse samples to work with at that point
   // in the scan, so it doesn't need to pass this explicitly).
   const totalSampleCount = opts.coarseTotal ?? totalSamples;
-  return tracks.filter(t=>t.times.length>=minSamples && t.score>=minPeak).map((t,i)=>{
+  const finalRegions = tracks.filter(t=>t.times.length>=minSamples && t.score>=minPeak).map((t,i)=>{
     const presence=t.sampleHits/Math.max(1,totalSampleCount);
     let kind="ost";
     if(presence>=persistThr) kind="bug";
@@ -2947,12 +2947,43 @@ function trackRegions(samples, totalSamples, opts={}){
       if(mono && Math.abs(d)>crawlDrift*pictureH) kind="crawl";
     }
     return {
-      id:"r"+i, kind, presence,
+      id:"r"+i, kind, presence, sampleHits:t.sampleHits,
       x:t.box.x, y:t.box.y, w:t.box.w, h:t.box.h,
       t0:Math.min(...t.times)-pad, t1:Math.max(...t.times)+pad,
       score:t.score, samples:t.times.length, isolation:t.iso??1
     };
   });
+  // v1.5: a graphic that legitimately goes off screen and comes back later (a rotating
+  // chyron, a title card reappearing between cues) was never getting credit for its
+  // earlier appearances — confirmed on a real file: the SAME exact box (296,16,376,88)
+  // showed up three separate times, ~22s and ~9min apart, each individually far too
+  // sparse to ever reach persistThr, so it never got excluded as a fixture despite
+  // clearly being one. The merge step above only bridges gaps under 1.5s, which is
+  // correct for "is this still visibly the same object right now" but far too tight for
+  // "has this exact fixture recurred throughout the file" — those are different
+  // questions and need different tolerances. This groups by position/size only, with NO
+  // time-gap limit, purely to answer the second question. It doesn't change which
+  // frames a region is considered actually visible during (each region's own t0/t1 is
+  // untouched), so a caption sitting in the real gap between two appearances still isn't
+  // treated as colliding with something that, at that moment, genuinely isn't on screen.
+  const usedForFixture=new Set();
+  finalRegions.forEach((r,i)=>{
+    if(usedForFixture.has(i) || r.kind==='bug')return;
+    const group=[i];
+    usedForFixture.add(i);
+    finalRegions.forEach((u,j)=>{
+      if(j===i || usedForFixture.has(j) || u.kind==='bug')return;
+      if(affinity(r,u)>0.28){ group.push(j); usedForFixture.add(j); }
+    });
+    if(group.length>1){
+      const combinedHits=group.reduce((s,idx)=>s+finalRegions[idx].sampleHits,0);
+      const combinedPresence=combinedHits/Math.max(1,totalSampleCount);
+      if(combinedPresence>=persistThr){
+        group.forEach(idx=>{ finalRegions[idx].kind='bug'; finalRegions[idx].presence=combinedPresence; });
+      }
+    }
+  });
+  return finalRegions;
 }
 /**
  * Stage one: a cheap even sweep of the whole runtime. This is what finds where
