@@ -385,8 +385,6 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="substep infotext" id="spelling-hint">catches unambiguous typos only ("happend" → "happened", "aggresive" → "aggressive") — never homophones like your/you're or word-choice calls, since those need sentence context a script can't safely judge. Add a term to the Personal Dictionary below to exclude it from this pass.</div>
     <div class="opt"><label>Flag grammar &amp; spelling for review</label><button class="infobtn" data-infofor="grammar-hint">i</button><input type="checkbox" id="opt-grammar"></div>
     <div class="substep infotext" id="grammar-hint">off by default — flags exactly the stuff the auto-fix above won't touch: homophones (its/it's, their/they're), missing apostrophes, duplicated or clashing words, and stray punctuation, each with a suggested fix in the message. Never rewrites anything itself — it's a NEEDS REVIEW row like any other, because dialogue transcripts are full of intentional fragments, dropped g's, and stutters that a script can't tell apart from a real mistake. Add a term to the Personal Dictionary to exclude it from this pass.</div>
-    <div class="opt"><label>Flag captions crossing a shot change</label><button class="infobtn" data-infofor="shotchange-hint">i</button><input type="checkbox" id="opt-shotchange"></div>
-    <div class="substep infotext" id="shotchange-hint">off by default — adds a dense frame-by-frame scan across the whole video (real time cost on long files). Matches Ooona's own shot-change snapping concept: a caption shouldn't span across a hard cut.</div>
   </div>
 
   <div class="panelbox" id="hotkeypanel">
@@ -984,7 +982,7 @@ document.addEventListener('mousedown',e=>{
    Export/Import as a file lets a profile move to another machine or get
    shared with a teammate.
 ========================================================= */
-const PROFILE_SETTINGS_IDS=['opt-len','opt-maxdur','opt-cps','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar','opt-shotchange'];
+const PROFILE_SETTINGS_IDS=['opt-len','opt-maxdur','opt-cps','opt-kidvid','opt-extradash','opt-missingdash','opt-mixedcase','opt-spelling','opt-grammar'];
 function buildProfile(){
   const settings={};
   PROFILE_SETTINGS_IDS.forEach(id=>{
@@ -3700,42 +3698,6 @@ async function runCombinedVideoPass(){
   clusterVoices();
   renderClusterPanel();
 }
-
-/* =========================================================
-   SHOT-CHANGE DETECTION — same deterministic frame-difference technique
-   built for Markups' ad-breakpoint scene-cut detection, reused here to
-   flag a caption that spans across a hard cut (bad practice — Ooona's
-   own "shot change" snapping exists for exactly this reason).
-========================================================= */
-const shotChangeCanvas=document.createElement('canvas');
-shotChangeCanvas.width=64; shotChangeCanvas.height=36;
-const scctx=shotChangeCanvas.getContext('2d',{willReadFrequently:true});
-function sampleGrayFrame(el){
-  scctx.drawImage(el,0,0,64,36);
-  const d=scctx.getImageData(0,0,64,36).data;
-  const gray=new Float32Array(64*36);
-  for(let i=0;i<64*36;i++){ const p=i*4; gray[i]=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2]; }
-  return gray;
-}
-function grayFrameDiff(a,b){
-  let s=0; for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);
-  return s/a.length/255;
-}
-async function scanForShotChanges(){
-  S.shotChanges=[];
-  if(!scanVideo.duration)return;
-  const STEP=0.5;
-  let prevGray=null;
-  for(let t=0;t<scanVideo.duration;t+=STEP){
-    setProg('Scanning for shot changes — '+fmtTime(t).slice(0,8)+' / '+fmtTime(scanVideo.duration).slice(0,8)+'…','info');
-    try{
-      await seekAndWait(scanVideo,t);
-      const g=sampleGrayFrame(scanVideo);
-      if(prevGray){ if(grayFrameDiff(g,prevGray)>0.18)S.shotChanges.push(t); }
-      prevGray=g;
-    }catch(e){}
-  }
-}
 /* =========================================================
    GAP SCAN — runs over the FINAL cue set (after Step 1 fixes),
    sampling only the silent/uncovered stretches between captions.
@@ -4358,10 +4320,6 @@ function buildChecklist(){
     }
     if(cue.faceMatchSuggestion)
       add(gk,ref,'FACE_MATCH_SUGGESTION','difficult','Character Library face match: "'+cue.faceMatchSuggestion.name+'" (distance '+cue.faceMatchSuggestion.distance.toFixed(2)+', lower is more confident). Not applied — type this name into the speaker ID field below if it looks right.');
-    if(S.shotChanges && S.shotChanges.length){
-      const crossing=S.shotChanges.find(t=>t>cue.start+0.1 && t<cue.end-0.1);
-      if(crossing!=null)add(gk,ref,'SHOT_CHANGE_CROSS','difficult','This caption spans a detected shot change at '+fmtTime(crossing).slice(0,11)+' — consider splitting it so it doesn\'t cross the cut (matches Ooona\'s own shot-change snapping practice).');
-    }
     // Speaker dashes cannot share a physical line — each speaker's line must be its own line.
     lines.forEach(l=>{
       const dashSegments=(l.match(/(^|[.!?]\s+)-\s*\S/g)||[]).length;
@@ -4563,12 +4521,6 @@ async function runFullAnalysis(){
   try{
     if(S.videoURL){
       await waitForScanVideoReady();
-      // Shot-change detection now runs BEFORE the combined video pass, not after — it used
-      // to run afterward, which meant S.shotChanges was still empty at the exact point the
-      // OST scan would have wanted to snap detected regions to it. Self-contained frame
-      // sampling with no dependency on anything the OST pass produces, so reordering it
-      // earlier is safe.
-      if(document.getElementById('opt-shotchange').checked && !(S.scanCacheLoaded && (S.shotChanges||[]).length))await scanForShotChanges();
       // build a provisional cue set first so combined pass has correct source alignment,
       // then rebuild once more after detection so positions reflect what was found.
       S.cues=buildFixedCues({tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,position:0,shortForms:0});
