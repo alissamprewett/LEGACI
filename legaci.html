@@ -2883,12 +2883,23 @@ function trackRegions(samples, totalSamples, opts={}){
           h:Math.max(t.box.y+t.box.h,r.y+r.h)-Math.min(t.box.y,r.y)
         };
         t.times.push(s.t); t.centres.push(r.y+r.h/2); t.lastIdx=si;
-        if(s.coarse!==false) t.coarseHits++;
+        // v1.5: was `if(s.coarse!==false) t.coarseHits++` — counted a hit only during the
+        // coarse stage. That was a fair proxy for "is this always on screen" back when
+        // the coarse sweep uniformly covered the whole episode, but it no longer does —
+        // it now deliberately skips any stretch with captions nearby (see coarse's own
+        // filter above), which is most of a typical episode. A persistent network logo
+        // sitting through dialogue-dense content was accumulating almost no coarseHits
+        // simply because the coarse sweep was rarely even looking at that stretch,
+        // regardless of how genuinely persistent the logo actually was — confirmed on a
+        // real file (an MSNBC segment's own logo generating a fresh OST_SUGGEST on nearly
+        // every cue instead of being excluded as a bug). Every sample counts now, coarse
+        // or dense refine, matching what coarseTotal below was changed to as well.
+        t.sampleHits++;
         t.score=Math.max(t.score,r.score);
         t.iso=Math.max(t.iso??0,r.isolation??1);
       }else{
         tracks.push({box:{...r}, times:[s.t], centres:[r.y+r.h/2], lastIdx:si,
-                     coarseHits:s.coarse===false?0:1, score:r.score, iso:r.isolation??1});
+                     sampleHits:1, score:r.score, iso:r.isolation??1});
       }
     }
   });
@@ -2906,7 +2917,7 @@ function trackRegions(samples, totalSamples, opts={}){
         };
         a.times=[...new Set([...a.times,...b.times])].sort((p,q)=>p-q);
         a.centres=a.centres.concat(b.centres);
-        a.coarseHits+=b.coarseHits; a.iso=Math.max(a.iso??0,b.iso??0);
+        a.sampleHits+=b.sampleHits; a.iso=Math.max(a.iso??0,b.iso??0);
         a.score=Math.max(a.score,b.score);
         tracks.splice(j,1);
       }
@@ -2919,9 +2930,14 @@ function trackRegions(samples, totalSamples, opts={}){
   // spines, tiled roofs and hedgerows hover just above the low bar and never
   // clear this one.
   const minPeak = opts.minPeak ?? OST_TUNING.minPeak;
-  const coarseTotal = opts.coarseTotal ?? totalSamples;
+  // Renamed from coarseTotal: this now needs to be every sample taken (coarse + dense
+  // refine), not just the coarse count, to match sampleHits above measuring the same
+  // thing. Still defaults to totalSamples when the caller doesn't override it (the rough,
+  // pre-refine tracking pass genuinely only has coarse samples to work with at that point
+  // in the scan, so it doesn't need to pass this explicitly).
+  const totalSampleCount = opts.coarseTotal ?? totalSamples;
   return tracks.filter(t=>t.times.length>=minSamples && t.score>=minPeak).map((t,i)=>{
-    const presence=t.coarseHits/Math.max(1,coarseTotal);
+    const presence=t.sampleHits/Math.max(1,totalSampleCount);
     let kind="ost";
     if(presence>=persistThr) kind="bug";
     else if(t.centres.length>=3){
@@ -3164,7 +3180,11 @@ async function runOSTDetectionScan(naiveTimes, onCueSample){
   if(blocked)return {regions:[],pic,blocked:true};
 
   const samples=[...seen.values()].sort((a,b)=>a.t-b.t);
-  let regions=trackRegions(samples,samples.length,{pictureH:pic.h,coarseTotal:coarse.length});
+  // v1.5: no longer overrides the sample count to coarse-only — see trackRegions' own
+  // comment on sampleHits/totalSampleCount for why. samples.length (passed as
+  // totalSamples below) already covers every sample taken, coarse and dense refine
+  // combined, which is what persistence needs to be measured against now.
+  let regions=trackRegions(samples,samples.length,{pictureH:pic.h});
   regions=snapRegionsToShotChanges(regions,S.shotChanges);
   S.lastScanStats={frames:seen.size,reused,coarse:coarse.length};
   return {regions,pic};
