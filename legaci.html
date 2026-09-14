@@ -4351,6 +4351,32 @@ function checkGrammarSpelling(text,protectedTerms){
   return findings;
 }
 
+// Tracks cumulative ♪ parity across the WHOLE cue sequence rather than judging each
+// cue in isolation. A real song commonly opens on one cue and closes several cues
+// later — sometimes with silent, zero-note cues in between while the melody
+// continues — and each of those two cues individually has an odd LOCAL count even
+// though together they're a completely legitimate pair. The old per-cue check
+// flagged both ends of every multi-cue song in the file, which was most of what this
+// flag actually fired on. Only an interval that never resolves (or runs suspiciously
+// long — 120s is generous for one continuous sung passage) gets flagged, at the cue
+// where it opened.
+function computeUnpairedNoteFlags(cues, maxOpenSec=120){
+  const flagged=new Set();
+  let openIdx=null;
+  cues.forEach((c,i)=>{
+    const notes=(c.text.match(/♪/g)||[]).length;
+    if(notes%2===1){
+      if(openIdx===null) openIdx=i;
+      else openIdx=null; // this cue closes the interval that started at openIdx
+    }
+    if(openIdx!==null && c.end-cues[openIdx].start>maxOpenSec){
+      flagged.add(openIdx);
+      openIdx=null;
+    }
+  });
+  if(openIdx!==null) flagged.add(openIdx); // never closed by end of file
+  return flagged;
+}
 function buildChecklist(){
   const kidvidOn=document.getElementById('opt-kidvid').checked;
   const extraDashOn=document.getElementById('opt-extradash').checked;
@@ -4363,12 +4389,12 @@ function buildChecklist(){
     if(!freshByKey[groupKey])freshByKey[groupKey]={...ref,issues:[]};
     freshByKey[groupKey].issues.push({id,tier,message});
   };
+  const unpairedNoteFlags=computeUnpairedNoteFlags(S.cues);
 
   S.cues.forEach((cue,i)=>{
     const gk='c'+cue.start.toFixed(3);
     const ref={startKey:cue.start};
-    const notes=(cue.text.match(/♪/g)||[]).length;
-    if(notes%2===1)add(gk,ref,'NOTES','difficult','Unpaired ♪ — lyrics should open and close with ♪.');
+    if(unpairedNoteFlags.has(i))add(gk,ref,'NOTES','difficult','Unpaired ♪ — no matching ♪ found anywhere later in the file. If this opens a song that continues in later cues, ignore; otherwise a closing (or opening) ♪ is likely missing.');
     const lines=cue.text.split('\n');
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
     const dashLineCount=lines.filter(l=>/^\s*-\s*\S/.test(l)).length;
