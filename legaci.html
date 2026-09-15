@@ -2881,6 +2881,23 @@ const affinity=(a,b)=>{
   const i=rectsIntersect(a,b);
   return Math.max(iou(a,b), i/Math.max(1,Math.min(a.w*a.h,b.w*b.h)));
 };
+// Deliberately NOT affinity() above, and deliberately much stricter. affinity() includes
+// a containment-tolerant term (catches a small fragment inside a larger box) that's
+// correct for bridging a moment of jitter WITHIN one continuous appearance, a few
+// milliseconds apart — but once time no longer constrains the comparison (see the
+// fixture-identity pass in trackRegions below, which checks across the whole file with
+// no gap limit), that same looseness is far too likely to match two completely
+// unrelated graphics from different scenes that merely occupy a similar screen region —
+// confirmed on a real file: 109 of 156 regions got incorrectly grouped this way,
+// spanning wildly different timestamps across the whole runtime. A genuine recurring
+// fixture is the same rendered graphic reappearing, so its detected box should be at
+// nearly identical pixel coordinates each time — not "roughly overlapping," but
+// specifically close on all four of x, y, w, AND h. tolPx=12 allows for ordinary
+// block-quantization noise (BLOCK=8) without opening the door back up to coincidence.
+function sameFixtureBox(a,b,tolPx=12){
+  return Math.abs(a.x-b.x)<=tolPx && Math.abs(a.y-b.y)<=tolPx &&
+         Math.abs(a.w-b.w)<=tolPx && Math.abs(a.h-b.h)<=tolPx;
+}
 /**
  * Follow boxes across samples. Anything present nearly all the time is the
  * channel bug; anything drifting steadily upward is a credit crawl. Neither is
@@ -2998,7 +3015,7 @@ function trackRegions(samples, totalSamples, opts={}){
     usedForFixture.add(i);
     finalRegions.forEach((u,j)=>{
       if(j===i || usedForFixture.has(j) || u.kind==='bug')return;
-      if(affinity(r,u)>0.28){ group.push(j); usedForFixture.add(j); }
+      if(sameFixtureBox(r,u)){ group.push(j); usedForFixture.add(j); }
     });
     if(group.length>1){
       const combinedHits=group.reduce((s,idx)=>s+finalRegions[idx].sampleHits,0);
