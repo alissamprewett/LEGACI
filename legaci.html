@@ -2421,8 +2421,24 @@ function bandConfidence(hit){
   const s=clamp01(((r.score??0)-0.25)/0.35);
   const n=clamp01(((r.samples??1)-1)/5);
   const i=clamp01(((r.isolation??1)-0.60)/0.40);
+  // v1.5: isolation's own linear 0.60-1.00 mapping under-rewards a real, sharp gap
+  // measured right at the top of that range — on a real file, 65.5% of confirmed
+  // credits-style detections (text on a genuinely blank background) hit isolation
+  // >=0.98, while every confirmed-or-likely false positive checked (texture/background
+  // patterns) topped out at 0.989 and averaged 0.923, never reaching it. A near-perfect
+  // isolation score means the surrounding "halo" genuinely has nothing else in it — a
+  // qualitatively different, stronger claim than a merely-good isolation score, not
+  // just a marginally better point on the same smooth curve. isoBoost adds real weight
+  // specifically for crossing that measured threshold, on top of the existing
+  // baseline — it only ever adds confidence, never removes it, since a real graphic
+  // that ISN'T on a blank background (a lower third with its own plate, a corner logo)
+  // is still completely legitimate and shouldn't be penalized for missing a boost this
+  // narrower signal happens to reward. The exact +12 size is a reasoned choice, not
+  // independently validated against a corrected episode the way the rest of this
+  // formula's weights were — worth real calibration if this gets revisited.
+  const isoBoost=(r.isolation??0)>=0.98 ? 0.12 : 0;
   const c=clamp01(hit.coverage??0);
-  return Math.round(100*(0.45*s+0.25*n+0.15*i+0.15*c));
+  return Math.round(100*clamp01(0.45*s+0.25*n+0.15*i+0.15*c+isoBoost));
 }
 /**
  * The frame to show someone who wants to see the problem. Jumping to the cue's
@@ -3832,10 +3848,20 @@ async function runCombinedVideoPass(){
       }
     }
     S.syncFlag=null;
+    // v1.5: was a fixed floor of 3 hits regardless of file size — meaningful evidence on
+    // a ~500-cue episode (a real 2.8% signal) but noise-level on a 3,000+-cue feature
+    // film (the same 14 hits is under 0.5%). Confirmed on a real file: 14 post-hits out
+    // of 3,202 considered tripped the flag exactly the same as it would have on a file
+    // 6x shorter. minHits now scales with syncConsidered, keeping the original floor of
+    // 3 for small files (where a handful of hits is genuinely meaningful) while
+    // requiring proportionally more on a longer one. The 1% scaling factor is
+    // reasoned, not independently validated against a corrected episode the way
+    // OST_TUNING was — worth real calibration if this check gets revisited later.
     if(syncConsidered>=6){
-      if(preHits>=3 && preHits>postHits*1.5)
+      const minHits=Math.max(3,Math.round(syncConsidered*0.01));
+      if(preHits>=minHits && preHits>postHits*1.5)
         S.syncFlag={dir:'late',preHits,postHits,syncConsidered};
-      else if(postHits>=3 && postHits>preHits*1.5)
+      else if(postHits>=minHits && postHits>preHits*1.5)
         S.syncFlag={dir:'early',preHits,postHits,syncConsidered};
     }
     // v1.2: carry a move FORWARD onto the next cue when it starts within a short gap.
