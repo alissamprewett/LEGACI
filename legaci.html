@@ -2618,13 +2618,18 @@ const BLOCK = 8;
  * showing up in this many SEPARATE, well-separated appearances (see trackRegions' own
  * fixture-identity grouping, which has no time-gap limit) is treated as strong enough
  * evidence on its own, regardless of how sparse each individual appearance's sampling
- * was. 3 was chosen so that a graphic legitimately reused just twice in a film (a
- * repeated title-card style, for instance) isn't mistaken for a true fixture — but that
- * reasoning hasn't been checked against anything real. Needs validation against a
- * corrected episode the same way everything in OST_TUNING was, before being trusted at
- * the same level.
+ * was. Lowered from 3 to 2 after real testing: the actual confirmed case (an MSNBC
+ * segment's own logo) was only ever sampled at 2 distinct appearances, one short of 3,
+ * because per-cue sampling is sparse enough that a graphic can be genuinely persistent
+ * throughout a scene while still only getting caught by the sampler a couple of times.
+ * Known, accepted tradeoff: this also means a graphic legitimately reused exactly
+ * twice in a film (a repeated title-card style, for instance) will now also be
+ * misclassified as a fixture — there is no threshold that avoids both failure modes
+ * without more information than appearance count alone provides. Still needs real
+ * validation against a corrected episode before being trusted at the same level as
+ * OST_TUNING; this number reflects one real test case, not a calibrated result.
  */
-const EXPERIMENTAL_FIXTURE_MIN_APPEARANCES = 3;
+const EXPERIMENTAL_FIXTURE_MIN_APPEARANCES = 2;
 const OST_TUNING = Object.freeze({
   regionThr:0.22,      // per-frame block score to seed a region (was 0.28)
   minIsolation:0.80,   // region must sit apart from its surroundings (was 0.52)
