@@ -2600,6 +2600,31 @@ const BLOCK = 8;
  * faint at 960px), the isolation gate went UP to pay for it. Change one without the
  * other and the false-positive rate climbs fast.
  */
+/**
+ * EXPERIMENTAL — unlike every value in OST_TUNING below, this has NOT been validated
+ * against a real corrected episode. Flagged separately and deliberately kept out of
+ * that frozen block so it's easy to find, disable, or replace once it has been.
+ *
+ * Why it exists: persistence (in trackRegions) measures presence as a PERCENTAGE of
+ * samples taken, which can never recognize a graphic that's genuinely persistent
+ * within just one scene of a much longer file — dense per-cue sampling is too sparse
+ * for any percentage measured against the whole file to be meaningful. Confirmed on a
+ * real file: an MSNBC segment's own show/network logo, genuinely on screen throughout
+ * a multi-minute clip, accumulated real hits every time it was sampled but never came
+ * close to 62% of the WHOLE MOVIE's sample count, so it kept generating a fresh
+ * OST_SUGGEST instead of being excluded as a fixture.
+ *
+ * This is a different, count-based signal instead of a percentage: the same exact box
+ * showing up in this many SEPARATE, well-separated appearances (see trackRegions' own
+ * fixture-identity grouping, which has no time-gap limit) is treated as strong enough
+ * evidence on its own, regardless of how sparse each individual appearance's sampling
+ * was. 3 was chosen so that a graphic legitimately reused just twice in a film (a
+ * repeated title-card style, for instance) isn't mistaken for a true fixture — but that
+ * reasoning hasn't been checked against anything real. Needs validation against a
+ * corrected episode the same way everything in OST_TUNING was, before being trusted at
+ * the same level.
+ */
+const EXPERIMENTAL_FIXTURE_MIN_APPEARANCES = 3;
 const OST_TUNING = Object.freeze({
   regionThr:0.22,      // per-frame block score to seed a region (was 0.28)
   minIsolation:0.80,   // region must sit apart from its surroundings (was 0.52)
@@ -2978,8 +3003,17 @@ function trackRegions(samples, totalSamples, opts={}){
     if(group.length>1){
       const combinedHits=group.reduce((s,idx)=>s+finalRegions[idx].sampleHits,0);
       const combinedPresence=combinedHits/Math.max(1,totalSampleCount);
-      if(combinedPresence>=persistThr){
-        group.forEach(idx=>{ finalRegions[idx].kind='bug'; finalRegions[idx].presence=combinedPresence; });
+      const byPresence=combinedPresence>=persistThr;
+      // EXPERIMENTAL path — see EXPERIMENTAL_FIXTURE_MIN_APPEARANCES' own comment.
+      // Recorded separately (bugReason) specifically so this can be found, checked, or
+      // disabled independently of the validated presence path once real data exists.
+      const byRepetition=group.length>=EXPERIMENTAL_FIXTURE_MIN_APPEARANCES;
+      if(byPresence || byRepetition){
+        group.forEach(idx=>{
+          finalRegions[idx].kind='bug';
+          finalRegions[idx].presence=combinedPresence;
+          finalRegions[idx].bugReason=byPresence?'presence':'repetition';
+        });
       }
     }
   });
