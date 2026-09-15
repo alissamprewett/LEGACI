@@ -2198,21 +2198,22 @@ function buildFixedCues(counts){
       if(d-maxDur<=MAX_TRIM){ cue.end=cue.start+maxDur; counts.duration++; }
       else cue.durationFlag={kind:'long',d,maxDur};
     }
-    // v1.2.1: minimum gap is TWO FRAMES, not 1ms. In every human-approved Pluto file we
-    // measured (three episodes, ~1,800 cues) the gap between consecutive cues is exactly two
-    // frames (0.083s at 23.976, 0.067s at 29.97) wherever cues abut — that is Ooona's
-    // snapping behaviour and what the delivery check expects. Ooona closes a gap by pulling
-    // the OUT-time of the earlier cue back, never by pushing the next cue later (that would
-    // walk the sync of everything after it), so that is what happens here. If pulling the
-    // out-time back would drop the cue under the minimum duration, it's flagged instead.
+    // v1.5: was requiring a full two-frame gap wherever cues abut, based on a real
+    // measurement across three corrected episodes where that pattern held — but per
+    // direct instruction from QC lead review, that turned out to be over-strict: a cue
+    // ending exactly where the next one starts (a 0ms gap, frame-adjacent, no overlap)
+    // is fine on its own and isn't worth touching. Only a GENUINE overlap — the next
+    // cue's start actually falling before this cue's end — is a real problem. Pulling
+    // the out-time back still happens the same way Ooona does it (the earlier cue's
+    // OUT-time moves, never the next cue's IN-time, so this never walks the sync of
+    // everything after it) — it just now only fires on true overlap, not tight-but-valid
+    // adjacency.
     if(next){
-      const fps=(S.meta&&S.meta.framerate)?S.meta.framerate:23.976;
-      const minGap=2/fps;
       const gap=next.start-cue.end;
-      if(gap<minGap-0.002){
-        const newEnd=next.start-minGap;
+      if(gap<-0.002){
+        const newEnd=next.start;
         if(newEnd-cue.start>=minDur-0.07){ cue.end=newEnd; counts.gap=(counts.gap||0)+1; }
-        else cue.gapFlag={gap,minGap};
+        else cue.gapFlag={gap,minGap:0};
       }
     }
   }
@@ -4484,6 +4485,26 @@ function computeUnpairedNoteFlags(cues, maxOpenSec=120){
   if(openIdx!==null) flagged.add(openIdx); // never closed by end of file
   return flagged;
 }
+// Computed once per file, before flagging anything: does this file consistently use
+// ONE dash per speaker-turn cue (a valid, common convention — a quick back-and-forth
+// cut into separate cues rather than crammed into one, or a house style that dashes
+// every line of dialogue), or does it establish TWO-dash-per-cue pairs as the norm,
+// making a lone dash a genuine outlier worth flagging? Confirmed on a real file:
+// single-dash cues outnumbered two-dash-pair cues 1088 to 79 (34% of the whole file)
+// — the file's own dominant, established pattern WAS single-dash, so EXTRA_DASH was
+// flagging the file's own deliberate convention as if it were a mistake, over and
+// over. minCount guards against overgeneralizing from a file that barely uses dashes
+// at all; dominanceRatio requires single-dash to clearly outnumber real pairs, not
+// just edge them out, before treating it as confirmed rather than ambiguous.
+function isSingleDashFileConvention(cues, minCount=10, dominanceRatio=2){
+  let singleDashCount=0, twoDashCount=0;
+  cues.forEach(cue=>{
+    const n=cue.text.split('\n').filter(l=>/^\s*-\s*\S/.test(l)).length;
+    if(n===1)singleDashCount++;
+    else if(n>=2)twoDashCount++;
+  });
+  return singleDashCount>=minCount && singleDashCount>twoDashCount*dominanceRatio;
+}
 function buildChecklist(){
   const kidvidOn=document.getElementById('opt-kidvid').checked;
   const extraDashOn=document.getElementById('opt-extradash').checked;
@@ -4497,6 +4518,7 @@ function buildChecklist(){
     freshByKey[groupKey].issues.push({id,tier,message});
   };
   const unpairedNoteFlags=computeUnpairedNoteFlags(S.cues);
+  const singleDashIsFileConvention=isSingleDashFileConvention(S.cues);
 
   S.cues.forEach((cue,i)=>{
     const gk='c'+cue.start.toFixed(3);
@@ -4505,7 +4527,7 @@ function buildChecklist(){
     const lines=cue.text.split('\n');
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
     const dashLineCount=lines.filter(l=>/^\s*-\s*\S/.test(l)).length;
-    if(extraDashOn && dashLineCount===1){
+    if(extraDashOn && dashLineCount===1 && !singleDashIsFileConvention){
       // If VAD actually heard two separate speech segments inside this cue's own window,
       // that's real evidence a turn-take may have genuinely happened here, even though
       // only one line got a dash — weakens the "this dash is unnecessary" conclusion
@@ -4552,7 +4574,7 @@ function buildChecklist(){
     if(df&&df.kind==='long')
       add(gk,ref,'DURATION_LONG','difficult','Cue runs '+df.d.toFixed(2)+'s, over the '+df.maxDur+'s maximum by more than half a second — not trimmed automatically. Split it (Split button below) or shorten the text; trimming the out-time alone would hide the caption while the person is still speaking.');
     if(cue.gapFlag)
-      add(gk,ref,'GAP_SHORT','difficult','Only '+Math.round(Math.max(0,cue.gapFlag.gap)*1000)+'ms before the next cue — the spec (and Ooona) want a two-frame gap ('+Math.round(cue.gapFlag.minGap*1000)+'ms). Pulling this out-time back would drop the cue under 1s, so it was left alone: merge the two cues or shorten the next one\'s in-time by hand.');
+      add(gk,ref,'GAP_SHORT','difficult','This cue overlaps the next one by '+Math.round(Math.abs(cue.gapFlag.gap)*1000)+'ms — pulling this out-time back to close it would drop the cue under 1s, so it was left alone: merge the two cues or shorten the next one\'s in-time by hand. A cue ending exactly where the next one starts (no overlap) is fine and is not flagged.');
     if(df&&df.kind==='short')
       add(gk,ref,'DURATION_SHORT','difficult','Cue is only '+df.d.toFixed(2)+'s and the next cue starts too soon to extend it to 1s without changing the following timing. Merge with a neighbour or retime by hand.');
     if(/\*/.test(cue.text))
