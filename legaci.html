@@ -456,6 +456,7 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
     <div class="statusbar" id="statusbar-under-video" style="margin-top:8px">
       <span>CUES<b id="st-cues">–</b></span>
       <span class="s-y">AUTO-FIXED<b id="st-fixed">–</b></span>
+      <span class="s-y">SCAN TIME<b id="st-scantime">–</b></span>
       <span class="s-err">NEEDS REVIEW<b id="st-flag">–</b></span>
       <span class="s-ok"><span style="color:var(--gray)">VALIDATED</span><b id="st-validated">–</b></span>
     </div>
@@ -1357,6 +1358,13 @@ function fmtTime(s){
   const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=Math.floor(s%60),
         ms=Math.round((s-Math.floor(s))*1000);
   return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+'.'+String(ms).padStart(3,'0');
+}
+// A short "3m 12s" style duration, not fmtTime's full HH:MM:SS.mmm timecode —
+// appropriate for "how long did this scan take" rather than a video position.
+function fmtDuration(ms){
+  const totalSec=Math.round(ms/1000);
+  const m=Math.floor(totalSec/60), s=totalSec%60;
+  return m>0 ? m+'m '+s+'s' : s+'s';
 }
 function parseVTT(text){
   const cues=[];
@@ -6110,6 +6118,15 @@ function render(){
   document.getElementById('hotkeyHint').style.display='block';
   document.getElementById('st-cues').textContent=S.cues.length;
   document.getElementById('st-fixed').textContent=Object.values(S.fixCounts||{}).reduce((a,b)=>a+b,0);
+  // Real, honest wall-clock time for the whole analysis run — started the moment
+  // runFullAnalysis began and stopped after results were fully rendered, so it
+  // includes everything: video-ready wait, the scan itself, gap-checking, and
+  // rendering. performance.now() isn't paused by a backgrounded tab the way
+  // scheduled callbacks (rAF/setTimeout) are, so this stays honest even if the tab
+  // lost focus mid-scan — confirmed as a real cause of longer-than-expected runs
+  // earlier, before this was visible anywhere for an operator to actually check.
+  document.getElementById('st-scantime').textContent = S.scanTimings && S.scanTimings.total!=null
+    ? fmtDuration(S.scanTimings.total) : '–';
   document.getElementById('st-flag').textContent=S.report.length;
   document.getElementById('st-validated').textContent=S.validated.size;
   if(S.viewMode==='all'){ renderAllEvents(); return; }
