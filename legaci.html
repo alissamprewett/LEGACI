@@ -4980,14 +4980,17 @@ async function runFullAnalysis(){
     S.fixCounts=counts;
     buildChecklist();
     renderSummary(counts);
+    // Recorded before render() specifically — render() is what actually paints
+    // st-scantime from S.scanTimings.total, so it has to exist first. Recording this
+    // AFTER render() (the original mistake here) meant the element always read
+    // undefined and got stuck on the placeholder, even though the real number existed
+    // moments later — nothing ever re-rendered to pick it up.
+    if(S.scanTimings)recordScanTiming('total', performance.now()-t0Total);
     render();
     document.getElementById('btn-export').disabled=false;
     document.getElementById('btn-export-csv').disabled=false;
     document.getElementById('btn-export-ooona').disabled=false;
-    if(S.scanTimings){
-      recordScanTiming('total', performance.now()-t0Total);
-      console.log('Scan timing breakdown (ms):', S.scanTimings);
-    }
+    if(S.scanTimings)console.log('Scan timing breakdown (ms):', S.scanTimings);
     setProg('Analysis complete — '+S.report.length+' item(s) need a human look.');
     checkRosterHandoff();
   } finally {
