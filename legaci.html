@@ -746,7 +746,7 @@ const HAS_ID=/^\s*(?:-\s*)?(?:(?:\(|\[)[A-Za-z][A-Za-z0-9 .'\-]{0,30}(?:\)|\])\s
 const SOUND_CUE=/^\s*(?:-\s*)?[\[(][^\])]*[\])]\s*$/;
 // Characters that may appear in delivered caption text. Curly quotes, en/em dash and the
 // ellipsis character are routine in approved files and must not be flagged.
-const ALLOWED_CHARS=/[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/♪A-Za-z0-9\u00A1\u00BF\u00C0-\u024F]/g;
+const ALLOWED_CHARS=/[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/♪♫A-Za-z0-9\u00A1\u00BF\u00C0-\u024F]/g;
 // Web addresses that the sentence-spacing fix must leave alone.
 const URL_LIKE=/\b[a-z0-9-]+\.(?:com|tv|net|org|co|io|gov|edu|us|uk)\b/gi;
 
@@ -1858,7 +1858,7 @@ function endsSentence(prevText){
   const t=String(prevText).replace(/<[^>]+>/g,'').trim();
   if(!t) return true;
   if(/^[\[(][^\])]*[\])]$/.test(t)) return true;            // sound/music cue only
-  if(/♪\s*$/.test(t)) return true;
+  if(/[♪♫]\s*$/.test(t)) return true;
   if(/(\.\.\.|…)["”’')\]]*$/.test(t)) return false;
   return /[.!?]["”’')\]]*$/.test(t);
 }
@@ -2249,6 +2249,16 @@ function seekAndWait(el,t){
     el.addEventListener('seeked',on);
     el.currentTime=Math.max(0,Math.min(t,(el.duration||1e9)-0.05));
   });
+}
+// Diagnostic only — accumulates wall-clock time per named phase across a scan, so a
+// slow run can actually be measured instead of guessed at. Added specifically to
+// answer "where does the 9-11 minutes actually go" before considering anything as
+// invasive as parallel decoders — this exists to make that a measured question, not
+// a guessed one. Reset at the start of runFullAnalysis, read via S.scanTimings once
+// a scan completes (also logged to console for convenience).
+function recordScanTiming(label, ms){
+  S.scanTimings=S.scanTimings||{};
+  S.scanTimings[label]=(S.scanTimings[label]||0)+ms;
 }
 
 /* =========================================================
@@ -3242,6 +3252,7 @@ async function runOSTDetectionScan(naiveTimes, onCueSample){
     for(let i=0;i<times.length;i++){
       if(seen.has(times[i]))continue; // no fresh seek happened here — calling onSample would read whatever frame the last seek left, not this timestamp
       try{
+        const t0=performance.now();
         await seekAndWait(scanVideo,times[i]+S.offset);
         const g=ostLumaAt(scanVideo);
         let sg;
@@ -3256,7 +3267,18 @@ async function runOSTDetectionScan(naiveTimes, onCueSample){
           cand:gridToRegions(sg,0.18,2,{gates:false}).filter(r=>r.w<pic.w*0.9 && r.h<pic.h*0.5)
         });
         prev=g;
-        if(onSample)await onSample(times[i]);
+        // Diagnostic timing only — see recordScanTiming's own comment for why this
+        // exists. Split at this exact point so "seek + frame capture + OST scoring"
+        // and "piggybacked face/audio extraction" are counted separately, even though
+        // they now share one seek — otherwise the consolidation from v1.4 would make it
+        // impossible to tell how much of a refine-stage sample's cost is OST's own work
+        // versus the callback riding along on it.
+        recordScanTiming(isCoarse?'ostCoarse':'ostRefine', performance.now()-t0);
+        if(onSample){
+          const t1=performance.now();
+          await onSample(times[i]);
+          recordScanTiming('faceAudioPiggyback', performance.now()-t1);
+        }
       }catch(err){ if(err.message==='FRAME_BLOCKED'){blocked=true;return;} }
       if(i%4===0)setProg('Scanning for on-screen text… '+Math.round(fromPct+(toPct-fromPct)*i/Math.max(1,times.length))+'%','info');
     }
@@ -3705,12 +3727,16 @@ const SPEECH_THRESH=0.03;
 const MAXCPS_REF=25; // reference only, for the live character-budget display — not a flag. Confirmed against Ooona's real "PLUTO TV CC SPECS" preset.
 async function runCombinedVideoPass(){
   let faceOk=true;
+  const t0FaceModel=performance.now();
   try{ await loadBlazeface(); }catch(err){ faceOk=false; setProg('Face model unavailable ('+err.message+') — OST + voice checks still run, off-screen-speaker face check skipped.','info'); }
+  recordScanTiming('faceModelLoad', performance.now()-t0FaceModel);
   let vadSegments=null;
   if(S.videoFile){
     try{
       setProg('Loading voice activity model and decoding the full audio track…','info');
+      const t0Vad=performance.now();
       vadSegments=await computeVADSpeechSegments(S.videoFile);
+      recordScanTiming('vad', performance.now()-t0Vad);
     }catch(err){
       setProg('Voice activity model unavailable ('+err.message+') — falling back to the raw audio-energy check for speech detection.','info');
     }
@@ -3819,6 +3845,7 @@ async function runCombinedVideoPass(){
           ? !vadSegments.some(s=>Math.min(c.end,s.end)-Math.max(c.start,s.start)>0)
           : Math.max(...energies,0)<=SPEECH_THRESH;
         try{
+          const t0Sync=performance.now();
           const preT=Math.max(0,c.start-0.4+S.offset), postT=c.end+0.4+S.offset;
           const preHasSpeech = vadSegments ? isTimeInSpeechSegments(preT-S.offset,vadSegments) : null;
           const postHasSpeech = vadSegments ? isTimeInSpeechSegments(postT-S.offset,vadSegments) : null;
@@ -3826,6 +3853,7 @@ async function runCombinedVideoPass(){
           if((vadSegments ? preHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)preHits++;
           await seekAndWait(scanVideo,postT);
           if((vadSegments ? postHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)postHits++;
+          recordScanTiming('syncCheckSeeks', performance.now()-t0Sync);
         }catch(e){}
       }
 
@@ -4498,7 +4526,7 @@ function computeUnpairedNoteFlags(cues, maxOpenSec=120){
   const flagged=new Set();
   let openIdx=null;
   cues.forEach((c,i)=>{
-    const notes=(c.text.match(/♪/g)||[]).length;
+    const notes=(c.text.match(/[♪♫]/g)||[]).length;
     if(notes%2===1){
       if(openIdx===null) openIdx=i;
       else openIdx=null; // this cue closes the interval that started at openIdx
@@ -4549,7 +4577,7 @@ function buildChecklist(){
   S.cues.forEach((cue,i)=>{
     const gk='c'+cue.start.toFixed(3);
     const ref={startKey:cue.start};
-    if(unpairedNoteFlags.has(i))add(gk,ref,'NOTES','difficult','Unpaired ♪ — no matching ♪ found anywhere later in the file. If this opens a song that continues in later cues, ignore; otherwise a closing (or opening) ♪ is likely missing.');
+    if(unpairedNoteFlags.has(i))add(gk,ref,'NOTES','difficult','Unpaired music-note symbol (♪/♫) — no matching one found anywhere later in the file. If this opens a song that continues in later cues, ignore; otherwise a closing (or opening) mark is likely missing.');
     const lines=cue.text.split('\n');
     lines.forEach(l=>{ if(/\S\s+-\s+\S/.test(l)&&!/^\s*-/.test(l))add(gk,ref,'DASH','difficult','Dash appears mid-phrase rather than at line start.'); });
     const dashLineCount=lines.filter(l=>/^\s*-\s*\S/.test(l)).length;
@@ -4622,7 +4650,10 @@ function buildChecklist(){
     // — standard, correct usage, not a stray character, as long as the closing mark is
     // also present. \u00A1 = ¡, \u00BF = ¿; both sit just below the \u00C0 accented-letter
     // range already allowed, so they need their own explicit entry.
-    const stripped=cue.text.replace(/♪|[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/\u00A1\u00BF]/g,'');
+    // ♫ (U+266B, beamed eighth notes) is just as standard a music-cue marker as ♪
+    // (U+266A, single note) — confirmed on a real file using ♫ consistently, correctly
+    // paired, exactly like ♪ is used everywhere else. Only ♪ was ever recognized.
+    const stripped=cue.text.replace(/[♪♫]|[-'\u2018\u2019\u201C\u201D\u2013\u2014\u2026.,!?:;"()\[\]\s@#$%&*\/\u00A1\u00BF]/g,'');
     const illegal=stripped.match(/[^A-Za-z0-9\u00A1\u00BF\u00C0-\u024F]/g);
     if(illegal&&illegal.length)add(gk,ref,'ILLEGAL','difficult','Stray character(s): '+[...new Set(illegal)].join(' ')+' — confirm these belong in the dialogue.');
     if(kidvidOn&&CTA_WORDS.test(cue.text))add(gk,ref,'KIDVID','difficult','Link or call-to-action language in kids content: "'+cue.text.match(CTA_WORDS)[0]+'".');
@@ -4665,6 +4696,13 @@ function buildChecklist(){
                                        : ' There is no cut at this cue, so the caption will visibly jump mid-shot — check the captions either side before moving just this one.')
           : '';
         add(gk,ref,'OST_SUGGEST','difficult','On-screen text/graphic at the '+cue.ostSuggested.toUpperCase()+' of the frame'+detailBit+'.'+confBit+busyBit+' This caption is still where the file itself has it, at the '+(cue.ostSuggested==='bottom'?'BOTTOM':'TOP')+' — nothing has been moved automatically. If this looks correct, click "Move to '+(cue.ostSuggested==='bottom'?'TOP':'BOTTOM')+'" below to reposition it, or leave it if this is a false positive.'+cutBit);
+        // v1.5: multiple consecutive cues commonly overlap the exact same detected OST
+        // region (a static graphic visible across several captions) — confirmed on a
+        // real file, 40 OST_SUGGEST rows traced back to only 14 distinct regions.
+        // Recording which region a row came from lets the review action below
+        // propagate a decision to every other row sharing it, instead of making the
+        // reviewer repeat the identical "real or false" call once per overlapping cue.
+        if(d&&d.region)freshByKey[gk].ostRegionId=d.region.id;
       }
     }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
@@ -4697,7 +4735,7 @@ function buildChecklist(){
         'Non-speech, non-tonal audio (a sound effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no [sound cue] nearby — possible missing sound cue. Confirm against the audio.');
     else if(g.kind==='music')
       add('gap'+g.start.toFixed(3),{gap:g},'MISSING_MUSIC_CUE','complex',
-        'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no ♪ music cue nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
+        'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no music cue (♪/♫) nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
     else if(g.kind==='ost')
       add('gap'+g.start.toFixed(3),{gap:g},'OST_GAP','difficult',
         'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — and the audio also suggests someone is talking during this window, not just dialogue-free footage. Likely a genuinely missed caption. No caption to move; add one manually in your VTT if dialogue needs to go here, then re-run.');
@@ -4755,6 +4793,8 @@ async function runFullAnalysis(){
   if(!S.src.length){setProg('Load a caption file first.',true);return;}
   if(S.scanning)return;
   S.scanning=true;
+  S.scanTimings={};
+  const t0Total=performance.now();
   logEvent('legaci', 'run_analysis', S.videoURL ? 'with_video' : 'no_video');
   document.getElementById('btn-run').disabled=true;
   const counts={tags:0,space:0,caseFix:0,punct:0,mixedCase:0,spelling:0,dashLine:0,wrapped:0,split:0,removed:0,duration:0,gap:0,position:0,shortForms:0};
@@ -4767,7 +4807,9 @@ async function runFullAnalysis(){
       await runCombinedVideoPass();
       S.cues=buildFixedCues(counts);
       setProg('Scanning gaps between captions for missed dialogue/sound…','info');
+      const t0Gap=performance.now();
       await scanGapsForMissingContent();
+      recordScanTiming('gapScan', performance.now()-t0Gap);
     } else {
       S.cues=buildFixedCues(counts);
     }
@@ -4778,6 +4820,10 @@ async function runFullAnalysis(){
     document.getElementById('btn-export').disabled=false;
     document.getElementById('btn-export-csv').disabled=false;
     document.getElementById('btn-export-ooona').disabled=false;
+    if(S.scanTimings){
+      recordScanTiming('total', performance.now()-t0Total);
+      console.log('Scan timing breakdown (ms):', S.scanTimings);
+    }
     setProg('Analysis complete — '+S.report.length+' item(s) need a human look.');
     checkRosterHandoff();
   } finally {
@@ -6217,9 +6263,24 @@ function render(){
           return;
         }
         S.validated.add(r.key);
+        // v1.5: see the comment where ostRegionId is set — propagates this decision to
+        // every other row sharing the same underlying region, so validating one no
+        // longer leaves identical repeat work for every other cue overlapping it. Only
+        // ever applies when this row's own issue is exactly one OST_SUGGEST, and never
+        // touches a sibling that has some other, unrelated issue still needing its own
+        // look.
+        let propagatedCount=0;
+        if(r.ostRegionId && r.issues.length===1 && r.issues[0].id==='OST_SUGGEST'){
+          Object.values(S.rowsByKey).forEach(sib=>{
+            if(sib.key===r.key || S.validated.has(sib.key))return;
+            if(sib.ostRegionId===r.ostRegionId && sib.issues.length===1 && sib.issues[0].id==='OST_SUGGEST'){
+              S.validated.add(sib.key); propagatedCount++;
+            }
+          });
+        }
         logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
         buildChecklist(); render();
-        setProg('Marked validated — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
+        setProg('Marked validated'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
       } else if(act==='false-flag'){
         // Deliberately separate from Validate, both in the UI and in what gets logged —
         // "I fixed a real issue" and "this was never a real issue" were previously
@@ -6234,9 +6295,18 @@ function render(){
         }
         S.validated.add(r.key);
         S.falseFlagged.add(r.key);
+        let propagatedCount=0;
+        if(r.ostRegionId && r.issues.length===1 && r.issues[0].id==='OST_SUGGEST'){
+          Object.values(S.rowsByKey).forEach(sib=>{
+            if(sib.key===r.key || S.validated.has(sib.key))return;
+            if(sib.ostRegionId===r.ostRegionId && sib.issues.length===1 && sib.issues[0].id==='OST_SUGGEST'){
+              S.validated.add(sib.key); S.falseFlagged.add(sib.key); propagatedCount++;
+            }
+          });
+        }
         logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
         buildChecklist(); render();
-        setProg('Marked as a false flag — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
+        setProg('Marked as a false flag'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
       }
     }));
     if(nextRow<visible.length){
