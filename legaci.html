@@ -890,9 +890,9 @@ function fmtTimeLike(sample,s){
 ========================================================= */
 const LEGACI_ANALYTICS_ENDPOINT = 'https://script.google.com/a/macros/pluto.tv/s/AKfycbzZSoN81BCDsDrfA1G-KMbqn7iyk4fyAV4X6yn0VPtzbTXdheHr-nZ9Y0xYJTKDnnfU/exec';
 const LEGACI_SESSION_ID = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())+'-'+Math.random().toString(36).slice(2);
-function logEvent(tool, event, detail){
+function logEvent(tool, event, detail, meta){
   if(!LEGACI_ANALYTICS_ENDPOINT || LEGACI_ANALYTICS_ENDPOINT.indexOf('PASTE_YOUR')!==-1) return;
-  const payload = JSON.stringify({ tool, event, detail: detail||'', session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
+  const payload = JSON.stringify({ tool, event, detail: detail||'', meta: meta||null, session: LEGACI_SESSION_ID, ts: new Date().toISOString() });
   try{
     if(navigator.sendBeacon){ navigator.sendBeacon(LEGACI_ANALYTICS_ENDPOINT, new Blob([payload], {type:'text/plain'})); return; }
     fetch(LEGACI_ANALYTICS_ENDPOINT, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload }).catch(()=>{});
@@ -4872,7 +4872,24 @@ function buildChecklist(){
         // Recording which region a row came from lets the review action below
         // propagate a decision to every other row sharing it, instead of making the
         // reviewer repeat the identical "real or false" call once per overlapping cue.
-        if(d&&d.region)freshByKey[gk].ostRegionId=d.region.id;
+        if(d&&d.region){
+          freshByKey[gk].ostRegionId=d.region.id;
+          // v1.6: attaches the region's own measurable properties directly to the row,
+          // so a validate/false-flag click on this specific row can log real,
+          // structured features alongside the human verdict — building a genuine
+          // labeled dataset out of normal review work over time, rather than needing a
+          // separate data-collection effort. This is what the confidence-scoring
+          // conversation concluded was actually needed: enough labeled examples to fit
+          // a real number to, not more one-off spot-checking.
+          const dur=(document.getElementById('video')||{}).duration||0;
+          freshByKey[gk].ostMeta={
+            score:+((d.region.score??0).toFixed(3)), isolation:+((d.region.isolation??0).toFixed(3)),
+            samples:d.region.samples, w:d.region.w, h:d.region.h,
+            confidence:d.confidence??null,
+            nearEndOfFile: dur>0 ? (cue.start/dur>0.9) : null,
+            propagated: !!d.propagated
+          };
+        }
       }
     }
     if(S.speakerFlags[cue.srcIdx] && !HAS_ID.test(cue.text) && !cue.narratorContext){
@@ -6460,7 +6477,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','));
+        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||null);
         buildChecklist(); render();
         setProg('Marked validated'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
       } else if(act==='false-flag'){
@@ -6486,7 +6503,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','));
+        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||null);
         buildChecklist(); render();
         setProg('Marked as a false flag'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
       }
