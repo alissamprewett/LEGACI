@@ -4121,6 +4121,7 @@ async function scanGapsForMissingContent(){
     const dur=g.end-g.start;
     const n=Math.min(4,Math.max(1,Math.round(dur/3)));
     let speechHits=0,soundHits=0,musicHits=0,samples=0,lastMusicHitT=-Infinity,lastSoundHitT=-Infinity;
+    let musicEnergySum=0,musicHarmSum=0,soundEnergySum=0,soundHarmSum=0;
     // Was: "pitch between 70-400Hz = speech, otherwise sound" — a crude range guess that
     // could misclassify low-pitched music or a high-pitched sound effect either way now
     // that a real speech-detection model (VAD) is available. Same graceful fallback to the
@@ -4139,20 +4140,20 @@ async function scanGapsForMissingContent(){
       try{
         await seekAndWait(scanVideo,t);
         samples++;
-        let isNonSpeechEnergy=false, harmonicity=0;
+        let isNonSpeechEnergy=false, harmonicity=0, energyVal=0;
         if(S.vadSegments){
           if(isTimeInSpeechSegments(t-S.offset,S.vadSegments)){ speechHits++; }
-          else{ const v=sampleAudioEnergyAndVoice(); if(v.energy>SPEECH_THRESH){ isNonSpeechEnergy=true; harmonicity=v.harmonicity; } }
+          else{ const v=sampleAudioEnergyAndVoice(); if(v.energy>SPEECH_THRESH){ isNonSpeechEnergy=true; harmonicity=v.harmonicity; energyVal=v.energy; } }
         } else {
           const v=sampleAudioEnergyAndVoice();
           if(v.energy>SPEECH_THRESH){
-            if(v.pitchHz>=70&&v.pitchHz<=400){ speechHits++; } else { isNonSpeechEnergy=true; harmonicity=v.harmonicity; }
+            if(v.pitchHz>=70&&v.pitchHz<=400){ speechHits++; } else { isNonSpeechEnergy=true; harmonicity=v.harmonicity; energyVal=v.energy; }
           }
         }
         if(isNonSpeechEnergy){
           const nativeT=t-S.offset;   // t above includes S.offset for video seeking; gaps/cues don't, so correct back
-          if(harmonicity>=HARMONICITY_THRESH){ musicHits++; lastMusicHitT=Math.max(lastMusicHitT,nativeT); }
-          else { soundHits++; lastSoundHitT=Math.max(lastSoundHitT,nativeT); }
+          if(harmonicity>=HARMONICITY_THRESH){ musicHits++; lastMusicHitT=Math.max(lastMusicHitT,nativeT); musicEnergySum+=energyVal; musicHarmSum+=harmonicity; }
+          else { soundHits++; lastSoundHitT=Math.max(lastSoundHitT,nativeT); soundEnergySum+=energyVal; soundHarmSum+=harmonicity; }
         }
       }catch(e){}
     }
@@ -4176,8 +4177,8 @@ async function scanGapsForMissingContent(){
     }
     const musicGenuinelyMissing=(g.end-lastMusicHitT)>LEAD_TOLERANCE;
     const soundGenuinelyMissing=(g.end-lastSoundHitT)>LEAD_TOLERANCE;
-    if(samples>0 && musicHits>=Math.ceil(samples/2) && musicGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'music'});
-    else if(samples>0 && soundHits>=Math.ceil(samples/2) && soundGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'sound'});
+    if(samples>0 && musicHits>=Math.ceil(samples/2) && musicGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'music',duration:dur,hitRatio:+(musicHits/samples).toFixed(2),avgEnergy:+(musicEnergySum/musicHits).toFixed(4),avgHarmonicity:+(musicHarmSum/musicHits).toFixed(3)});
+    else if(samples>0 && soundHits>=Math.ceil(samples/2) && soundGenuinelyMissing)S.gapFlags.push({start:g.start,end:g.end,kind:'sound',duration:dur,hitRatio:+(soundHits/samples).toFixed(2),avgEnergy:+(soundEnergySum/soundHits).toFixed(4),avgHarmonicity:+(soundHarmSum/soundHits).toFixed(3)});
     // Was: fired unconditionally on any overlapping graphic, regardless of whether anyone
     // was even talking during that gap — which meant ordinary dialogue-free footage (end
     // credits, b-roll) got flagged just as often as a genuinely missed line, with nothing
@@ -4913,16 +4914,29 @@ function buildChecklist(){
     }
   }
 
+  // Honest, coarse hint from what's actually measurable — duration and how
+  // consistently the non-speech signal held across however many samples this gap got
+  // (1-4, scaled to its length). This is NOT sound classification: with as few as one
+  // sample in a short gap, there's no temporal resolution to tell a door slam from a
+  // gunshot, and this doesn't pretend to. It only distinguishes "brief, isolated"
+  // (short gap) from "sustained, consistent" (long gap where every sample agreed) —
+  // both genuinely supported by what was measured, unlike guessing a specific sound.
+  function audioShapeHint(g){
+    if(g.duration==null || g.hitRatio==null) return '';
+    if(g.duration<2.5) return ' (brief — a short, isolated sound rather than an ongoing one)';
+    if(g.hitRatio>=0.85) return ' (sustained — detected consistently throughout this window)';
+    return '';
+  }
   // gap-based candidates: possible missing captions / possible missing sound cues /
   // on-screen text that outlasts its caption into a captionless stretch.
   // Heuristic only (energy + rough pitch-lock, not real transcription) — always flag, never auto-insert.
   (S.gapFlags||[]).forEach((g,gi)=>{
     if(g.kind==='sound')
-      add('gap'+g.start.toFixed(3),{gap:g},'MISSING_SOUND_CUE','complex',
-        'Non-speech, non-tonal audio (a sound effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no [sound cue] nearby — possible missing sound cue. Confirm against the audio.');
+      add('gap'+g.start.toFixed(3),{gap:g,gapMeta:g},'MISSING_SOUND_CUE','complex',
+        'Non-speech, non-tonal audio (a sound effect) detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+audioShapeHint(g)+' with no [sound cue] nearby — possible missing sound cue. Confirm against the audio.');
     else if(g.kind==='music')
-      add('gap'+g.start.toFixed(3),{gap:g},'MISSING_MUSIC_CUE','complex',
-        'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no music cue (♪/♫) nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
+      add('gap'+g.start.toFixed(3),{gap:g,gapMeta:g},'MISSING_MUSIC_CUE','complex',
+        'Tonal, music-like audio detected from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+audioShapeHint(g)+' with no music cue (♪/♫) nearby — possible missing music cue. Confirm against the audio (this is a heuristic based on tonality, not a genre classifier — worth a listen before treating it as certain).');
     else if(g.kind==='ost')
       add('gap'+g.start.toFixed(3),{gap:g},'OST_GAP','difficult',
         'On-screen text/graphic at the '+g.zone+' still visible from '+fmtTime(g.start).slice(0,11)+' to '+fmtTime(g.end).slice(0,11)+' with no caption event here — and the audio also suggests someone is talking during this window, not just dialogue-free footage. Likely a genuinely missed caption. No caption to move; add one manually in your VTT if dialogue needs to go here, then re-run.');
@@ -6477,7 +6491,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||null);
+        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||null);
         buildChecklist(); render();
         setProg('Marked validated'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
       } else if(act==='false-flag'){
@@ -6503,7 +6517,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||null);
+        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||null);
         buildChecklist(); render();
         setProg('Marked as a false flag'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
       }
