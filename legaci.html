@@ -3847,12 +3847,26 @@ async function runCombinedVideoPass(){
         try{
           const t0Sync=performance.now();
           const preT=Math.max(0,c.start-0.4+S.offset), postT=c.end+0.4+S.offset;
-          const preHasSpeech = vadSegments ? isTimeInSpeechSegments(preT-S.offset,vadSegments) : null;
-          const postHasSpeech = vadSegments ? isTimeInSpeechSegments(postT-S.offset,vadSegments) : null;
-          await seekAndWait(scanVideo,preT);
-          if((vadSegments ? preHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)preHits++;
-          await seekAndWait(scanVideo,postT);
-          if((vadSegments ? postHasSpeech : sampleAudioEnergyAndVoice().energy>SPEECH_THRESH) && insideQuiet)postHits++;
+          // v1.5: preHasSpeech/postHasSpeech are computed purely from the whole-file
+          // VAD data above, with no dependency on seeking the video at all. The two
+          // seekAndWait calls below only exist to feed the FALLBACK path
+          // (sampleAudioEnergyAndVoice, live audio-analyser data), which is only ever
+          // read on the other side of the ternaries right below — meaning whenever VAD
+          // succeeded, both seeks ran and their result was thrown away, unused, every
+          // single time. Confirmed via real timing data on a real file: this was 30% of
+          // total scan time — nearly as expensive as the entire dense OST refine pass —
+          // for work that, in the VAD-available case, was pure waste.
+          if(vadSegments){
+            const preHasSpeech=isTimeInSpeechSegments(preT-S.offset,vadSegments);
+            const postHasSpeech=isTimeInSpeechSegments(postT-S.offset,vadSegments);
+            if(preHasSpeech && insideQuiet)preHits++;
+            if(postHasSpeech && insideQuiet)postHits++;
+          }else{
+            await seekAndWait(scanVideo,preT);
+            if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)preHits++;
+            await seekAndWait(scanVideo,postT);
+            if(sampleAudioEnergyAndVoice().energy>SPEECH_THRESH && insideQuiet)postHits++;
+          }
           recordScanTiming('syncCheckSeeks', performance.now()-t0Sync);
         }catch(e){}
       }
