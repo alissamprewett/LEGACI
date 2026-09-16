@@ -4187,7 +4187,13 @@ async function scanGapsForMissingContent(){
     const hasSpeechEvidence = samples>0 && speechHits>=Math.ceil(samples/2);
     if(hasSpeechEvidence && genuinelyMissing){
       const ost=(S.ostRegions||[]).find(r=>r.kind!=='bug' && r.t1>g.start && r.t0<g.end);
-      if(ost)S.gapFlags.push({start:g.start,end:g.end,kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
+      // v1.6: was reporting the gap's full start/end regardless of how much of it the
+      // region actually overlapped — confirmed on a real file, a region genuinely
+      // observed for only 2.4s got described as "still visible" across an 11-second
+      // gap, nearly 5x longer than what was actually detected. Clipping to the real
+      // intersection doesn't change whether this fires, just makes the claimed window
+      // match what was actually seen.
+      if(ost)S.gapFlags.push({start:Math.max(g.start,ost.t0),end:Math.min(g.end,ost.t1),kind:'ost',zone:sideOf({slot:ost.y<((S.ostPic&&S.ostPic.h)||270)/2?'top':'bottom'})});
     }
   }
 }
