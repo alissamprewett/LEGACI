@@ -3088,6 +3088,13 @@ function trackRegions(samples, totalSamples, opts={}){
       // Recorded separately (bugReason) specifically so this can be found, checked, or
       // disabled independently of the validated presence path once real data exists.
       const byRepetition=group.length>=EXPERIMENTAL_FIXTURE_MIN_APPEARANCES;
+      // Recorded on every group regardless of whether it crossed the bug threshold —
+      // a region that's part of a 2-appearance group but DIDN'T get excluded still
+      // generates a real OST_SUGGEST flag. If that flag gets validated as a genuine
+      // collision, that's direct evidence the threshold (currently 2) isn't too
+      // aggressive; if false-flagged, it's evidence the opposite way. Either only
+      // means something if it's actually captured.
+      group.forEach(idx=>{ finalRegions[idx].fixtureGroupSize=group.length; });
       if(byPresence || byRepetition){
         group.forEach(idx=>{
           finalRegions[idx].kind='bug';
@@ -4632,7 +4639,7 @@ function checkGrammarSpelling(text,protectedTerms){
   text.replace(/\b([A-Za-z']+)\b(\s+)\b\1\b/gi,(m,w)=>{
     const lower=w.toLowerCase();
     if(!GRAMMAR_SKIP_DUPES.has(lower)&&!protectedTerms.has(lower))
-      findings.push({id:'DUPLICATE_WORD',message:'Possible duplicated word: "'+w+' '+w+'". Suggest: "'+w+'".'});
+      findings.push({id:'DUPLICATE_WORD',message:'Possible duplicated word: "'+w+' '+w+'". Suggest: "'+w+'".',word:lower});
     return m;
   });
   // 2. Missing apostrophe in a common contraction (dont, im, thats, etc.)
@@ -4763,7 +4770,14 @@ function buildChecklist(){
     }
     if(grammarOn){
       const bodyText=cue.text.replace(HAS_ID,'');
-      checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>add(gk,ref,f.id,'difficult',f.message));
+      checkGrammarSpelling(bodyText,grammarProtected).forEach(f=>{
+        add(gk,ref,f.id,'difficult',f.message);
+        // Was logging only "DUPLICATE_WORD fired," with no way to ever learn which
+        // word — confirmed via real usage data: 3 logged false-flags on this check,
+        // zero visibility into what actually got flagged wrong. Attaching the specific
+        // word lets a validate/false-flag verdict actually mean something afterward.
+        if(f.id==='DUPLICATE_WORD' && f.word)freshByKey[gk].dupWordMeta={word:f.word};
+      });
     }
     if(cue.faceMatchSuggestion)
       add(gk,ref,'FACE_MATCH_SUGGESTION','difficult','Character Library face match: "'+cue.faceMatchSuggestion.name+'" (distance '+cue.faceMatchSuggestion.distance.toFixed(2)+', lower is more confident). Not applied — type this name into the speaker ID field below if it looks right.');
@@ -4901,7 +4915,13 @@ function buildChecklist(){
             samples:d.region.samples, w:d.region.w, h:d.region.h,
             confidence:d.confidence??null,
             nearEndOfFile: dur>0 ? (cue.start/dur>0.9) : null,
-            propagated: !!d.propagated
+            propagated: !!d.propagated,
+            // A region that's part of a repeating fixture but stayed BELOW the bug
+            // threshold still generates this exact flag — capturing the group size
+            // here means a validate/false-flag verdict on it is direct, real evidence
+            // for whether EXPERIMENTAL_FIXTURE_MIN_APPEARANCES (currently 2) is set
+            // right, instead of the guess it currently is.
+            fixtureGroupSize: d.region.fixtureGroupSize ?? 1
           };
         }
       }
@@ -4956,7 +4976,11 @@ function buildChecklist(){
   });
   if(S.syncFlag){
     const f=S.syncFlag;
-    add('sync',{gap:{start:0,end:0}},'SYNC','complex',
+    // Was logging only "SYNC fired," with no way to check whether the 1% file-size
+    // scaling factor (see minHits above) is actually the right number — attaching the
+    // real hit counts lets a validate/false-flag verdict build toward answering that
+    // with data instead of reasoning.
+    add('sync',{gap:{start:0,end:0},syncMeta:{dir:f.dir,preHits:f.preHits,postHits:f.postHits,syncConsidered:f.syncConsidered}},'SYNC','complex',
       'Captions may be running '+f.dir+' relative to the audio — dialogue was audible right '+(f.dir==='late'?'before':'after')+' the caption window in '+(f.dir==='late'?f.preHits:f.postHits)+' of '+f.syncConsidered+' cues checked, well above the other direction. Worth a manual sync check.');
   }
   if(S.incompleteFlag){
@@ -6504,7 +6528,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||null);
+        logEvent('legaci', 'flag_validated', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||r.syncMeta||r.dupWordMeta||null);
         buildChecklist(); render();
         setProg('Marked validated'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.validated.size+' validated.');
       } else if(act==='false-flag'){
@@ -6530,7 +6554,7 @@ function render(){
             }
           });
         }
-        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||null);
+        logEvent('legaci', 'flag_false_flagged', (r.issues||[]).map(i=>i.id).join(','), r.ostMeta||r.gapMeta||r.syncMeta||r.dupWordMeta||null);
         buildChecklist(); render();
         setProg('Marked as a false flag'+(propagatedCount?' + '+propagatedCount+' other cue(s) sharing the same on-screen graphic':'')+' — '+S.report.length+' item(s) still outstanding, '+S.falseFlagged.size+' false flag(s) recorded this session.');
       }
