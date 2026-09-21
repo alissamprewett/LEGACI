@@ -4802,8 +4802,21 @@ function buildChecklist(){
       add(gk,ref,'GAP_SHORT','difficult','This cue overlaps the next one by '+Math.round(Math.abs(cue.gapFlag.gap)*1000)+'ms — pulling this out-time back to close it would drop the cue under 1s, so it was left alone: merge the two cues or shorten the next one\'s in-time by hand. A cue ending exactly where the next one starts (no overlap) is fine and is not flagged.');
     if(df&&df.kind==='short')
       add(gk,ref,'DURATION_SHORT','difficult','Cue is only '+df.d.toFixed(2)+'s and the next cue starts too soon to extend it to 1s without changing the following timing. Merge with a neighbour or retime by hand.');
-    if(/\*/.test(cue.text))
-      add(gk,ref,'ASTERISK','difficult','Contains "*" — confirm whether this should be a ♪ music note, or is intentional (e.g. censorship) before changing it.');
+    if(/\*/.test(cue.text)){
+      // v1.6: was one message for every asterisk, regardless of pattern — confirmed via
+      // real usage data, a real, substantial false-flag rate (31% of 61 logged
+      // instances) on a single undifferentiated check. A word character touching the
+      // asterisk on both sides (f*ck, sh*t, a**hole) is the standard shape of
+      // intentional censorship; an asterisk at a word boundary, mirroring how ♪
+      // brackets a phrase, is the genuinely ambiguous case actually worth a careful
+      // look. Still flags both — this doesn't silently resolve anything, just makes
+      // the common case recognizable at a glance instead of reading the same cautious
+      // wording every time.
+      if(/\w\*+\w/.test(cue.text))
+        add(gk,ref,'ASTERISK','difficult','Contains "*" in a pattern consistent with intentional censorship (a letter on both sides, like "f*ck") — confirm it\'s meant that way rather than a botched ♪.');
+      else
+        add(gk,ref,'ASTERISK','difficult','Contains "*" at a word boundary, in a pattern consistent with a botched ♪ (music note) rather than censorship — confirm which was intended before changing it.');
+    }
     if(cue.offCenterH)
       add(gk,ref,'OFF_CENTER_H','difficult','Original file '+cue.offCenterH+' — this tool always centers horizontally, so that\'s been overridden. Confirm this cue didn\'t need to stay shifted (e.g. to avoid covering on-screen text) before treating it as done.');
     const dashSplitResult=fixCueDashLines(cue.text,maxLenForDashSplit,3);
