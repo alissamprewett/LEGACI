@@ -2492,7 +2492,11 @@ function bandConfidence(hit){
   // verification actually ran (see verifyRegionsWithOcr) — unset/0 means either OCR
   // was inconclusive on this specific region or unavailable this session, and this
   // term does nothing, falling back to exactly today's block-scorer-only behavior.
-  const ocrBoost=(r.ocrSignal===1) ? 0.5 : (r.ocrSignal===-1) ? -0.5 : 0;
+  // ocrSignal===0.5 is the EXPERIMENTAL middle tier — see verifyRegionsWithOcr's own
+  // comment. Deliberately half the validated boost, not the same weight, since it's
+  // resting on a couple of spot-checks rather than the 141-region validation behind
+  // the ±1 cases.
+  const ocrBoost=(r.ocrSignal===1) ? 0.5 : (r.ocrSignal===-1) ? -0.5 : (r.ocrSignal===0.5) ? 0.25 : 0;
   const c=clamp01(hit.coverage??0);
   return Math.round(100*clamp01(0.45*s+0.25*n+0.15*i+0.15*c+isoBoost+ocrBoost));
 }
@@ -3499,6 +3503,15 @@ async function verifyRegionsWithOcr(regions, analysisW){
       r.ocrWordLikeCount=wordLikeCount;
       if(r.ocrConfidence>=50 && wordLikeCount>=2) r.ocrSignal=1;
       else if(r.ocrConfidence===0 && wordLikeCount===0) r.ocrSignal=-1;
+      // EXPERIMENTAL — unlike the two branches above, not validated at real scale.
+      // Spot-checked only 2-3 examples by hand (a studio logo card, a grainy archival
+      // movie-within-a-movie scene) that landed in this exact middle ground —
+      // moderate confidence, at least one real word — and both turned out to be
+      // genuine text, just harder to read cleanly (stylized or low-contrast footage).
+      // That's suggestive, not proven. Marked 0.5, distinct from the validated ±1, so
+      // bandConfidence can weight it separately and this can be found or reconsidered
+      // independently of the signal that's actually been tested properly.
+      else if(r.ocrConfidence>=30 && wordLikeCount>=1) r.ocrSignal=0.5;
       else r.ocrSignal=0;
     }catch(err){ /* leave ocrSignal unset for this region — inconclusive, falls back to block-score alone */ }
   }
@@ -5091,7 +5104,14 @@ function buildChecklist(){
             // here means a validate/false-flag verdict on it is direct, real evidence
             // for whether EXPERIMENTAL_FIXTURE_MIN_APPEARANCES (currently 2) is set
             // right, instead of the guess it currently is.
-            fixtureGroupSize: d.region.fixtureGroupSize ?? 1
+            fixtureGroupSize: d.region.fixtureGroupSize ?? 1,
+            // Lets a real validate/false-flag verdict tell us whether the OCR boost
+            // (see bandConfidence) is actually right in practice, not just internally
+            // consistent with itself — the same "let normal review build the
+            // evidence" pattern as everything else logged today.
+            ocrSignal: d.region.ocrSignal ?? null,
+            ocrConfidence: d.region.ocrConfidence ?? null,
+            ocrWordLikeCount: d.region.ocrWordLikeCount ?? null
           };
         }
       }
