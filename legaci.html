@@ -352,6 +352,10 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
         </label>
       </div>
       <div class="opt"><label id="placediff-result" style="flex:1"></label><button class="pbtn small" id="btn-placediff-csv" disabled>Export diff .csv</button></div>
+      <div class="opt">
+        <label id="ocr-compare-result" style="flex:1"><span class="ds">PILOT — OST vs OCR comparison: runs real OCR against every on-screen-text region already found, as a second opinion on the block-scorer's own results. Requires a completed video scan first. Full results logged to console.</span></label>
+        <button class="pbtn small" id="btn-ocr-compare">Compare OST vs OCR</button>
+      </div>
       <div class="prow">
         <label class="drop" id="drop-batch-subs" style="flex:1">
           <span class="dk">BATCH</span>
@@ -3533,13 +3537,15 @@ const LEGACI_DEPS = {
     vadBase:   'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/',
     faceApi:   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
     faceModels:'https://justadudewhohacks.github.io/face-api.js/models',
-    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
+    faceModelsAlt:'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights',
+    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
   },
   local: {
     tfjs:'vendor/tfjs-4.17.0.min.js', blazeface:'vendor/blazeface-0.1.0.min.js',
     ort:'vendor/ort-1.22.0.wasm.min.js', ortBase:'vendor/ort-1.22.0/',
     vad:'vendor/vad-web-0.0.29.min.js', vadBase:'vendor/vad-web-0.0.29/',
-    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models'
+    faceApi:'vendor/face-api-0.22.2.min.js', faceModels:'vendor/face-api-models', faceModelsAlt:'vendor/face-api-models',
+    tesseract:'vendor/tesseract-5.min.js'
   },
   url(k){ return this.base ? this.base+'/'+this.local[k] : this.cdn[k]; }
 };
@@ -3562,6 +3568,87 @@ function loadBlazeface(){
     document.head.appendChild(s1);
   });
   return blazefaceLoading;
+}
+// PILOT — see runOstOcrComparison's own comment for what this is and isn't. Same
+// singleton-with-caching pattern as loadBlazeface: loaded once, reused, never
+// touches anything in the existing detection pipeline.
+let tesseractWorker=null, tesseractLoading=null;
+function loadTesseractWorker(){
+  if(tesseractWorker)return Promise.resolve(tesseractWorker);
+  if(tesseractLoading)return tesseractLoading;
+  tesseractLoading=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src=LEGACI_DEPS.url('tesseract');
+    s.onload=async()=>{ try{ tesseractWorker=await Tesseract.createWorker('eng'); resolve(tesseractWorker); }catch(err){reject(err);} };
+    s.onerror=()=>reject(new Error('OCR library blocked'));
+    document.head.appendChild(s);
+  });
+  return tesseractLoading;
+}
+/**
+ * PILOT — a side-by-side comparison, not a replacement. Runs AFTER a normal scan has
+ * already completed (unchanged block-scorer, same as today) and layers a second
+ * opinion on top of its results, without modifying detection at all. If this has a
+ * bug, it affects nothing currently working — worst case, the comparison itself is
+ * wrong, not the scan.
+ *
+ * For every non-bug region the block-scorer already found, seeks to that region's own
+ * midpoint, captures it at NATIVE video resolution (not the low-res analysis buffer
+ * block-scoring uses — OCR deserves a fair, higher-resolution look), and runs real OCR
+ * against it. Confirmed on four real, hand-verified examples before this was built:
+ * every genuine false positive (texture) scored 0% OCR confidence with empty output;
+ * every genuine real detection (credits) scored 80%+ with correctly recognized text —
+ * a categorically cleaner separation than anything the block-scorer's own signals
+ * produced when six of them were tested earlier. This function is what tests whether
+ * that holds at real scale, not just on four examples.
+ *
+ * Bug-classified regions are skipped deliberately — they never generate a flag a
+ * reviewer would see, so comparing them isn't meaningful for this specific question.
+ */
+async function runOstOcrComparison(){
+  if(!S.ostRegions || !S.ostRegions.length){ setProg('Run a full analysis with video first — no OST regions to compare against yet.', true); return; }
+  const video=document.getElementById('video');
+  if(!video || !video.videoWidth){ setProg('No video loaded to re-capture frames from.', true); return; }
+  let worker;
+  try{ setProg('Loading OCR library for comparison pilot…','info'); worker=await loadTesseractWorker(); }
+  catch(err){ setProg('OCR library unavailable: '+err.message, true); return; }
+
+  const analysisW=(S.ostPic&&S.ostPic.w)||960;
+  const scale=video.videoWidth/analysisW;
+  const regions=S.ostRegions.filter(r=>r.kind!=='bug');
+  const results=[];
+  for(let i=0;i<regions.length;i++){
+    const r=regions[i];
+    setProg('OCR comparison pilot — region '+(i+1)+'/'+regions.length+'…','info');
+    try{
+      await seekAndWait(video, (r.t0+r.t1)/2);
+      const canvas=document.createElement('canvas');
+      const pad=1.5; // generous margin so a tight block-scorer box doesn't clip real characters
+      const sx=Math.max(0,(r.x*scale)-r.w*scale*(pad-1)/2);
+      const sy=Math.max(0,(r.y*scale)-r.h*scale*(pad-1)/2);
+      const sw=r.w*scale*pad, sh=r.h*scale*pad;
+      canvas.width=sw; canvas.height=sh;
+      canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+      const ocr=await worker.recognize(canvas.toDataURL());
+      results.push({
+        regionId:r.id, t0:+r.t0.toFixed(2), t1:+r.t1.toFixed(2), x:r.x, y:r.y, w:r.w, h:r.h,
+        blockScore:+r.score.toFixed(3), blockIsolation:+r.isolation.toFixed(3), blockKind:r.kind,
+        ocrConfidence:Math.round(ocr.data.confidence), ocrText:ocr.data.text.trim().slice(0,80)
+      });
+    }catch(err){ results.push({regionId:r.id, error:err.message}); }
+  }
+  S.ocrComparison=results;
+  // "Disagreement" here just means the two signals landed far apart on the same
+  // 0-100 scale — it's a prioritized list for manual spot-checking, not a verdict.
+  // blockScore is the region's raw text-likeness score, not the final displayed cue
+  // confidence (which also folds in isolation/samples/coverage) — the closest
+  // available analog to "how text-like did the block-scorer think this was," not a
+  // perfectly matched comparison.
+  const disagreements=results.filter(r=>!r.error && Math.abs((r.blockScore*100)-r.ocrConfidence)>30);
+  console.log('OST vs OCR comparison (pilot) — full results:', results);
+  console.log('Strong disagreements (worth spot-checking first):', disagreements);
+  setProg('OCR comparison complete — '+results.length+' region(s) checked, '+disagreements.length+' show strong disagreement. Full table in the console; raw data on S.ocrComparison.');
+  return results;
 }
 // v1.6: was a single module-level canvas/context, same race-condition risk as the OST
 // canvas — two decoders drawing concurrently could overwrite each other's frame before
@@ -5073,6 +5160,11 @@ async function runFullAnalysis(){
   }
 }
 document.getElementById('btn-run').addEventListener('click',runFullAnalysis);
+document.getElementById('btn-ocr-compare').addEventListener('click', async ()=>{
+  const btn=document.getElementById('btn-ocr-compare');
+  btn.disabled=true;
+  try{ await runOstOcrComparison(); } finally { btn.disabled=false; }
+});
 
 function renderSummary(counts){
   const box=document.getElementById('fixSummary');
