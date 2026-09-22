@@ -353,8 +353,8 @@ footer{border-top:1px solid var(--line);padding:14px 24px;font-family:var(--mono
       </div>
       <div class="opt"><label id="placediff-result" style="flex:1"></label><button class="pbtn small" id="btn-placediff-csv" disabled>Export diff .csv</button></div>
       <div class="opt">
-        <label id="ocr-compare-result" style="flex:1"><span class="ds">PILOT — OST vs OCR comparison: runs real OCR against every on-screen-text region already found, as a second opinion on the block-scorer's own results. Requires a completed video scan first. Full results logged to console.</span></label>
-        <button class="pbtn small" id="btn-ocr-compare">Compare OST vs OCR</button>
+        <label id="ocr-compare-result" style="flex:1"><span class="ds">OCR now runs automatically during every scan and already adjusts confidence — this builds a readable side-by-side table (block-scorer vs OCR, per region) for manual review, reusing that data rather than re-running it. Requires a completed video scan first. Full results logged to console.</span></label>
+        <button class="pbtn small" id="btn-ocr-compare">Show OST vs OCR table</button>
       </div>
       <div class="prow">
         <label class="drop" id="drop-batch-subs" style="flex:1">
@@ -3669,31 +3669,53 @@ async function runOstOcrComparison(){
   if(!S.ostRegions || !S.ostRegions.length){ setProg('Run a full analysis with video first — no OST regions to compare against yet.', true); return; }
   const video=document.getElementById('video');
   if(!video || !video.videoWidth){ setProg('No video loaded to re-capture frames from.', true); return; }
-  let worker;
-  try{ setProg('Loading OCR library for comparison pilot…','info'); worker=await loadTesseractWorker(); }
-  catch(err){ setProg('OCR library unavailable: '+err.message, true); return; }
+
+  const regions=S.ostRegions.filter(r=>r.kind!=='bug');
+  // v1.7: OCR now runs automatically during every scan (see verifyRegionsWithOcr) and
+  // the result is already sitting on each region. Re-running it here for regions that
+  // already have it would just be paying the same seek+recognize cost twice for
+  // nothing new — this now only runs OCR fresh for whatever's missing it (an older
+  // scan cache saved before this feature existed, or a region OCR happened to fail on
+  // during the scan). This button's real remaining job is building the readable
+  // side-by-side table for manual review, not re-deciding whether OCR should run.
+  const needsFreshOcr=regions.filter(r=>r.ocrConfidence==null);
+  let worker=null;
+  if(needsFreshOcr.length){
+    try{ setProg('Loading OCR library for '+needsFreshOcr.length+' region(s) missing OCR data…','info'); worker=await loadTesseractWorker(); }
+    catch(err){ setProg('OCR library unavailable for the missing region(s): '+err.message+' — comparison will use block-scorer-only data for those.', 'info'); }
+  }
 
   const analysisW=(S.ostPic&&S.ostPic.w)||960;
   const scale=video.videoWidth/analysisW;
-  const regions=S.ostRegions.filter(r=>r.kind!=='bug');
   const results=[];
   for(let i=0;i<regions.length;i++){
     const r=regions[i];
-    setProg('OCR comparison pilot — region '+(i+1)+'/'+regions.length+'…','info');
+    if(r.ocrConfidence!=null){
+      // Already computed during the scan — reuse it, no re-seeking, no re-running OCR.
+      results.push({
+        regionId:r.id, t0:+r.t0.toFixed(2), t1:+r.t1.toFixed(2), x:r.x, y:r.y, w:r.w, h:r.h,
+        blockScore:+r.score.toFixed(3), blockIsolation:+r.isolation.toFixed(3), blockKind:r.kind,
+        ocrConfidence:r.ocrConfidence, ocrWordLikeCount:r.ocrWordLikeCount, ocrSignal:r.ocrSignal, source:'from scan'
+      });
+      continue;
+    }
+    if(!worker){ results.push({regionId:r.id, error:'no OCR data and library unavailable'}); continue; }
+    setProg('OCR comparison — running fresh on region '+(i+1)+'/'+regions.length+' (missing from scan)…','info');
     try{
       await seekAndWait(video, (r.t0+r.t1)/2);
       const canvas=document.createElement('canvas');
-      const pad=1.5; // generous margin so a tight block-scorer box doesn't clip real characters
+      const pad=1.5; // same value the automatic scan pass uses — see verifyRegionsWithOcr's own comment
       const sx=Math.max(0,(r.x*scale)-r.w*scale*(pad-1)/2);
       const sy=Math.max(0,(r.y*scale)-r.h*scale*(pad-1)/2);
       const sw=r.w*scale*pad, sh=r.h*scale*pad;
       canvas.width=sw; canvas.height=sh;
       canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-      const ocr=await worker.recognize(canvas.toDataURL());
+      const ocr=await worker.recognize(canvas);
+      const wordLikeCount=(ocr.data.text.match(/[A-Za-z]{3,}/g)||[]).length;
       results.push({
         regionId:r.id, t0:+r.t0.toFixed(2), t1:+r.t1.toFixed(2), x:r.x, y:r.y, w:r.w, h:r.h,
         blockScore:+r.score.toFixed(3), blockIsolation:+r.isolation.toFixed(3), blockKind:r.kind,
-        ocrConfidence:Math.round(ocr.data.confidence), ocrText:ocr.data.text.trim().slice(0,80)
+        ocrConfidence:Math.round(ocr.data.confidence), ocrWordLikeCount:wordLikeCount, source:'fresh (was missing)'
       });
     }catch(err){ results.push({regionId:r.id, error:err.message}); }
   }
@@ -3705,9 +3727,10 @@ async function runOstOcrComparison(){
   // available analog to "how text-like did the block-scorer think this was," not a
   // perfectly matched comparison.
   const disagreements=results.filter(r=>!r.error && Math.abs((r.blockScore*100)-r.ocrConfidence)>30);
-  console.log('OST vs OCR comparison (pilot) — full results:', results);
+  const reusedCount=results.filter(r=>r.source==='from scan').length;
+  console.log('OST vs OCR comparison — full results:', results);
   console.log('Strong disagreements (worth spot-checking first):', disagreements);
-  setProg('OCR comparison complete — '+results.length+' region(s) checked, '+disagreements.length+' show strong disagreement. Full table in the console; raw data on S.ocrComparison.');
+  setProg('OCR comparison complete — '+results.length+' region(s) ('+reusedCount+' reused from the scan, '+(results.length-reusedCount)+' run fresh), '+disagreements.length+' show strong disagreement. Full table in the console; raw data on S.ocrComparison.');
   return results;
 }
 // v1.6: was a single module-level canvas/context, same race-condition risk as the OST
