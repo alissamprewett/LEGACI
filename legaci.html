@@ -4168,9 +4168,34 @@ async function runCombinedVideoPass(){
           // other band is at least as busy, the cue stays put and is flagged for a human
           // rather than suggested a move that trades one collision for another.
           const weight=h=>(h.region.score||0)*Math.max(0.1,h.coverage||0);
-          const stay = there && weight(there)>=weight(here)*0.9;
+          // v1.7: bandHit's single-region, tight-duration-and-band-height model fits a
+          // typical lower third or logo well, but confirmed against a real reviewed file
+          // to fit scrolling end credits poorly, in more than one way: a genuinely
+          // continuously-busy band can still miss the check because (a) sparse per-cue
+          // sampling means the tracked region's own t0/t1 can narrowly miss THIS cue's
+          // exact window by a fraction of a second even though something was there the
+          // whole time, or (b) a single tracked block can span far taller than the
+          // narrow band bandHit checks (several stacked credit lines merged into one
+          // region), so most of its height falls outside the band even though it's
+          // genuinely covering it. Both were confirmed directly: "move to TOP" was being
+          // suggested during credits when TOP was visibly, obviously also full of
+          // credits. Near the end of the file — the same window already validated
+          // elsewhere for genuine credits sequences — require much less precise
+          // evidence before trusting "the other side is clear": any non-bug region
+          // within a generous few-second margin, anywhere in the opposite half of the
+          // frame, is enough to withhold the move suggestion.
+          const dur=(document.getElementById('video')||{}).duration||0;
+          const nearEndOfFile=dur>0 && (c.start/dur)>0.9;
+          let otherSideLikelyBusy=false;
+          if(nearEndOfFile){
+            const bandTop=other==='bottom' ? ostPic.y+ostPic.h*0.5 : ostPic.y;
+            const bandBot=other==='bottom' ? ostPic.y+ostPic.h : ostPic.y+ostPic.h*0.5;
+            const margin=3;
+            otherSideLikelyBusy=ostRegions.some(r=>r.kind!=='bug' && r.y<bandBot && (r.y+r.h)>bandTop && r.t1>c.start-margin && r.t0<c.end+margin);
+          }
+          const stay = (there && weight(there)>=weight(here)*0.9) || otherSideLikelyBusy;
           S.detected[i]={zone:side,overlap:Math.round(here.inside*100),coverage:here.coverage,regionKind:here.region.kind,
-                         region:here.region,confidence:bandConfidence(here),otherSideBusy:!!there,bothBusyStay:stay};
+                         region:here.region,confidence:bandConfidence(here),otherSideBusy:(!!there)||otherSideLikelyBusy,bothBusyStay:stay};
         }
       }
 
