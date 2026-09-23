@@ -3555,7 +3555,14 @@ async function verifyRegionsWithOcr(regions, analysisW){
       r.ocrConfidence=Math.round(ocr.data.confidence);
       r.ocrWordLikeCount=wordLikeCount;
       if(r.ocrConfidence>=50 && wordLikeCount>=2) r.ocrSignal=1;
-      else if(r.ocrConfidence===0 && wordLikeCount===0) r.ocrSignal=-1;
+      // v1.7 fifth correction, same file, same mistake pattern as speechCorrelated's
+      // own fix: requiring confidence===0 exactly missed a confirmed real case — the
+      // couch/wallpaper scene at 41% confidence, 0 real 4+-letter words. Across every
+      // confirmed texture case now on record (0%, 18%, 22%, 33%, 41% confidence, all
+      // wordLikeCount=0), the confidence number keeps moving and word count doesn't —
+      // zero real words alone is what's actually reliable, same conclusion reached
+      // for speechCorrelated earlier and now applied here too.
+      else if(wordLikeCount===0) r.ocrSignal=-1;
       // EXPERIMENTAL — unlike the two branches above, not validated at real scale.
       // Spot-checked only 2-3 examples by hand (a studio logo card, a grainy archival
       // movie-within-a-movie scene) that landed in this exact middle ground —
