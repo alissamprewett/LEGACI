@@ -2473,19 +2473,17 @@ function bandHit(cue, regions, pic, side, prof=PROFILE){
     // narrowing the original case at all — r77's own ocrSignal is 0 (inconclusive,
     // since it's foreign-language text an English-only OCR engine can't read), not
     // -1, so the original confirmed case is untouched by this.
-    // v1.7 second correction, confirmed on the same file again: ocrSignal===-1
-    // requires confidence to be EXACTLY zero, which let a second real texture false
-    // positive through (damask wallpaper at 18% OCR confidence, 0 real words — close
-    // to but not quite the strict -1 threshold). Checking the actual numbers directly
-    // here, not just the pre-computed signal, catches this without touching
-    // ocrSignal's own definition or the confidence formula elsewhere that already
-    // relies on it. Verified against all four real cases found while chasing this:
-    // stays open for the confirmed foreign-subtitle case (0% conf, 1 word) AND a
-    // second genuine case found in this same pass (credits over a driving scene, 6%
-    // conf, 2 words) — closes for both confirmed texture cases (wood-grain at exactly
-    // 0/0, and this wallpaper at 18/0).
+    // v1.7 third correction, same file again: a THIRD confirmed texture false
+    // positive turned up (same damask wallpaper pattern, different room/timestamp)
+    // with ocrConfidence=22 — yet another distinct confidence value (0, 18, then 22,
+    // then this one at 33 on a fourth instance), all sharing wl=0. Across every real
+    // case checked so far — three confirmed false, two confirmed real — word count
+    // alone cleanly separates them; raw OCR confidence does not, and kept needing a
+    // higher cutoff each time a new example surfaced. Simplified to just that: any
+    // real recognizable word keeps the bypass open, zero words closes it, regardless
+    // of whatever confidence number came with it.
     const vadOverlap=(S.vadSegments||[]).some(s=>s.end>r.t0 && s.start<r.t1);
-    const speechCorrelated=vadOverlap && !((r.ocrConfidence??100)<=20 && (r.ocrWordLikeCount??1)===0);
+    const speechCorrelated=vadOverlap && (r.ocrWordLikeCount??1)>=1;
     if(!speechCorrelated && cover<T.minCoverFrac && onFor<T.minCoverSec) continue;
     const inside=Math.max(0,Math.min(r.y+r.h,bandBot)-Math.max(r.y,bandTop))/r.h;
     if(inside<T.bandInsideFrac) continue;
