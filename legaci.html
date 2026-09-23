@@ -3541,7 +3541,17 @@ async function verifyRegionsWithOcr(regions, analysisW){
       canvas.width=sw; canvas.height=sh;
       canvas.getContext('2d').drawImage(scanVideo, sx, sy, sw, sh, 0, 0, sw, sh);
       const ocr=await worker.recognize(canvas);
-      const wordLikeCount=(ocr.data.text.match(/[A-Za-z]{3,}/g)||[]).length;
+      // v1.7 fourth correction, same file: a 3-letter minimum let a genuine texture
+      // false positive through — the actual OCR output was "pee Ll", and "pee" is a
+      // real English word, just a coincidental 3-letter match, not a real detection.
+      // A dictionary check wouldn't have caught this either, since the word itself IS
+      // real — it's just short enough to show up by chance. Every confirmed real case
+      // on record (Kevin, Corrigan, Presents, Designer, John, Dunn) is 4+ letters;
+      // none of them depend on a 3-letter match. Raising the floor targets the actual
+      // failure mode (short coincidental matches) without adding a dictionary
+      // dependency or risking false rejections of genuine short names a dictionary
+      // wouldn't contain either.
+      const wordLikeCount=(ocr.data.text.match(/[A-Za-z]{4,}/g)||[]).length;
       r.ocrConfidence=Math.round(ocr.data.confidence);
       r.ocrWordLikeCount=wordLikeCount;
       if(r.ocrConfidence>=50 && wordLikeCount>=2) r.ocrSignal=1;
@@ -3767,7 +3777,7 @@ async function runOstOcrComparison(){
       canvas.width=sw; canvas.height=sh;
       canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
       const ocr=await worker.recognize(canvas);
-      const wordLikeCount=(ocr.data.text.match(/[A-Za-z]{3,}/g)||[]).length;
+      const wordLikeCount=(ocr.data.text.match(/[A-Za-z]{4,}/g)||[]).length; // matches verifyRegionsWithOcr's own threshold — see its comment
       results.push({
         regionId:r.id, t0:+r.t0.toFixed(2), t1:+r.t1.toFixed(2), x:r.x, y:r.y, w:r.w, h:r.h,
         blockScore:+r.score.toFixed(3), blockIsolation:+r.isolation.toFixed(3), blockKind:r.kind,
