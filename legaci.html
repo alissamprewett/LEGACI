@@ -2448,10 +2448,24 @@ function bandHit(cue, regions, pic, side, prof=PROFILE){
     const onFor=Math.min(r.t1,cue.end)-Math.max(r.t0,cue.start);
     if(onFor<=0) continue;
     const cover=onFor/dur;
-    if(cover<T.minCoverFrac && onFor<T.minCoverSec) continue;
+    // v1.7: minCoverFrac/minCoverSec exist to skip trivial, imperceptible overlaps —
+    // right for an ambient background element (a store sign flickering into the band
+    // for a fraction of a second doesn't matter), wrong for a forced/burned-in dialogue
+    // subtitle, where even a single frame of overlap is a real, disqualifying problem.
+    // Confirmed directly against a real validated example: translating a foreign phone
+    // conversation while the conversation is actually happening — "it's not just can't
+    // cover one frame... even if it's for one single frame essentially." Distinguishing
+    // signal: a forced subtitle appears specifically WHEN someone is speaking; ambient
+    // texture or signage has no such correlation, it's there whether or not anyone's
+    // talking. If real detected speech (VAD) overlaps this exact region's own window,
+    // skip the minimum entirely; otherwise the normal threshold still applies
+    // unchanged. Based on one confirmed real example, not validated at scale the way
+    // OST_TUNING's other numbers were — worth checking against more cases.
+    const speechCorrelated=(S.vadSegments||[]).some(s=>s.end>r.t0 && s.start<r.t1);
+    if(!speechCorrelated && cover<T.minCoverFrac && onFor<T.minCoverSec) continue;
     const inside=Math.max(0,Math.min(r.y+r.h,bandBot)-Math.max(r.y,bandTop))/r.h;
     if(inside<T.bandInsideFrac) continue;
-    if(!best || r.score>best.region.score) best={region:r, coverage:cover, inside, onFor};
+    if(!best || r.score>best.region.score) best={region:r, coverage:cover, inside, onFor, speechCorrelated};
   }
   return best;
 }
@@ -2497,8 +2511,15 @@ function bandConfidence(hit){
   // resting on a couple of spot-checks rather than the 141-region validation behind
   // the ±1 cases.
   const ocrBoost=(r.ocrSignal===1) ? 0.5 : (r.ocrSignal===-1) ? -0.5 : (r.ocrSignal===0.5) ? 0.25 : 0;
+  // See bandHit's own comment — a region whose window overlaps real detected speech
+  // is meaningfully more likely to be a genuine forced/burned-in dialogue subtitle
+  // than an ambient graphic. Moderate weight: the reasoning is solid and it's what
+  // let bandHit catch a real, human-confirmed example at all, but it rests on that
+  // one confirmed case, not the kind of real-scale validation the OCR signal got
+  // before being trusted at 0.5.
+  const speechBoost=hit.speechCorrelated ? 0.3 : 0;
   const c=clamp01(hit.coverage??0);
-  return Math.round(100*clamp01(0.45*s+0.25*n+0.15*i+0.15*c+isoBoost+ocrBoost));
+  return Math.round(100*clamp01(0.45*s+0.25*n+0.15*i+0.15*c+isoBoost+ocrBoost+speechBoost));
 }
 /**
  * The frame to show someone who wants to see the problem. Jumping to the cue's
