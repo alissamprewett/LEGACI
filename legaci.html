@@ -2461,7 +2461,19 @@ function bandHit(cue, regions, pic, side, prof=PROFILE){
     // skip the minimum entirely; otherwise the normal threshold still applies
     // unchanged. Based on one confirmed real example, not validated at scale the way
     // OST_TUNING's other numbers were — worth checking against more cases.
-    const speechCorrelated=(S.vadSegments||[]).some(s=>s.end>r.t0 && s.start<r.t1);
+    // v1.7 correction — confirmed on the same file this was built for: the bypass as
+    // first shipped fired whenever speech happened to be occurring nearby at all,
+    // which is true almost constantly in a dialogue-heavy film. Caught a real
+    // regression directly: the confirmed wood-grain wallpaper false positive from
+    // earlier the same day got let through here too, purely because dialogue was
+    // playing during that scene — nothing about the region itself changed. OCR had
+    // already correctly flagged that exact region as texture (ocrSignal===-1, 0%
+    // confidence, 0 real words) before this check ever ran. Requiring the bypass to
+    // NOT override that specific, already-strong negative signal fixes this without
+    // narrowing the original case at all — r77's own ocrSignal is 0 (inconclusive,
+    // since it's foreign-language text an English-only OCR engine can't read), not
+    // -1, so the original confirmed case is untouched by this.
+    const speechCorrelated=(S.vadSegments||[]).some(s=>s.end>r.t0 && s.start<r.t1) && r.ocrSignal!==-1;
     if(!speechCorrelated && cover<T.minCoverFrac && onFor<T.minCoverSec) continue;
     const inside=Math.max(0,Math.min(r.y+r.h,bandBot)-Math.max(r.y,bandTop))/r.h;
     if(inside<T.bandInsideFrac) continue;
@@ -4216,7 +4228,7 @@ async function runCombinedVideoPass(){
           }
           const stay = (there && weight(there)>=weight(here)*0.9) || otherSideLikelyBusy;
           S.detected[i]={zone:side,overlap:Math.round(here.inside*100),coverage:here.coverage,regionKind:here.region.kind,
-                         region:here.region,confidence:bandConfidence(here),otherSideBusy:(!!there)||otherSideLikelyBusy,bothBusyStay:stay};
+                         region:here.region,confidence:bandConfidence(here),otherSideBusy:(!!there)||otherSideLikelyBusy,bothBusyStay:stay,speechCorrelated:!!here.speechCorrelated};
         }
       }
 
