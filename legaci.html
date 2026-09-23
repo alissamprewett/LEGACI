@@ -4205,6 +4205,31 @@ async function runCombinedVideoPass(){
         const side=sideOf(placement), other=side==='bottom'?'top':'bottom';
         const here=bandHit(c,ostRegions,ostPic,side);
         if(here){
+          // v1.7: a genuine but marginal tail-end overlap, right where the file already
+          // hands off to the next cue sitting on the opposite side, isn't a real
+          // problem — confirmed directly against a real file: a bottom cue correctly
+          // ends right as a subtitle collision starts, and the very next cue picks up
+          // at the top covering the actual collision window — but the first cue was
+          // still getting flagged for the last fraction of a second of unavoidable
+          // boundary overlap, even though nothing here actually needs fixing. Gated to
+          // here.coverage<minCoverFrac specifically so this can only suppress the kind
+          // of marginal overlap that needed the speech-correlation bypass to be seen
+          // at all — a cue with a genuinely substantial collision of its own still
+          // gets flagged regardless of what the next cue does.
+          const next=S.src[i+1];
+          let alreadyHandledByNextCue=false;
+          if(here.coverage<OST_TUNING.minCoverFrac && next && Math.abs(next.start-c.end)<0.05){
+            const nextSide=sideOf(placementFromSettings(next.settings));
+            if(nextSide===other){
+              const remainingStart=c.end, remainingEnd=here.region.t1;
+              const remainingDur=remainingEnd-remainingStart;
+              if(remainingDur>0){
+                const nextOverlap=Math.min(next.end,remainingEnd)-Math.max(next.start,remainingStart);
+                alreadyHandledByNextCue=(nextOverlap/remainingDur)>=0.8;
+              }
+            }
+          }
+          if(!alreadyHandledByNextCue){
           const there=bandHit(c,ostRegions,ostPic,other);
           // v1.4: when BOTH bands carry text, moving only helps if the other side is the
           // lesser collision. Weight = score × coverage (how strong, for how long). If the
@@ -4239,6 +4264,7 @@ async function runCombinedVideoPass(){
           const stay = (there && weight(there)>=weight(here)*0.9) || otherSideLikelyBusy;
           S.detected[i]={zone:side,overlap:Math.round(here.inside*100),coverage:here.coverage,regionKind:here.region.kind,
                          region:here.region,confidence:bandConfidence(here),otherSideBusy:(!!there)||otherSideLikelyBusy,bothBusyStay:stay,speechCorrelated:!!here.speechCorrelated};
+          }
         }
       }
 
